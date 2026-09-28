@@ -6,7 +6,7 @@ foreach(required RENDERER SOURCE_DIR OUTPUT_DIR)
     endif()
 endforeach()
 file(MAKE_DIRECTORY "${OUTPUT_DIR}")
-set(scene "${SOURCE_DIR}/assets/scenes/21_ocean_depth.myscene")
+set(scene "${SOURCE_DIR}/assets/scenes/fixtures/21_ocean_depth.myscene")
 
 function(run_water_benchmark name enabled quality)
     set(report "${OUTPUT_DIR}/${name}.json")

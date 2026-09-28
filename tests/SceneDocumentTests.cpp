@@ -74,6 +74,13 @@ int main() {
         source.renderer.water.amplitude = 0.41f;
         source.renderer.water.windDirection = {0.4f, -0.7f};
         source.renderer.atmosphere.nightSkyEnabled = true;
+        source.renderer.atmosphere.cloudHalfResolution = true;
+        source.renderer.atmosphere.cloudTemporalEnabled = true;
+        source.renderer.atmosphere.cloudShadowsEnabled = true;
+        source.renderer.atmosphere.cloudGodRaysEnabled = true;
+        source.renderer.atmosphere.cloudGodRaysStrength = 0.23f;
+        source.renderer.atmosphere.cloudOfflineNoise = true;
+        source.renderer.atmosphere.cloudDeterministic = true; // Preserve authored capture preference.
         source.renderer.atmosphere.moonIntensity = 1.5f;
         source.renderer.atmosphere.starIntensity = 0.7f;
         source.renderer.localLights.push_back(LocalLight{
@@ -143,6 +150,14 @@ int main() {
                 && close(firstLoad.renderer.atmosphere.moonIntensity, 1.5f)
                 && close(firstLoad.renderer.atmosphere.starIntensity, 0.7f),
                 "night sky settings survive first load");
+        require(firstLoad.renderer.atmosphere.cloudHalfResolution
+                && firstLoad.renderer.atmosphere.cloudTemporalEnabled
+                && firstLoad.renderer.atmosphere.cloudShadowsEnabled
+                && firstLoad.renderer.atmosphere.cloudGodRaysEnabled
+                && close(firstLoad.renderer.atmosphere.cloudGodRaysStrength, 0.23f)
+                && firstLoad.renderer.atmosphere.cloudDeterministic
+                && firstLoad.renderer.atmosphere.cloudOfflineNoise,
+            "independent cloud reconstruction settings survive first load");
         require(firstLoad.renderer.shadingMode == ShadingMode::Stylized
                 && firstLoad.renderer.stylizedPreset == StylizedPreset::NightAurora
                 && firstLoad.renderer.stylizedBandCount == 4
@@ -210,34 +225,65 @@ int main() {
                 == modelPath.lexically_normal(),
             "relative model path resolves against the scene file");
 
+        auto invalidOffline=source;
+        invalidOffline.renderer.atmosphere.cloudNoisePeriod=5;
+        const auto invalidOfflinePath=directory/"invalid-offline.myscene";
+        require(saveSceneDocument(invalidOfflinePath,invalidOffline,error),error.c_str());
+        auto retained=firstLoad;
+        require(!loadSceneDocument(invalidOfflinePath,retained,error),"offline asset period mismatch must reject");
+        require(retained.renderer.atmosphere.cloudOfflineNoise
+            && close(retained.renderer.atmosphere.cloudNoisePeriod,4)
+            && retained.entities.size()==firstLoad.entities.size(),"failed offline load must preserve the previous scene");
+
         const std::filesystem::path examples =
             std::filesystem::path(MYRENDERER_SOURCE_DIR) / "assets" / "scenes";
-        std::size_t exampleCount = 0U;
+        const std::filesystem::path fixtures = examples / "fixtures";
+        std::size_t visibleSceneCount = 0U;
+        std::size_t fixtureCount = 0U;
         bool foundPathTracingPbr = false;
         bool foundPathTracingLights = false;
         bool foundPathTracingVolume = false;
-        for (const auto& entry : std::filesystem::directory_iterator(examples)) {
-            if (!entry.is_regular_file() || entry.path().extension() != myRendererSceneExtension) continue;
-            SceneDocument example;
-            require(loadSceneDocument(entry.path(), example, error), error.c_str());
-            require(!example.entities.empty(), "bundled scene must contain entities");
-            for (const SceneDocumentEntity& entity : example.entities) {
-                if (entity.modelResource.empty() || entity.modelResource.rfind("builtin:", 0U) == 0U) continue;
-                require(std::filesystem::is_regular_file(
-                    resolveSceneResource(entity.modelResource, entry.path())
-                ), "bundled scene model resource must resolve");
+        const auto verifySceneDirectory = [&](const std::filesystem::path& directory,
+                                              std::size_t& count) {
+            for (const auto& entry : std::filesystem::directory_iterator(directory)) {
+                if (!entry.is_regular_file()
+                    || entry.path().extension() != myRendererSceneExtension) continue;
+                SceneDocument example;
+                require(loadSceneDocument(entry.path(), example, error), error.c_str());
+                require(!example.entities.empty(), "bundled scene must contain entities");
+                if (entry.path().filename() == "18_atmosphere_sky.myscene") {
+                    require(!example.renderer.atmosphere.cloudHalfResolution
+                        && !example.renderer.atmosphere.cloudTemporalEnabled
+                        && !example.renderer.atmosphere.cloudShadowsEnabled
+                        && !example.renderer.atmosphere.cloudGodRaysEnabled
+                        && close(example.renderer.atmosphere.cloudGodRaysStrength, 0.08f)
+                        && !example.renderer.atmosphere.cloudDeterministic
+                        && !example.renderer.atmosphere.cloudOfflineNoise,
+                        "older scenes must retain full-resolution deterministic cloud defaults");
+                }
+                for (const SceneDocumentEntity& entity : example.entities) {
+                    if (entity.modelResource.empty()
+                        || entity.modelResource.rfind("builtin:", 0U) == 0U) continue;
+                    require(std::filesystem::is_regular_file(
+                        resolveSceneResource(entity.modelResource, entry.path())
+                    ), "bundled scene model resource must resolve");
+                }
+                foundPathTracingPbr = foundPathTracingPbr
+                    || entry.path().filename() == "10_reference_pathtracer_pbr_hdri.myscene";
+                foundPathTracingLights = foundPathTracingLights
+                    || entry.path().filename() == "11_reference_pathtracer_lights.myscene";
+                foundPathTracingVolume = foundPathTracingVolume
+                    || entry.path().filename() == "12_reference_pathtracer_volume.myscene";
+                ++count;
             }
-            foundPathTracingPbr = foundPathTracingPbr
-                || entry.path().filename() == "10_reference_pathtracer_pbr_hdri.myscene";
-            foundPathTracingLights = foundPathTracingLights
-                || entry.path().filename() == "11_reference_pathtracer_lights.myscene";
-            foundPathTracingVolume = foundPathTracingVolume
-                || entry.path().filename() == "12_reference_pathtracer_volume.myscene";
-            ++exampleCount;
-        }
-        require(exampleCount >= 12U, "all major feature scenes should be bundled");
+        };
+        verifySceneDirectory(examples, visibleSceneCount);
+        verifySceneDirectory(fixtures, fixtureCount);
+        require(visibleSceneCount == 2U,
+            "only the cloud lab and ocean weather hero should be user-visible scenes");
+        require(fixtureCount >= 22U, "all major feature scenes should remain as fixtures");
         require(foundPathTracingPbr && foundPathTracingLights && foundPathTracingVolume,
-            "dedicated path-tracing scenes should be bundled");
+            "dedicated path-tracing scene fixtures should be bundled");
 
         std::cout << "Scene document repeat-load acceptance test passed\n";
         return 0;

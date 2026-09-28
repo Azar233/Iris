@@ -1,3 +1,4 @@
+#include "asset/InputManifest.h"
 #include <algorithm>
 #include <cstdint>
 #include <filesystem>
@@ -261,6 +262,15 @@ int main() {
                 "linear emission factor must survive OBJ/glTF import");
         }
 
+        {
+            capture::InputManifest manifest;
+            obj.load(asset("emissive_test.obj"));
+            assimp.load(asset("polyhaven/ArmChair_01/ArmChair_01_1k.gltf"));
+            bool material=false,buffer=false;
+            for(const auto& entry:manifest.files){material=material || entry.second.path.extension()==".mtl";buffer=buffer || entry.second.path.extension()==".bin";}
+            require(material && buffer,"Capture must include OBJ material and glTF external buffer dependencies");
+            manifest.validate();
+        }
         bool missingFileRejected = false;
         try {
             obj.load(asset("does_not_exist.obj"));

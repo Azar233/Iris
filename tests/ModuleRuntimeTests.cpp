@@ -1,4 +1,4 @@
-﻿#include "module/BuiltinModules.h"
+#include "module/BuiltinModules.h"
 #include "module/ModuleRegistry.h"
 #include "module/ModuleRuntime.h"
 #include "module/ParameterRegistry.h"
@@ -134,11 +134,11 @@ void testParameterRegistry() {
     require(parameters.enumLabel("axis") == "Z", "a clamped enum index must update its label");
     require(!parameters.setEnumLabel("axis", "W", error), "an unknown enum label must fail");
 
-    require(parameters.setAsset("clip", "assets/scenes/01_multi_model_hierarchy.myscene", error),
+    require(parameters.setAsset("clip", "assets/scenes/fixtures/01_multi_model_hierarchy.myscene", error),
             "an asset matching the filter must be accepted");
     require(!parameters.setAsset("clip", "assets/models/cube.obj", error),
             "an asset outside the filter must be rejected");
-    require(parameters.assetValue("clip") == "assets/scenes/01_multi_model_hierarchy.myscene",
+    require(parameters.assetValue("clip") == "assets/scenes/fixtures/01_multi_model_hierarchy.myscene",
             "a rejected asset must leave the previous value in place");
     require(parameters.setAsset("clip", "", error), "an unset asset is allowed");
     require(parameters.assetValue("clip").empty(), "an empty asset value clears the parameter");

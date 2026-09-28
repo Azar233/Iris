@@ -72,7 +72,7 @@
 
 ## 海岸场景验证
 
-切片 3 的真正目标是让**远景阴影**可用，而在此之前所有证据都来自十来单位进深的小场景——那种尺度下一个正交盒本来就够用。因此新增了开放海岸夹具 `assets/scenes/19_coastal_cascades.myscene`：80×80 的地面、近/中/远三排礁石与海蚀柱，跨约 110 单位进深，低太阳（仰角 12 度）制造长阴影，默认 3 级级联。
+切片 3 的真正目标是让**远景阴影**可用，而在此之前所有证据都来自十来单位进深的小场景——那种尺度下一个正交盒本来就够用。因此新增了开放海岸夹具 `assets/scenes/fixtures/19_coastal_cascades.myscene`：80×80 的地面、近/中/远三排礁石与海蚀柱，跨约 110 单位进深，低太阳（仰角 12 度）制造长阴影，默认 3 级级联。
 
 同一机位、同一 1280×720、同一太阳参数下，`MYRENDERER_SHADOW_CASCADES` 取 1 与 3 的对照：
 
@@ -85,11 +85,11 @@ $env:MYRENDERER_SMOKE_TEST='1'; $env:MYRENDERER_RENDER_WIDTH='1280'; $env:MYREND
 
 $env:MYRENDERER_SHADOW_CASCADES='1'
 $env:MYRENDERER_SCREENSHOT='build-ci-msvc/coast-csm1.png'
-build-ci-msvc/Release/MyRenderer.exe assets/scenes/19_coastal_cascades.myscene
+build-ci-msvc/Release/MyRenderer.exe assets/scenes/fixtures/19_coastal_cascades.myscene
 
 $env:MYRENDERER_SHADOW_CASCADES='3'
 $env:MYRENDERER_SCREENSHOT='build-ci-msvc/coast-csm3.png'
-build-ci-msvc/Release/MyRenderer.exe assets/scenes/19_coastal_cascades.myscene
+build-ci-msvc/Release/MyRenderer.exe assets/scenes/fixtures/19_coastal_cascades.myscene
 ```
 
 `gpu-smoke` 在这个夹具上跑级联 1 / 3 / 4 三条分支（第三条同时覆盖 Deferred 与 `lambda = 0.5`），因此三条 uniform 路径都在真实上下文里编译链接过。

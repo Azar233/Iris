@@ -20,6 +20,9 @@
 
 class Camera;
 class CausticsMap;
+class CloudLayerRenderer;
+class CloudShadowRenderer;
+class GodRaysRenderer;
 class DebugGrid;
 class SelectionOutline;
 class EnvironmentMap;
@@ -272,7 +275,11 @@ public:
         std::string& error
     ) const;
     int activeMsaaSamples() const;
-    void invalidateTemporalHistory() { previousViewProjectionValid_ = false; }
+    void invalidateTemporalHistory() {
+        previousViewProjectionValid_ = false;
+        temporalFrameIndex_ = 0U; // A capture reset also restarts the TAA jitter sequence.
+        cloudHistoryInvalidated_ = true;
+    }
     bool hasGpuFrameTime() const { return hasGpuFrameTime_; }
     double gpuFrameTimeMilliseconds() const { return gpuFrameTimeMilliseconds_; }
     double latestGpuFrameMeasurementMilliseconds() const { return latestGpuFrameMeasurementMilliseconds_; }
@@ -300,20 +307,43 @@ public:
     int renderHeight() const;
     std::size_t estimatedRenderMemoryBytes() const;
     std::size_t estimatedOpaqueTrafficBytesPerFrame() const;
+    // Wall time of the last analytic-sky environment rebuild, so the editor can state the real cost
+    // of a cloud or sun edit instead of guessing at it.
+    double environmentBuildMilliseconds() const;
     TextureCache& textureCache();
     const std::string& shaderReloadStatus() const { return shaderReloadStatus_; }
     bool shaderReloadFailed() const { return shaderReloadFailed_; }
 
+    // The march's extinction is otherwise fixed at the calibrated constant below. This setter exists
+    // for measurement, not for authoring: the shape calibration has to sweep it without a rebuild per
+    // row, and `MYRENDERER_CLOUD_EXTINCTION` is the only caller.
+    void setCloudMarchExtinction(float extinction) {
+        cloudMarchExtinction_ = extinction > 0.0f ? extinction : 0.0f;
+    }
+
 private:
-    // Rebuilds the environment cubemaps when the sun or an atmosphere parameter moved enough to
-    // matter, and restores the HDR environment when the model is switched off.
+    // Only cloudless sky inputs invalidate the environment; camera/cloud changes
+    // are handled by the per-frame passes and their own temporal histories.
     void updateAtmosphereEnvironment(const RendererSettings& settings);
     bool atmosphereKeyMatches(const atmosphere::AtmosphereParameters& parameters) const;
-
     atmosphere::AtmosphereParameters builtAtmosphere_;
     bool atmosphereActive_{false};
     std::unique_ptr<Shader> shader_;
     std::unique_ptr<CausticsMap> causticsMap_;
+    std::unique_ptr<CloudLayerRenderer> cloudLayer_;
+    // The layer's extinction. A constant rather than a `RendererSettings` field because it is the
+    // value `cloud::volumetricExtinction` records the calibration for -- it describes how opaque the
+    // density field is, not how much of the integral is paid for, and the quality tiers below are
+    // the knob for the latter. It is written out here rather than referenced because this header is
+    // included by targets that do not link the cloud reference.
+    //
+    // The march budget itself is *not* here: it comes from `atmosphere::cloudTierBudget`, so a scene
+    // that selects a tier and the renderer that draws it cannot disagree about what the tier means.
+    float cloudMarchExtinction_{0.0025f};
+    bool cloudHistoryInvalidated_{true};
+    bool cloudPreviousDeferred_{false};
+    std::unique_ptr<CloudShadowRenderer> cloudShadow_;
+    std::unique_ptr<GodRaysRenderer> godRays_;
     std::unique_ptr<DebugGrid> debugGrid_;
     std::unique_ptr<SelectionOutline> selectionOutline_;
     std::unique_ptr<EnvironmentMap> environmentMap_;

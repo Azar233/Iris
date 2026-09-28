@@ -1,0 +1,13 @@
+{
+  "format": "MyRendererCloudLightingLut",
+  "generatorVersion": 1,
+  "samples": 8193,
+  "opticalDepthRange": [
+    0,
+    32
+  ],
+  "encoding": "q24-little-endian",
+  "fingerprintAlgorithm": "fnv1a64",
+  "fingerprint": "36a2741b31f43904",
+  "sha256": "73812087724709247305e0eb8486303db4804c3ec0c362f868898ca056ec2c28"
+}

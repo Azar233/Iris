@@ -24,7 +24,7 @@ function(capture_stylized name stylized render_path outline taa width height sce
             "MYRENDERER_HIDE_SELECTION_OUTLINE=1"
             ${ARGN}
             "${RENDERER}"
-            "${SOURCE_DIR}/assets/scenes/${scene_name}"
+            "${SOURCE_DIR}/assets/scenes/fixtures/${scene_name}"
         WORKING_DIRECTORY "${SOURCE_DIR}"
         RESULT_VARIABLE capture_result
     )

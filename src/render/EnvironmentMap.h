@@ -48,6 +48,10 @@ public:
     // disk integrated by 128 uniform samples per texel would both double count it and firefly
     // (the disk is 5e-5 of the hemisphere, so a texel either misses it entirely or catches a
     // full-brightness sample). The prefiltered specular keeps the disk, which is the sun glint.
+    //
+    // `cameraHeight` is the eye's height in world units. The cloud layer resolves its parallax
+    // against it, so it changes the baked skybox and the prefiltered specular; the irradiance pass
+    // stays cloudless by design (see `atmosphere::environmentRadiance`).
     void useAtmosphere(const atmosphere::AtmosphereParameters& parameters);
     // Returns to the bundled HDR environment after an atmosphere preview.
     void useHdrSource();

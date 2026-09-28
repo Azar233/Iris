@@ -28,6 +28,8 @@ int main() {
     std::filesystem::remove_all(root, cleanupError);
     try {
         writeFixture(root / "assets" / "scenes" / "hero.myscene");
+        writeFixture(root / "assets" / "scenes" / "fixtures" / "internal.myscene");
+        writeFixture(root / "assets" / "scenes" / "01_multi_model_hierarchy.myscene");
         writeFixture(root / "assets" / "models" / "nested" / "hero.gltf", "model");
         writeFixture(root / "assets" / "models" / "nested" / "hero.mtl");
         writeFixture(root / "assets" / "models" / "nested" / "hero_diffuse.png", "texture");
@@ -45,7 +47,11 @@ int main() {
         require(catalog.generation() == 1U, "first refresh did not advance generation");
         require(catalog.records().size() == 10U, "catalog classified an unexpected asset count");
         require(catalog.count(WorkspaceAssetCategory::Scenes) == 1U,
-                "scene asset was not classified");
+                "visible scene classification included an internal fixture");
+        require(catalog.find(root / "assets" / "scenes" / "fixtures" / "internal.myscene") == nullptr,
+                "internal scene fixture was exposed by the workspace catalog");
+        require(catalog.find(root / "assets" / "scenes" / "01_multi_model_hierarchy.myscene") == nullptr,
+                "stale pre-migration scene fixture was exposed by the workspace catalog");
         require(catalog.count(WorkspaceAssetCategory::Models) == 1U,
                 "recursive model asset was not classified");
         require(catalog.count(WorkspaceAssetCategory::Textures) == 1U,

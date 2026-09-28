@@ -1,0 +1,18 @@
+{
+  "format": "MyRendererRenderJob",
+  "schemaVersion": 3,
+  "scene": "../scenes/02_ocean_weather_hero.myscene",
+  "renderer": "raster",
+  "camera": "scene",
+  "resolution": [640, 360],
+  "frames": {"start": 0, "end": 2, "fps": 24},
+  "sampling": {"spp": 1, "maxDepth": 1, "seed": 20260928},
+  "raster": {"determinism": true, "warmupFrames": 0, "temporalAccumulation": false},
+  "aovs": ["beauty"],
+  "output": {
+    "path": "../../build-ci-msvc/render-jobs/05_cloud_determinism/frame_{frame:04}",
+    "formats": ["png"],
+    "resume": false
+  },
+  "failurePolicy": "stop"
+}

@@ -104,7 +104,7 @@ White Point 使用 Kelvin 色温近似转换到线性 sRGB，并调制入射、�
 
 ### 配置与夹具
 
-`assets/models/prism_spectrum.gltf` 是原创的封闭三棱柱几何，`assets/scenes/06_prism_spectrum.myscene` 把它固定成 Prism 夹具：相机 `distance 4.8`、`fieldOfViewDegrees 35`，黑场背景 `[0.0015, 0.002, 0.0025]`，Grid/Axes/Skybox/Shadows 全部关闭，`prismCameraLocked` 为 true，`prismPreset` 为 `0`（Crown Glass），光束 `prismBeamOutputLength 2.4`、`prismBeamWidth 0.055`、`prismBeamIntensity 5.0`、`prismBeamEdgeSoftness 0.72`、`prismBeamBloomContribution 0.35`，并保存完整 `prismParameters`（`beamAngleDegrees 7.65`、`centralIndexOfRefraction 1.52`、`dispersion 0.33`、`spectralSampleCount 21`、`spectrumMode 0`、`whitePointKelvin 6500`、`attenuationDistance 8.0`、`attenuationColor [0.88, 0.96, 1.0]`）。夹具里还有第二个实体 `Optional Prism Mesh`，它默认 `visible: false`，即 Prism-0 那一张的「棱镜隐藏」状态。
+`assets/models/prism_spectrum.gltf` 是原创的封闭三棱柱几何，`assets/scenes/fixtures/06_prism_spectrum.myscene` 把它固定成 Prism 夹具：相机 `distance 4.8`、`fieldOfViewDegrees 35`，黑场背景 `[0.0015, 0.002, 0.0025]`，Grid/Axes/Skybox/Shadows 全部关闭，`prismCameraLocked` 为 true，`prismPreset` 为 `0`（Crown Glass），光束 `prismBeamOutputLength 2.4`、`prismBeamWidth 0.055`、`prismBeamIntensity 5.0`、`prismBeamEdgeSoftness 0.72`、`prismBeamBloomContribution 0.35`，并保存完整 `prismParameters`（`beamAngleDegrees 7.65`、`centralIndexOfRefraction 1.52`、`dispersion 0.33`、`spectralSampleCount 21`、`spectrumMode 0`、`whitePointKelvin 6500`、`attenuationDistance 8.0`、`attenuationColor [0.88, 0.96, 1.0]`）。夹具里还有第二个实体 `Optional Prism Mesh`，它默认 `visible: false`，即 Prism-0 那一张的「棱镜隐藏」状态。
 
 ## 截图
 

@@ -38,6 +38,7 @@ Post-MVP 阶段已将文件导入、CPU 模型数据、GPU 模型和渲染执行
 - P1-A 切片 1 解析式天空与统一太阳：`src/optics/Atmosphere.*` 提供 Rayleigh/Mie 单次散射模型（Kasten-Young 气团、闭式指数积分、太阳盘与地面反照率），一个 `sunDirection()` 同时驱动环境立方体贴图（天空盒 + IBL）、方向光方向、阴影贴图与方向光能量；`skyIntensity`/`sunIntensity` 分别控制环境天空与关键光+日盘，`skyLightColor()` 让关键光携带逐通道太阳颜色。`.myscene` 持久化天空参数，Inspector 新增 `Atmosphere` 分组（`SetAtmosphereSettings` 域命令，场景启用时自动展开），太阳盘亮度锚定晴天地面照度比 `E_sun/E_sky≈10` 使环境下半球与受光地面一致，辐照度卷积刻意排除日盘以避免重复计算与萤火虫。重建成本约 0.6 s 并在控制台/Inspector 如实显示。模型、参数、验证与已知边界见 [`docs/atmosphere-sky.md`](docs/atmosphere-sky.md)。
 - P1-A 切片 2 Aerial Perspective：`opticalDepthAlongSegment()` 用同一套 Rayleigh/Mie 系数与同一气团约定积分相机到表面的有限线段，`verticalOpticalDepth()` 给出整根垂直气柱作为计量单位。合成在 `postprocess.frag`：复用已有的深度重建，因此不需要新增 render target，透明物体会与背后的几何一起淡出；顺序为 Height Fog → Aerial Perspective → 显示变换。in-scatter 取不含太阳盘的天顶/地平线天空色，保证射线走到无穷远时精确收敛到天空、零距离处不改变像素。`.myscene` 增加三个字段，Inspector 增加 `Aerial perspective` 子节。已知边界：CPU Path Tracer 尚未接入。实现、近似与 On/Off 证据见 [`docs/atmosphere-sky.md`](docs/atmosphere-sky.md)。
 - P1-A 切片 5 昼夜与海况序列：`myrenderer.core.coastal-sequence` 使用固定帧号驱动太阳、雾、风、波浪和相机。运行 `build-ci-msvc/Release/MyRenderer.exe raster-sequence assets/renderjobs/04_coastal_sequence.renderjob` 可输出 13 帧栅格 Beauty PNG；`coastal-sequence-acceptance` 验证两次输出逐帧一致。参数、截图与限制见 [`docs/coastal-sequence.md`](docs/coastal-sequence.md)。
+- P1-A 切片 6 C1 云层参数与 2D 解析云层：`AtmosphereParameters` 新增 12 个云层字段（默认关闭），云层与解析天空**共用同一个太阳**，并作为天空的一部分合成进环境立方体，因此 Raster skybox、预滤波镜面反射与 CPU Path Tracer 的等距柱状环境看到的是同一朵云。形状来自可平铺的 Worley fBm（**逐位精确平铺**，跨一个周期的采样完全相同），覆盖率是单调阈值，光照用双叶 Henyey-Greenstein 相位（球面积分为 1）并按仰角正确地在逆光剪影与受光云之间过渡。`.myscene` 逐字段往返，Inspector 有 `Cloud layer` 分组，`MYRENDERER_CLOUD*` 可驱动固定机位对照。**观感停在"高空薄云"**：单次采样 slab 在高仰角下必然产生细密纹理，C2 的 ray marched slab 才是解法；亮度标定由 `MyRendererCloudCalibration` 打印的云/天空亮度比表决定，并已被 `atmosphere-model` 断言。实现、契约、测量方法与限制见 [`docs/cloud-layer-c1.md`](docs/cloud-layer-c1.md)。
 - Debug 构建在驱动支持时启用 OpenGL `KHR_debug` 诊断。
 - Model/View/Projection 变换与基础 Blinn-Phong 光照。
 - 离屏 Framebuffer 渲染视口、可切换 1x/4x MSAA Resolve 与解析后视口 PNG 导出。
@@ -89,34 +90,21 @@ cmake --build build-mingw --parallel
 每个渲染场景都可以保存为一个独立的 `.myscene` JSON 文件。使用 `File / 文件` 菜单中的 `Open scene...`、`Save scene`、`Save scene as...` 和 `Reopen last scene`，快捷键分别为 `Ctrl+O`、`Ctrl+S`、`Ctrl+Shift+S`；也可以把场景文件作为启动参数直接打开：
 
 ```powershell
-.\build\Release\MyRenderer.exe .\assets\scenes\01_multi_model_hierarchy.myscene
+.\build\Release\MyRenderer.exe .\assets\scenes\fixtures\01_multi_model_hierarchy.myscene
 ```
 
 模型资源路径以场景文件所在目录为基准保存为相对路径，因此场景目录和它引用的资源目录保持相对布局后可以整体复制到另一台机器。打开场景时，编辑器先校验层级并加载全部唯一模型资源，只有全部成功才替换当前工作区；资源缺失或格式错误时现有场景仍会保留。最近一次成功保存或打开的路径记录在运行目录的 `MyRenderer.recent-scene`，可用 `Reopen last scene` 恢复。
 
-`assets/scenes` 内置了可直接从 `File > Open bundled scene` 打开的功能场景：
+`assets/scenes` 只保留两个可直接从 `File > Open bundled scene` 和 Content Browser 打开的用户场景：
 
-- `01_multi_model_hierarchy`：多模型、共享资源、父子层级、Tint 与隐藏实体。
-- `02_pbr_materials`：PBR、IBL、发光与 Alpha 材质。
-- `03_deferred_ssao_taa`：Hybrid Deferred、SSAO 与 TAA。
-- `04_volume_glass`：双界面折射、体积吸收和共享玻璃实例。
-- `05_glass_caustics`：Light-space 焦散、彩色透射阴影和接收地面。
-- `06_prism_spectrum`：Prism 光谱求解、HDR 光束与固定镜头。
-- `07_local_lights`：Point/Spot 局部光源与 Deferred 光照。
-- `08_instancing_lod`：共享 Sphere 的 Instancing、Frustum Culling 与 LOD。
-- `09_gpu_animation`：glTF Skin 与 GPU 骨骼动画播放状态。
-- `10_reference_pathtracer_pbr_hdri`：Poly Haven 家具与摆件组成的 PBR/HDRI 光栅/光追固定对照。
-- `11_reference_pathtracer_lights`：Emissive、Point/Spot Light 和 PBR 接收物。
-- `12_reference_pathtracer_volume`：闭合玻璃、双界面折射、Beer-Lambert 体积与背景参照物。
-- `13_polyhaven_studio_lounge`：暖色室内陈列，验证复杂 glTF 材质、Alpha 植物、局部灯光、阴影与构图。
-- `14_polyhaven_material_gallery`：中性材质展台，集中验收织物/木材、石材、陶瓷和氧化金属。
-- `15_stylized_clean_toon_gallery`：Clean Toon 材质展台，固定硬分层、细描边和 Clean LUT。
-- `16_stylized_painterly_interior`：Painterly 室内陈列，固定暖色 Rim、轻 Dither、Height Fog 与低强度 Bloom。
-- `17_stylized_night_aurora_outdoor`：Night Aurora 室外自然代理构图，固定冷色分层、浓雾、Night LUT 与 Bloom。
-- `18_atmosphere_sky`：P1-A 解析式天空外景夹具（地面、球、立方体、立柱），默认启用 `Atmosphere` 与 `Aerial perspective`，由太阳同时驱动天空、方向光、阴影与光照能量；用于正午/黄金时刻固定截图与 `atmosphere-model` 之外的端到端验收。模型、参数、成本与已知边界见 [`docs/atmosphere-sky.md`](docs/atmosphere-sky.md)。
-- `19_coastal_cascades`：P1-A 级联阴影海岸夹具（80×80 地面、近/中/远三排礁石与海蚀柱，跨约 110 单位进深），低太阳制造长阴影，默认 3 级级联。用于验证远景阴影：单级正交盒在这个跨度上会出现可见的阴影分辨率断层，级联把它抹平。对比与量化见 [`docs/shadow-cascades.md`](docs/shadow-cascades.md)。
+- `01_volumetric_cloud_lab`：独立体积云实验场景，用于调整覆盖率、云型、细节、天气图和高低质量档，并保留地面尺度参照。
+- `02_ocean_weather_hero`：海洋与天气综合场景，共用太阳、解析天空、体积云、海面、海底和昼夜参数。海面范围扩大到 500 世界单位，默认机位和远景布局不会露出有限网格的黑色外圈。
 
-`10`～`12` 专门冻结光追相关的模型、材质、灯光、环境和相机配置，可作为实时预览、SceneSnapshot 捕获及 Raster/Path Traced 对照的统一输入；`13`～`14` 是面向展示和材质验收的 Hero Scene。离线路径追踪的 SPP、Max Depth 和 Seed 仍由渲染任务设置控制，不写入 `.myscene` v1。
+两场景已启用地面与海面云阴影，以及天空区域的屏幕空间云隙光束，可在 Inspector 的“云阴影”“云隙光束”中切换；光束仅在太阳位于视野内时出现。实现、性能预算和已知边界见 [`docs/cloud-shadows.md`](docs/cloud-shadows.md) 与 [`docs/god-rays.md`](docs/god-rays.md)。
+
+确定性捕获可使用 Inspector 的“确定性云渲染”，或 schema 3 raster Render Job 的显式捕获配置。新夹具 `05_cloud_determinism.renderjob` 同时输出 PNG 与帧报告，固定时间预热不会推进场景动画；复现和边界见 [`docs/cloud-determinism.md`](docs/cloud-determinism.md)。
+
+原来的 22 个阶段场景保存在 `assets/scenes/fixtures`，继续作为 CTest、GPU Smoke、固定截图和批渲染输入。工作区资源目录会忽略该目录，因此开发夹具不会出现在用户场景列表中；仍可通过路径直接打开。离线路径追踪的 SPP、Max Depth 和 Seed 仍由渲染任务设置控制，不写入 `.myscene` v1。
 
 ![Poly Haven studio lounge](docs/images/polyhaven-studio-lounge.png)
 
@@ -134,7 +122,7 @@ cmake --build build-mingw --parallel
 - View / `Volume glass preset`：加载平滑闭合球体，自动创建两个独立玻璃实例、原创棋盘格背景和固定正面机位；Renderer 面板可切换真实双界面折射，并使用 Clear / Olive / Amber / Crystal 四组体积玻璃参数。
 - View / `Glass caustics preset`：加载透明水晶球、白色接收地面与固定高机位，默认启用 Light-space RGB 焦散、彩色透射阴影和空间滤波；可即时切到 Projector / Decal 做美术对照。
 - View / `Local light stress preset`：加载 10×10 立方体固定舞台，并在 Renderer 面板选择 8/32/64 档 Point/Spot 灯光；切换 Forward/Deferred 可查看相同画面下的活动 Pass、Draw Call 与估算 Opaque Attachment 流量。
-- 渲染视口：鼠标右键拖动旋转相机，中键拖动平移，滚轮缩放；工具栏或 File 菜单可将当前解析后画面保存为 PNG。
+- 渲染视口：点击 Viewport 后可用 `W/A/S/D` 沿观察方向自由移动，按住 `Shift` 加速；鼠标右键拖动旋转相机，中键拖动平移，滚轮缩放。文本框获得输入焦点时不会移动相机；工具栏或 File 菜单可将当前解析后画面保存为 PNG。
 - 面板收纳：使用视口工具栏 `Panels` 或 `View > Panels` 显示/隐藏 Scene Explorer、Inspector 和 Workspace；`Reset layout` 会恢复完整默认工作区。
 - `Esc`：退出程序。
 

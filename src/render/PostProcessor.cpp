@@ -364,6 +364,14 @@ void PostProcessor::process(RenderTarget& target, const PostProcessSettings& set
         "uInverseCurrentViewProjection", settings.inverseCurrentViewProjection
     );
     compositeShader_->setVec3("uCameraPosition", settings.cameraPosition);
+    // Unit 6 carries the cloud layer. Its transmittance is the alpha channel, so the composite is a
+    // plain "radiance over the scene" blend where the scene is what the layer was marched against.
+    compositeShader_->setInt("uCloud", 6);
+    compositeShader_->setInt("uCloudDepth", 7);
+    compositeShader_->setBool("uCloudEnabled", settings.cloudEnabled);
+    compositeShader_->setInt("uGodRays", 8);
+    compositeShader_->setBool("uGodRaysEnabled", settings.godRaysEnabled);
+    compositeShader_->setVec3("uGodRaysColor", settings.godRaysColor);
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, sceneTexture);
     glActiveTexture(GL_TEXTURE1);
@@ -379,6 +387,12 @@ void PostProcessor::process(RenderTarget& target, const PostProcessSettings& set
         GL_TEXTURE_3D,
         colorGradingTextures_[std::clamp(settings.colorGradingLut, 0, 2)]
     );
+    glActiveTexture(GL_TEXTURE6);
+    glBindTexture(GL_TEXTURE_2D, settings.cloudTexture);
+    glActiveTexture(GL_TEXTURE7);
+    glBindTexture(GL_TEXTURE_2D, settings.cloudDepthTexture);
+    glActiveTexture(GL_TEXTURE8);
+    glBindTexture(GL_TEXTURE_2D, settings.godRaysTexture);
     drawFullscreen();
     target.unbind();
 }

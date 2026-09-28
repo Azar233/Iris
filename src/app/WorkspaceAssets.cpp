@@ -55,6 +55,45 @@ bool classify(const std::filesystem::path& relativePath, WorkspaceAssetCategory&
     return true;
 }
 
+bool isInternalSceneFixture(const std::filesystem::path& relativePath) {
+    const std::string generic = lowercase(relativePath.generic_u8string());
+    constexpr const char* fixturePrefix = "assets/scenes/fixtures/";
+    if (generic.rfind(fixturePrefix, 0U) == 0U) return true;
+
+    // copy_directory intentionally does not remove files from an existing build tree. Keep an
+    // upgraded editor from rediscovering the former top-level fixture copies until that build tree
+    // is rebuilt from scratch.
+    static constexpr std::array<const char*, 22> migratedFixtureNames{{
+        "01_multi_model_hierarchy.myscene",
+        "02_pbr_materials.myscene",
+        "03_deferred_ssao_taa.myscene",
+        "04_volume_glass.myscene",
+        "05_glass_caustics.myscene",
+        "06_prism_spectrum.myscene",
+        "07_local_lights.myscene",
+        "08_instancing_lod.myscene",
+        "09_gpu_animation.myscene",
+        "10_reference_pathtracer_pbr_hdri.myscene",
+        "11_reference_pathtracer_lights.myscene",
+        "12_reference_pathtracer_volume.myscene",
+        "13_polyhaven_studio_lounge.myscene",
+        "14_polyhaven_material_gallery.myscene",
+        "15_stylized_clean_toon_gallery.myscene",
+        "16_stylized_painterly_interior.myscene",
+        "17_stylized_night_aurora_outdoor.myscene",
+        "18_atmosphere_sky.myscene",
+        "19_coastal_cascades.myscene",
+        "20_ocean_synthesis.myscene",
+        "21_ocean_depth.myscene",
+        "22_ocean_underwater.myscene"
+    }};
+    const std::string filename = lowercase(relativePath.filename().string());
+    const std::filesystem::path parent = relativePath.parent_path();
+    return lowercase(parent.generic_u8string()) == "assets/scenes"
+        && std::find(migratedFixtureNames.begin(), migratedFixtureNames.end(), filename)
+            != migratedFixtureNames.end();
+}
+
 void hashBytes(std::uint64_t& hash, const void* data, std::size_t size) {
     const auto* bytes = static_cast<const unsigned char*>(data);
     for (std::size_t index = 0U; index < size; ++index) {
@@ -125,6 +164,10 @@ bool WorkspaceAssetCatalog::refresh(const std::filesystem::path& sourceRoot,
                  assetRoot, std::filesystem::directory_options::skip_permission_denied)) {
             if (!entry.is_regular_file()) continue;
             const std::filesystem::path relative = entry.path().lexically_relative(sourceRoot);
+            // Stage and regression scenes remain directly loadable by the acceptance tools, but
+            // they are implementation fixtures rather than projects a user should choose from the
+            // Content Browser or File > Open bundled scene.
+            if (isInternalSceneFixture(relative)) continue;
             WorkspaceAssetCategory category;
             if (!classify(relative, category)) continue;
             std::error_code sizeError;

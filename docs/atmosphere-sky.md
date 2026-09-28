@@ -81,7 +81,7 @@ $env:MYRENDERER_REFERENCE_COMPARE_DIR='build-ci-msvc/p1a-atmosphere-comparison'
 $env:MYRENDERER_REFERENCE_SPP='512'; $env:MYRENDERER_REFERENCE_MAX_DEPTH='8'
 $env:MYRENDERER_RENDER_WIDTH='256'; $env:MYRENDERER_RENDER_HEIGHT='256'
 $env:MYRENDERER_SUN_ELEVATION='8'; $env:MYRENDERER_SUN_AZIMUTH='120'
-build-ci-msvc/Release/MyRenderer.exe assets/scenes/18_atmosphere_sky.myscene
+build-ci-msvc/Release/MyRenderer.exe assets/scenes/fixtures/18_atmosphere_sky.myscene
 ```
 
 ### 渲染：系数对光谱做了什么，是记录下来的而不是假设的
@@ -131,7 +131,7 @@ Inspector 的 `Atmosphere` 分组按上面的范围暴露 `Analytic Rayleigh/Mie
 
 ### Aerial Perspective 的 On/Off 对照
 
-同一机位、同一 960x540 分辨率、同一金时刻参数（sun elevation 14 / azimuth 128 / turbidity 1.4 / sky intensity 3.0）下，关闭时地面一直铺到地平线、远景与近景反差相同；开启后远处地面与柱子失去对比度、向天空色靠拢，天空与地面在地平线处不再硬碰硬。scale height 取 12 世界单位，是为了在这个只有约 17 单位进深的夹具里让效果可见；`assets/scenes/18_atmosphere_sky.myscene` 里写的是 8。
+同一机位、同一 960x540 分辨率、同一金时刻参数（sun elevation 14 / azimuth 128 / turbidity 1.4 / sky intensity 3.0）下，关闭时地面一直铺到地平线、远景与近景反差相同；开启后远处地面与柱子失去对比度、向天空色靠拢，天空与地面在地平线处不再硬碰硬。scale height 取 12 世界单位，是为了在这个只有约 17 单位进深的夹具里让效果可见；`assets/scenes/fixtures/18_atmosphere_sky.myscene` 里写的是 8。
 
 ![Aerial Perspective 开关对照：硬地平线 / 远景融入天空](media/p1a-aerial-perspective-on-off.png)
 
@@ -144,11 +144,11 @@ $env:MYRENDERER_SKY_TURBIDITY='1.4'; $env:MYRENDERER_SKY_INTENSITY='3.0'
 
 $env:MYRENDERER_AERIAL_PERSPECTIVE='0'
 $env:MYRENDERER_SCREENSHOT='build-ci-msvc/p1a-aerial-before.png'
-build-ci-msvc/Release/MyRenderer.exe assets/scenes/18_atmosphere_sky.myscene
+build-ci-msvc/Release/MyRenderer.exe assets/scenes/fixtures/18_atmosphere_sky.myscene
 
 $env:MYRENDERER_AERIAL_PERSPECTIVE='1'; $env:MYRENDERER_AERIAL_SCALE_HEIGHT='12'
 $env:MYRENDERER_SCREENSHOT='build-ci-msvc/p1a-aerial-after.png'
-build-ci-msvc/Release/MyRenderer.exe assets/scenes/18_atmosphere_sky.myscene
+build-ci-msvc/Release/MyRenderer.exe assets/scenes/fixtures/18_atmosphere_sky.myscene
 ```
 
 两张 960x540 截图用 `System.Drawing` 并排合成后写入 `docs/media/p1a-aerial-perspective-on-off.png`（中文标注用 `Microsoft YaHei`）。这两栏都能从当前代码直接重拍，与下面那张关键光对照不同。
@@ -166,7 +166,7 @@ $env:MYRENDERER_SMOKE_TEST='1'; $env:MYRENDERER_RENDER_WIDTH='960'; $env:MYRENDE
 $env:MYRENDERER_SUN_ELEVATION='10'; $env:MYRENDERER_SUN_AZIMUTH='120'
 $env:MYRENDERER_SKY_TURBIDITY='0.8'; $env:MYRENDERER_SKY_INTENSITY='2.4'
 $env:MYRENDERER_SCREENSHOT='build-ci-msvc/p1a-keylight-after-golden.png'
-build-ci-msvc/Release/MyRenderer.exe assets/scenes/18_atmosphere_sky.myscene
+build-ci-msvc/Release/MyRenderer.exe assets/scenes/fixtures/18_atmosphere_sky.myscene
 ```
 
 左栏来自接入 `uLightColor` 之前的工作树状态，该状态未入库（仓库里只保留了 `build-ci-msvc/p1a-keylight-before-golden.png` 这张截图）。要重拍左栏，需要临时把 `Renderer::render` 里的 `lightColor` 退回 `glm::vec3(1.0f)` 后按同一组环境变量再拍一张；注意 `MYRENDERER_ATMOSPHERE='0'` 不能替代这一步，那会换成打包的 HDR 环境、天空也跟着变。两张 960x540 截图用 `System.Drawing` 并排合成后写入 `docs/media/p1a-atmosphere-keylight-before-after.png`（中文标注用 `Microsoft YaHei`）。
@@ -180,7 +180,7 @@ $env:MYRENDERER_REFERENCE_COMPARE_DIR='build-ci-msvc/p1a-atmosphere-comparison'
 $env:MYRENDERER_REFERENCE_SPP='512'; $env:MYRENDERER_REFERENCE_MAX_DEPTH='8'
 $env:MYRENDERER_RENDER_WIDTH='256'; $env:MYRENDERER_RENDER_HEIGHT='256'
 $env:MYRENDERER_SUN_ELEVATION='8'; $env:MYRENDERER_SUN_AZIMUTH='120'
-build-ci-msvc/Release/MyRenderer.exe assets/scenes/18_atmosphere_sky.myscene
+build-ci-msvc/Release/MyRenderer.exe assets/scenes/fixtures/18_atmosphere_sky.myscene
 ```
 
 ## 验证
@@ -211,21 +211,21 @@ build-ci-msvc/Release/MyRenderer.exe assets/scenes/18_atmosphere_sky.myscene
 
 ## 复现命令
 
-`assets/scenes/18_atmosphere_sky.myscene` 是外景夹具：一块开阔地面、一个球体、一个立方体、一根柱子，大气启用。太阳、turbidity 与强度可以在命令行上覆盖：
+`assets/scenes/fixtures/18_atmosphere_sky.myscene` 是外景夹具：一块开阔地面、一个球体、一个立方体、一根柱子，大气启用。太阳、turbidity 与强度可以在命令行上覆盖：
 
 ```powershell
 # 正午固定截图
 $env:MYRENDERER_SMOKE_TEST='1'; $env:MYRENDERER_RENDER_WIDTH='960'; $env:MYRENDERER_RENDER_HEIGHT='540'
 $env:MYRENDERER_SCREENSHOT='build-ci-msvc/p1a-sky-noon.png'
 $env:MYRENDERER_SUN_ELEVATION='52'; $env:MYRENDERER_SKY_TURBIDITY='0.6'; $env:MYRENDERER_SKY_INTENSITY='2.4'
-build-ci-msvc/Release/MyRenderer.exe assets/scenes/18_atmosphere_sky.myscene
+build-ci-msvc/Release/MyRenderer.exe assets/scenes/fixtures/18_atmosphere_sky.myscene
 
 # Raster / Path Traced 对照：triptych、difference 与 comparison.json
 $env:MYRENDERER_REFERENCE_COMPARE_DIR='build-ci-msvc/p1a-atmosphere-comparison'
 $env:MYRENDERER_REFERENCE_SPP='512'; $env:MYRENDERER_REFERENCE_MAX_DEPTH='8'
 $env:MYRENDERER_RENDER_WIDTH='256'; $env:MYRENDERER_RENDER_HEIGHT='256'
 $env:MYRENDERER_SUN_ELEVATION='8'; $env:MYRENDERER_SUN_AZIMUTH='120'
-build-ci-msvc/Release/MyRenderer.exe assets/scenes/18_atmosphere_sky.myscene
+build-ci-msvc/Release/MyRenderer.exe assets/scenes/fixtures/18_atmosphere_sky.myscene
 ```
 
 可用的覆盖项是 `MYRENDERER_SUN_ELEVATION`、`MYRENDERER_SUN_AZIMUTH`、`MYRENDERER_SKY_TURBIDITY`、`MYRENDERER_SKY_INTENSITY`、`MYRENDERER_ENVIRONMENT_INTENSITY`、`MYRENDERER_ATMOSPHERE`，以及切片 2 的 `MYRENDERER_AERIAL_PERSPECTIVE`、`MYRENDERER_AERIAL_STRENGTH`、`MYRENDERER_AERIAL_SCALE_HEIGHT`。它们在场景加载**之后**应用，因为打开场景会整体替换 `RendererSettings`。

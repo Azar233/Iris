@@ -1,5 +1,10 @@
 #include "optics/Atmosphere.h"
 
+// Included before the standard library headers on purpose: it defines GLSL-compatible shims for
+// `clamp` / `sqrt` / `floor` / `smoothstep` and releases them again at its end, so this order is
+// what keeps those names confined to the header's own body.
+#include "optics/CloudParams.h"
+
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
@@ -43,6 +48,31 @@ std::uint32_t starHash(std::uint32_t x) {
     x *= 0x846ca68bU;
     return x ^ (x >> 16U);
 }
+
+} // namespace
+
+// The cloud density field lives in `optics/CloudFieldCpp.h`, which is written to be included verbatim
+// by both this translation unit and `shaders/cloud_layer.frag`. The public entry points below are
+// thin wrappers over it, so the analytic layer here and the CPU reference raymarcher in
+// `CloudReference.cpp` and the GPU march all evaluate one implementation rather than three
+// transcriptions that can drift apart.
+float worley2x2(float x, float y, int period) {
+    return myrenderer_cloud_worley(x, y, period);
+}
+
+float cloudShape(float tileX, float tileY, int period) {
+    return myrenderer_cloud_base_shape(tileX, tileY, period);
+}
+
+float cloudDetailShape(float tileX, float tileY, int period) {
+    return myrenderer_cloud_detail_shape(tileX, tileY, period);
+}
+
+float cloudWeather(float tileX, float tileY, int channel) {
+    return myrenderer_cloud_weather(tileX, tileY, channel);
+}
+
+namespace {
 
 glm::vec3 nightRadiance(const glm::vec3& direction, const AtmosphereParameters& parameters) {
     const float visibility = nightVisibility(parameters);
@@ -224,7 +254,7 @@ float moonKeyStrength(const AtmosphereParameters& parameters) {
     return nightVisibility(parameters) * std::max(parameters.moonIntensity, 0.0f) * 0.55f;
 }
 
-bool parametersMatch(const AtmosphereParameters& a, const AtmosphereParameters& b) {
+bool environmentParametersMatch(const AtmosphereParameters& a, const AtmosphereParameters& b) {
     if (a.enabled != b.enabled) return false;
     if (a.nightSkyEnabled != b.nightSkyEnabled) return false;
     // The sun tolerances are angular degrees of movement; the rest are absolute parameter units.
@@ -238,13 +268,59 @@ bool parametersMatch(const AtmosphereParameters& a, const AtmosphereParameters& 
         && std::abs(a.sunIntensity - b.sunIntensity) < parameterTolerance
         && std::abs(a.groundAlbedo - b.groundAlbedo) < parameterTolerance
         && std::abs(a.moonIntensity - b.moonIntensity) < parameterTolerance
-        && std::abs(a.starIntensity - b.starIntensity) < parameterTolerance
+        && std::abs(a.starIntensity - b.starIntensity) < parameterTolerance;
+}
+
+bool parametersMatch(const AtmosphereParameters& a, const AtmosphereParameters& b) {
+    constexpr float parameterTolerance = 0.01f;
+    return environmentParametersMatch(a, b)
         // Aerial perspective does not change the environment cubemap, but it does change what a
         // cached sky is used *for*, so a consumer caching derived data must see it as a change.
         && a.aerialPerspectiveEnabled == b.aerialPerspectiveEnabled
         && std::abs(a.aerialPerspectiveStrength - b.aerialPerspectiveStrength) < parameterTolerance
         && std::abs(a.aerialPerspectiveScaleHeight - b.aerialPerspectiveScaleHeight)
-            < parameterTolerance;
+            < parameterTolerance
+        // The cloud layer is part of the environment it is composited into, so every one of its
+        // parameters belongs in the full rendered-field cache key. Wind offsets are world-unit
+        // translations; the raster environment uses environmentParametersMatch instead.
+        && a.cloudsEnabled == b.cloudsEnabled
+        && std::abs(a.cloudBaseHeight - b.cloudBaseHeight) < parameterTolerance
+        && std::abs(a.cloudTopHeight - b.cloudTopHeight) < parameterTolerance
+        && std::abs(a.cloudCoverage - b.cloudCoverage) < parameterTolerance
+        && std::abs(a.cloudDensity - b.cloudDensity) < parameterTolerance
+        && std::abs(a.cloudWindOffsetX - b.cloudWindOffsetX) < parameterTolerance
+        && std::abs(a.cloudWindOffsetZ - b.cloudWindOffsetZ) < parameterTolerance
+        && std::abs(a.cloudFeatureScale - b.cloudFeatureScale) < parameterTolerance
+        && std::abs(a.cloudNoisePeriod - b.cloudNoisePeriod) < parameterTolerance
+        // The weather map's controls belong in the key for the same reason the wind offsets do: they
+        // move density across the sky, so a consumer caching anything derived from the layer has to
+        // see them change.
+        && std::abs(a.cloudWeatherScale - b.cloudWeatherScale) < parameterTolerance
+        && std::abs(a.cloudCoverageVariation - b.cloudCoverageVariation) < parameterTolerance
+        && std::abs(a.cloudType - b.cloudType) < parameterTolerance
+        && std::abs(a.cloudTypeVariation - b.cloudTypeVariation) < parameterTolerance
+        && std::abs(a.cloudHeightVariation - b.cloudHeightVariation) < parameterTolerance
+        && std::abs(a.cloudDetailStrength - b.cloudDetailStrength) < parameterTolerance
+        && std::abs(a.cloudDetailEdge - b.cloudDetailEdge) < parameterTolerance
+        // The tier changes the integral's step count, so it moves pixels even though no field
+        // parameter changed. A cache that ignored it would hand a High-tier consumer a Low-tier bake.
+        && a.cloudQuality == b.cloudQuality
+        && a.cloudHalfResolution == b.cloudHalfResolution
+        && a.cloudTemporalEnabled == b.cloudTemporalEnabled
+        && a.cloudShadowsEnabled == b.cloudShadowsEnabled
+        && a.cloudGodRaysEnabled == b.cloudGodRaysEnabled
+        && a.cloudDeterministic == b.cloudDeterministic
+        && a.cloudOfflineNoise == b.cloudOfflineNoise
+        && std::abs(a.cloudGodRaysStrength - b.cloudGodRaysStrength) < parameterTolerance
+        && std::abs(a.cloudHorizonFadeDegrees - b.cloudHorizonFadeDegrees) < parameterTolerance
+        // The two ambient values change what every cloud texel is lit by, so they are part of the
+        // environment too.
+        && std::abs(a.cloudAmbientElevationDegrees - b.cloudAmbientElevationDegrees)
+            < parameterTolerance
+        && std::abs(a.cloudAmbientScale - b.cloudAmbientScale) < parameterTolerance
+        && std::abs(a.cloudVolumetricAmbientScale - b.cloudVolumetricAmbientScale)
+            < parameterTolerance
+        && std::abs(a.cloudVolumetricSunScale - b.cloudVolumetricSunScale) < parameterTolerance;
 }
 
 glm::vec3 sunTransmittance(const AtmosphereParameters& parameters) {
@@ -360,6 +436,148 @@ glm::vec3 skyRadiance(const glm::vec3& viewDirection, const AtmosphereParameters
     return scatteringRadiance(direction, parameters) + nightRadiance(direction, parameters);
 }
 
+float cloudPhase(float cosViewSun) {
+    // Double-lobed Henyey-Greenstein. Forward scattering gives the silver lining where the layer
+    // sits between the camera and the sun; the weaker backward lobe keeps the anti-solar side from
+    // going flat. The literature spans roughly g=0.7..0.85 forward and -0.2..-0.4 backward with a
+    // near-equal blend; the values here are the middle of those ranges and are *not* a Mie solution
+    // -- the analytic sky uses its own Mie phase, so the two models are not strictly consistent.
+    constexpr float forwardG = 0.8f;
+    constexpr float backwardG = -0.3f;
+    constexpr float backwardBlend = 0.5f;
+    const float clamped = std::clamp(cosViewSun, -1.0f, 1.0f);
+    const auto henyeyGreenstein = [](float cosine, float g) {
+        const float g2 = g * g;
+        const float denominator = 1.0f + g2 - 2.0f * g * cosine;
+        return (1.0f - g2) / (4.0f * pi * std::max(denominator * std::sqrt(std::max(denominator, 1.0e-6f)), 1.0e-6f));
+    };
+    const float forward = henyeyGreenstein(clamped, forwardG);
+    const float backward = henyeyGreenstein(clamped, backwardG);
+    const float mixed = forward * (1.0f - backwardBlend) + backward * backwardBlend;
+    // Normalised by the isotropic value so a phase of this function averages about 1 and the
+    // layer's brightness does not depend on which lobe happens to be tuned.
+    return mixed * 4.0f * pi;
+}
+
+CloudLayer cloudLayer(
+    const glm::vec3& viewDirection,
+    const AtmosphereParameters& parameters,
+    float cameraHeight
+) {
+    CloudLayer result;
+    if (!parameters.cloudsEnabled || !parameters.enabled) return result;
+
+    glm::vec3 direction;
+    if (!normaliseDirection(viewDirection, direction)) return result;
+    // The projection diverges as the view ray approaches the layer's plane. Below the horizon the
+    // intersection lies behind the camera and there is nothing to draw, which is also what hides
+    // the error: the layer is treated as a plane at its own height, so its true edge is never
+    // reached. See the header for the scope this implies.
+    if (direction.y <= 0.0f) return result;
+
+    const float base = std::max(parameters.cloudBaseHeight, 0.0f);
+    const float top = std::max(parameters.cloudTopHeight, base);
+    const float slabThickness = top - base;
+    // The distance at which the view ray crosses each slab boundary, and the sample point between
+    // them. Sampling at the midpoint of the *crossing* rather than at a fixed height is what makes
+    // the layer's vertical profile vary across the sky without a second march: a ray that crosses
+    // the slab high reads a thin part of the profile, a ray that crosses it low reads a dense one.
+    const float distanceToBase = std::max((base - cameraHeight) / direction.y, 0.0f);
+    const float distanceToTop = std::max((top - cameraHeight) / direction.y, 0.0f);
+    const float distanceToMidPlane = 0.5f * (distanceToBase + distanceToTop);
+    const glm::vec3 samplePoint = glm::vec3(direction.x, direction.y, direction.z)
+        * distanceToMidPlane + glm::vec3(0.0f, cameraHeight, 0.0f);
+
+    // One density evaluation, from the same shared field the CPU reference raymarcher and the GPU
+    // march evaluate. The profile is removed again because this layer applies the slab crossing as
+    // an explicit thickness term below rather than through the vertical profile -- and it is removed
+    // by the shared profile function itself, with the same weather-driven type blend and height
+    // slide the density applied, so the division cannot leave a residue the way a re-derived profile
+    // would when a later step changes the profile's shape.
+    const MyRendererCloudParams layerParameters = cloud::makeCloudParams(parameters);
+    const float sampledDensity = myrenderer_cloud_density(
+        samplePoint.x, samplePoint.y, samplePoint.z, layerParameters);
+    const float profile = myrenderer_cloud_layer_profile(
+        samplePoint.x, samplePoint.y, samplePoint.z, layerParameters);
+    const float shapeMask = profile > 1.0e-6f
+        ? std::min(sampledDensity / profile, 1.0f)
+        : 0.0f;
+    if (shapeMask <= 0.0f) return result;
+
+    // How much of the slab this ray crosses, relative to a vertical crossing: the geometric path
+    // length through the layer. A grazing ray passes through more cloud, which is what makes the
+    // layer thicken toward the horizon, and the clamp keeps a ray that never enters the slab from
+    // reporting an infinite crossing.
+    const float verticalCrossing = std::max(slabThickness, 1.0e-3f);
+    const float slabPathLength = distanceToTop - distanceToBase;
+    const float thicknessRatio = std::clamp(slabPathLength / verticalCrossing, 0.0f, 1.0f);
+    result.pathLength = slabPathLength;
+    const float geometricMask = saturate(shapeMask * thicknessRatio);
+
+    const float density = std::max(parameters.cloudDensity, 0.0f);
+    if (density <= 0.0f) return result;
+
+    const glm::vec3 sun = sunDirection(parameters);
+    // A sun at or below the horizon does not light the layer, so an evening layer fades out rather
+    // than glowing from underneath.
+    const float sunAboveHorizon = saturate(sun.y * 12.0f);
+    const float phase = cloudPhase(glm::dot(direction, sun));
+    const glm::vec3 keyLight = skyLightColor(parameters);
+    const float keyStrength = std::max(parameters.sunIntensity, 0.0f) * sunAboveHorizon;
+
+    // Ambient is the sky the cloud actually sits in, not the zenith.
+    //
+    // This is geometry, not a tuning constant. A cloud at 2 km is lit by the dense, bright air below
+    // and around it: at the horizon the sky's own radiance is several times its zenith value, so a
+    // cloud lit only by the zenith came out at 4% of the sky it was covering and read as a black
+    // stain rather than a cloud. `ambientDirection` is tilted down towards the horizon and towards
+    // whichever way the sun is, which is where the multiply-scattered light that lights a cloud's
+    // underside comes from -- and it costs one sky evaluation, the same as before.
+    const float ambientElevation = glm::radians(
+        std::clamp(parameters.cloudAmbientElevationDegrees, 0.0f, 89.0f));
+    const float sunAzimuth = std::atan2(sun.x, sun.z);
+    const glm::vec3 ambientDirection(
+        std::cos(ambientElevation) * std::sin(sunAzimuth),
+        std::sin(ambientElevation),
+        std::cos(ambientElevation) * std::cos(sunAzimuth)
+    );
+    const glm::vec3 ambientSky = scatteringRadiance(ambientDirection, parameters);
+
+    const float horizonFadeDegrees = std::max(parameters.cloudHorizonFadeDegrees, 0.0f);
+    const float elevationDegrees = glm::degrees(std::asin(std::clamp(direction.y, 0.0f, 1.0f)));
+    const float horizonFade = horizonFadeDegrees <= 0.0f
+        ? 1.0f
+        : saturate(elevationDegrees / horizonFadeDegrees);
+
+    result.mask = saturate(geometricMask * density * horizonFade);
+    // The phase function peaks near 23 at the sun, so the key term is scaled well below the ambient
+    // term: the silver lining should read as a bright rim, not as a hole burned through the layer.
+    result.ambient = (keyLight * (0.08f * keyStrength * phase)
+        + ambientSky * std::max(parameters.cloudAmbientScale, 0.0f)) * result.mask;
+    result.minimumCameraHeight = base;
+    return result;
+}
+
+glm::vec3 environmentRadiance(
+    const glm::vec3& viewDirection,
+    const AtmosphereParameters& parameters,
+    float cameraHeight
+) {
+    if (!parameters.enabled) return glm::vec3(0.0f);
+    const glm::vec3 sky = skyRadiance(viewDirection, parameters);
+    const CloudLayer layer = cloudLayer(viewDirection, parameters, cameraHeight);
+    if (layer.mask <= 0.0f) {
+        // The sun disk stays separate from the sky so a caller that only wants the atmosphere can
+        // skip it; a clear direction composes exactly as it did before clouds existed.
+        return sky + sunDiskRadiance(viewDirection, parameters);
+    }
+    // Attenuate rather than replace: the sky and the disk stay behind the cloud, which is what
+    // keeps the sun visible through a gap and stops the layer from reading as a decal.
+    return sky * (1.0f - layer.mask)
+        + sunDiskRadiance(viewDirection, parameters) * (1.0f - layer.mask)
+        + layer.ambient;
+}
+
 float sunAngularRadiusDegrees() {
     return sunAngularRadius;
 }
@@ -376,14 +594,12 @@ glm::vec3 sunIrradiance(const AtmosphereParameters& parameters) {
 std::vector<glm::vec3> generateEquirect(
     const AtmosphereParameters& parameters,
     int width,
-    int height
+    int height,
+    float cameraHeight
 ) {
     std::vector<glm::vec3> pixels;
     if (width <= 0 || height <= 0) return pixels;
     pixels.resize(static_cast<std::size_t>(width) * static_cast<std::size_t>(height));
-    // The lower hemisphere is one view-independent value, so it is resolved once rather than per
-    // texel: the ground integral costs nine scattering evaluations.
-    const glm::vec3 ground = skyRadiance(glm::vec3(0.0f, -1.0f, 0.0f), parameters);
     for (int y = 0; y < height; ++y) {
         // Row 0 is the +Y pole, matching the file loader's convention.
         const float theta = pi * (static_cast<float>(y) + 0.5f) / static_cast<float>(height);
@@ -396,15 +612,81 @@ std::vector<glm::vec3> generateEquirect(
                 cosTheta,
                 sinTheta * std::cos(phi)
             );
-            // A ground texel cannot see the sun disk: the ground occludes it.
+            // `environmentRadiance` already resolves the lower hemisphere as the ground's reflected
+            // radiance and leaves the sun disk out of it, so a ground texel cannot see the disk
+            // even though the call no longer special-cases it here.
             pixels[static_cast<std::size_t>(y) * static_cast<std::size_t>(width)
-                   + static_cast<std::size_t>(x)] = direction.y < 0.0f
-                ? ground
-                : skyRadiance(direction, parameters)
-                    + sunDiskRadiance(direction, parameters);
+                   + static_cast<std::size_t>(x)] =
+                environmentRadiance(direction, parameters, cameraHeight);
         }
     }
     return pixels;
+}
+
+CloudTierBudget cloudTierBudget(CloudQualityTier tier) {
+    CloudTierBudget budget;
+    // The ends of the brief's measured ranges: 24..48 primary steps, 4..6 light steps. The low tier
+    // is the bottom of the range rather than below it -- a budget under 24 steps puts the sample
+    // spacing through a 4800-unit slab at over 200 units, which is coarser than the layer's own
+    // finest feature and turns the march into a different function rather than a cheaper one.
+    budget.primarySteps = tier == CloudQualityTier::High ? 48 : 24;
+    budget.lightSteps = tier == CloudQualityTier::High ? 6 : 4;
+    return budget;
+}
+
+void applyCloudPreset(AtmosphereParameters& parameters, CloudPreset preset) {
+    // Heights use the atmosphere's scene units. The fixed-camera acceptance calibrates coverage
+    // for the 3D field; these presets do not establish a physical conversion to metres.
+    parameters.cloudsEnabled = true;
+    switch (preset) {
+    case CloudPreset::Cumulus:
+        parameters.cloudBaseHeight = 3200.0f;
+        parameters.cloudTopHeight = 8000.0f;
+        parameters.cloudFeatureScale = 6400.0f;
+        parameters.cloudCoverage = 0.60f;
+        parameters.cloudDensity = 1.0f;
+        parameters.cloudWeatherScale = 25600.0f;
+        parameters.cloudCoverageVariation = 0.90f;
+        parameters.cloudType = 0.80f;
+        parameters.cloudTypeVariation = 0.45f;
+        parameters.cloudHeightVariation = 0.30f;
+        parameters.cloudDetailStrength = 0.45f;
+        parameters.cloudDetailEdge = 0.15f;
+        break;
+    case CloudPreset::Stratus:
+        // A shallow deck: a quarter of the cumulus thickness, wider features, more coverage and much
+        // less weather contrast, which is what "even overcast with some breaks" is as numbers.
+        parameters.cloudBaseHeight = 1200.0f;
+        parameters.cloudTopHeight = 2600.0f;
+        parameters.cloudFeatureScale = 9600.0f;
+        parameters.cloudCoverage = 0.95f;
+        parameters.cloudDensity = 0.85f;
+        parameters.cloudWeatherScale = 38400.0f;
+        parameters.cloudCoverageVariation = 0.50f;
+        parameters.cloudType = 0.0f;
+        parameters.cloudTypeVariation = 0.10f;
+        parameters.cloudHeightVariation = 0.12f;
+        parameters.cloudDetailStrength = 0.25f;
+        parameters.cloudDetailEdge = 0.05f;
+        break;
+    case CloudPreset::Cirrus:
+        // Thin and high. `cloudTypeVariation` is zero because a cirrus sheet is one texture across
+        // the whole sky -- letting the weather map swing its type would make some of it convective,
+        // which at this thickness reads as a rendering artifact rather than as weather.
+        parameters.cloudBaseHeight = 12000.0f;
+        parameters.cloudTopHeight = 14500.0f;
+        parameters.cloudFeatureScale = 16000.0f;
+        parameters.cloudCoverage = 0.35f;
+        parameters.cloudDensity = 0.30f;
+        parameters.cloudWeatherScale = 64000.0f;
+        parameters.cloudCoverageVariation = 0.80f;
+        parameters.cloudType = 0.0f;
+        parameters.cloudTypeVariation = 0.0f;
+        parameters.cloudHeightVariation = 0.10f;
+        parameters.cloudDetailStrength = 0.35f;
+        parameters.cloudDetailEdge = 0.05f;
+        break;
+    }
 }
 
 } // namespace atmosphere

@@ -51,7 +51,7 @@ SceneSnapshot captureSceneSnapshot(
         scene,
         camera,
         aspectRatio,
-        captureSceneLighting(settings)
+        captureSceneLighting(settings, camera.position().y)
     );
 }
 

@@ -1,3 +1,5 @@
+#include "asset/InputManifest.h"
+#include <assimp/DefaultIOSystem.h>
 #include "io/AssimpImporter.h"
 #include "io/GltfMaterialExtensions.h"
 
@@ -26,6 +28,19 @@
 #include <glm/matrix.hpp>
 
 namespace {
+class CaptureIO final : public Assimp::IOSystem {
+public:
+    bool Exists(const char* path) const override {return io_.Exists(path);}
+    char getOsSeparator() const override {return io_.getOsSeparator();}
+    Assimp::IOStream* Open(const char* path,const char* mode="rb") override {
+        capture::recordInput(path);
+        return io_.Open(path,mode);
+    }
+    void Close(Assimp::IOStream* stream) override {io_.Close(stream);}
+private:
+    Assimp::DefaultIOSystem io_;
+};
+
 
 void addWarning(
     std::string& warnings,
@@ -522,6 +537,7 @@ ModelImportResult AssimpImporter::load(const std::filesystem::path& path) const 
     }
 
     Assimp::Importer importer;
+    if(capture::activeManifest) importer.SetIOHandler(new CaptureIO());
     constexpr unsigned int flags =
         aiProcess_CalcTangentSpace
         | aiProcess_JoinIdenticalVertices

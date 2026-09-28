@@ -1,3 +1,4 @@
+#include "asset/InputManifest.h"
 #include "render/EnvironmentMap.h"
 
 #include <chrono>
@@ -28,6 +29,7 @@ bool loadRadianceImage(
     const std::filesystem::path& path,
     EquirectangularHdr& image
 ) {
+    capture::recordInput(path);
     if (path.extension() == ".exr") {
         float* rgba = nullptr;
         const char* error = nullptr;
@@ -269,14 +271,30 @@ void EnvironmentMap::useAtmosphere(const atmosphere::AtmosphereParameters& param
     // being recomputed for every sample of the cubemap, irradiance and prefilter passes (that is
     // millions of samples, and the ground integral costs nine scattering evaluations).
     const glm::vec3 ground = atmosphere::skyRadiance(glm::vec3(0.0f, -1.0f, 0.0f), parameters);
+    // The diffuse probe is deliberately cloudless: the layer is a bright attenuator, so folding its
+    // scattered term into the irradiance would add light the key light never produced. What the
+    // layer correctly removes from the sky is C3 light-transport work. `skyOnly` therefore keeps
+    // the pre-cloud contract that sky-based ambient had before this slice.
     const auto skyOnly = [parameters, ground](const glm::vec3& direction) {
         if (direction.y < 0.0f) return ground;
         return atmosphere::skyRadiance(direction, parameters);
     };
+    // The visible sky the cubemap bakes. It is the *cloudless* sky plus the sun disk, because the
+    // layer is now marched per frame by `CloudLayerRenderer` and composited over the scene before
+    // tone mapping. Baking clouds in as well would draw the layer twice -- once as a coarse cubemap
+    // and once as a full-resolution march -- which is exactly what a frame with both switched on
+    // looked like: a washed-out white sky.
+    //
+    // The consequence worth stating is that the cubemap is now independent of the cloud parameters,
+    // so `updateAtmosphereEnvironment` no longer rebuilds for a cloud edit. That removes C1's ~6 s
+    // stall, and it is the main reason the march replaced the bake.
+    const auto skyAndDisk = [parameters, ground](const glm::vec3& direction) {
+        const glm::vec3 sky = direction.y < 0.0f
+            ? ground : atmosphere::skyRadiance(direction, parameters);
+        return sky + atmosphere::sunDiskRadiance(direction, parameters);
+    };
     build(
-        [skyOnly, parameters](const glm::vec3& direction) {
-            return skyOnly(direction) + atmosphere::sunDiskRadiance(direction, parameters);
-        },
+        skyAndDisk,
         // The BRDF LUT depends only on roughness and view angle, so a sun change keeps it.
         false,
         skyOnly

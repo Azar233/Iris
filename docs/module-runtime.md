@@ -210,7 +210,7 @@ $env:MYRENDERER_SMOKE_TEST='1'
 $env:MYRENDERER_EDITOR_WINDOW_WIDTH='1440'; $env:MYRENDERER_EDITOR_WINDOW_HEIGHT='900'
 $env:MYRENDERER_EDITOR_SCREENSHOT_TAB='modules'
 $env:MYRENDERER_EDITOR_SCREENSHOT='docs/media/p1-workspace-modules.png'
-build-ci-msvc/Release/MyRenderer.exe assets/scenes/18_atmosphere_sky.myscene
+build-ci-msvc/Release/MyRenderer.exe assets/scenes/fixtures/18_atmosphere_sky.myscene
 ```
 
 Inspector 的 `Module` 页在未选择模块时是显式空状态，而不是隐藏控件：选择框显示 `None`，`Seed` 字段仍然可见并保留上一次的值，页面写明未激活时不改写编辑态场景。
@@ -222,7 +222,7 @@ $env:MYRENDERER_SMOKE_TEST='1'
 $env:MYRENDERER_EDITOR_WINDOW_WIDTH='1440'; $env:MYRENDERER_EDITOR_WINDOW_HEIGHT='900'
 $env:MYRENDERER_EDITOR_SCREENSHOT_TAB='module'
 $env:MYRENDERER_EDITOR_SCREENSHOT='docs/media/c1-module-inspector.png'
-build-ci-msvc/Release/MyRenderer.exe assets/scenes/18_atmosphere_sky.myscene
+build-ci-msvc/Release/MyRenderer.exe assets/scenes/fixtures/18_atmosphere_sky.myscene
 ```
 
 除上面两张入库插图外，历史截图只写在构建目录，均未改写版本化 UI 或渲染固定图：Modules 页 1440×900 与 1100×680 的 `c1a-modules-panel.png` / `c1a-modules-panel-1100x680.png`，模块预览第 0 帧与第 6 帧的 `c1b-module-frame0.png` / `c1b-module-frame6.png`。
@@ -272,12 +272,12 @@ $env:MYRENDERER_SMOKE_TEST='1'
 $env:MYRENDERER_EDITOR_WINDOW_WIDTH='1440'; $env:MYRENDERER_EDITOR_WINDOW_HEIGHT='900'
 $env:MYRENDERER_EDITOR_SCREENSHOT_TAB='modules'
 $env:MYRENDERER_EDITOR_SCREENSHOT='docs/media/p1-workspace-modules.png'
-build-ci-msvc/Release/MyRenderer.exe assets/scenes/18_atmosphere_sky.myscene
+build-ci-msvc/Release/MyRenderer.exe assets/scenes/fixtures/18_atmosphere_sky.myscene
 
 # 插图重拍：Inspector 的 Module 页
 $env:MYRENDERER_EDITOR_SCREENSHOT_TAB='module'
 $env:MYRENDERER_EDITOR_SCREENSHOT='docs/media/c1-module-inspector.png'
-build-ci-msvc/Release/MyRenderer.exe assets/scenes/18_atmosphere_sky.myscene
+build-ci-msvc/Release/MyRenderer.exe assets/scenes/fixtures/18_atmosphere_sky.myscene
 ```
 
 ## 下一步

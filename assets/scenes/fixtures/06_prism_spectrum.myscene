@@ -1,0 +1,11 @@
+{
+  "format": "MyRendererScene",
+  "version": 1,
+  "camera": {"target": [0, 0, 0], "yawDegrees": 0, "pitchDegrees": 0, "distance": 4.8, "fieldOfViewDegrees": 35},
+  "renderer": {"backgroundColor": [0.0015, 0.002, 0.0025], "showGrid": false, "showAxes": false, "showPrismIncidentBeam": true, "skyboxEnabled": false, "shadowsEnabled": false, "pbrEnabled": true, "iblEnabled": true, "transmissionEnabled": true, "environmentIntensity": 0.58, "refractionScale": 0.28, "refractionSteps": 20, "geometricThicknessEnabled": true, "toneMapping": true, "bloom": true, "bloomThreshold": 0.75, "bloomIntensity": 0.22, "prismBeamOutputLength": 2.4, "prismBeamWidth": 0.055, "prismBeamIntensity": 5.0, "prismBeamEdgeSoftness": 0.72, "prismBeamBloomContribution": 0.35},
+  "playback": {"prismEnabled": true, "prismCameraLocked": true, "prismPreset": 0, "prismParameters": {"beamAngleDegrees": 7.65, "centralIndexOfRefraction": 1.52, "dispersion": 0.33, "spectralSampleCount": 21, "spectrumMode": 0, "whitePointKelvin": 6500, "attenuationDistance": 8.0, "attenuationColor": [0.88, 0.96, 1.0]}},
+  "entities": [
+    {"id": 1, "name": "Spectral Prism", "parent": 0, "model": "../../models/prism_spectrum.gltf", "transform": {"scale": [0.875, 0.875, 0.875]}},
+    {"id": 2, "name": "Optional Prism Mesh", "parent": 0, "model": "../../models/prism_spectrum.gltf", "visible": false}
+  ]
+}

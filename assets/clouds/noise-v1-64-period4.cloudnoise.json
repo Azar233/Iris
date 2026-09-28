@@ -1,0 +1,12 @@
+{
+  "format": "MyRendererCloudNoise",
+  "version": 1,
+  "generator": "shared-worley3-perlin-fbm-v1",
+  "resolution": 64,
+  "period": 4,
+  "encoding": "rgba16-unorm-little-endian",
+  "channels": ["worley-body", "worley-secondary", "worley-detail", "perlin-fbm"],
+  "fingerprintAlgorithm": "fnv1a64",
+  "fingerprint": "4464bd382daa06f7",
+  "payloadBytes": 2097152
+}

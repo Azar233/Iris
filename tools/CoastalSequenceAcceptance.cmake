@@ -12,7 +12,7 @@ foreach(run IN ITEMS first second)
         else()
             set(padded "00${frame}")
         endif()
-        file(REMOVE "${directory}/frame_${padded}.png")
+        file(REMOVE "${directory}/frame_${padded}.png" "${directory}/frame_${padded}-report.json")
     endforeach()
     execute_process(
         COMMAND "${RENDERER}" raster-sequence "${JOB}" --output "${directory}/frame_{frame:04}"

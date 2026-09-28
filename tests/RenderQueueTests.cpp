@@ -115,7 +115,7 @@ int main() {
     try {
         std::filesystem::create_directories(root);
         const std::filesystem::path sourceRoot(MYRENDERER_SOURCE_DIR);
-        const std::filesystem::path scene = sourceRoot / "assets" / "scenes"
+        const std::filesystem::path scene = sourceRoot / "assets" / "scenes" / "fixtures"
             / "01_multi_model_hierarchy.myscene";
         const std::filesystem::path jobPath = root / "parity.renderjob";
         const std::filesystem::path outputStem = root / "output" / "frame_{frame:04}";

@@ -1,4 +1,5 @@
 #version 330 core
+#include "cloud_shadow_sample.glsl"
 
 // Must match `shadow::maximumCascadeCount`; declared before any use.
 const int MAX_SHADOW_CASCADES = 4;
@@ -266,6 +267,7 @@ void main() {
     // by the ray length: the two disagree by up to `1 / cos(angle)` away from the screen centre.
     float viewDepth = dot(worldPosition - uCameraPosition, uCameraForward);
     vec3 visibility = shadowVisibility(worldPosition, normal, lightDirection, viewDepth);
+    float cloudVisibility = cloudShadowTransmittance(worldPosition);
     vec3 caustics = causticRadiance(worldPosition);
 
     if (normalSample.a > 0.25 && normalSample.a < 0.75) {
@@ -274,20 +276,22 @@ void main() {
         float fresnelWater = f0Water + (1.0 - f0Water) * pow(1.0 - nDotVWater, 5.0);
         vec3 reflectionWater = textureLod(uPrefilteredEnvironmentMap,
             reflect(-viewDirection, normal), 1.5).rgb * uEnvironmentIntensity;
-        vec3 transmissionWater = vec3(0.015, 0.11, 0.16)
+        vec3 transmissionWater = vec3(0.015, 0.11, 0.16) * (0.35 + 0.65 * cloudVisibility)
             + texture(uIrradianceMap, normal).rgb * 0.045 * uEnvironmentIntensity;
         vec3 halfWater = normalize(lightDirection + viewDirection);
         float shadowWater = dot(visibility, vec3(0.333333));
         transmissionWater *= mix(0.55, 1.0, shadowWater);
         float sunGlint = pow(max(dot(normal, halfWater), 0.0), 128.0)
-            * max(dot(normal, lightDirection), 0.0) * uDiffuseStrength * shadowWater;
+            * max(dot(normal, lightDirection), 0.0) * uDiffuseStrength * shadowWater * cloudVisibility;
         vec3 colorWater = mix(transmissionWater, reflectionWater, fresnelWater)
             + uLightColor * sunGlint * 0.5;
-        colorWater = mix(colorWater, vec3(0.68, 0.82, 0.86), albedoSample.a);
+        colorWater = mix(colorWater, vec3(0.68, 0.82, 0.86)
+            * (0.35 + 0.65 * cloudVisibility), albedoSample.a);
         fragmentColor = vec4(colorWater, 1.0);
         return;
     }
 
+    visibility *= cloudVisibility;
     if (uStylizedEnabled) {
         float diffuseBand = stylizedBand(nDotL);
         float rim = stylizedRim(nDotV)

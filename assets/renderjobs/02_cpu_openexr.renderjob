@@ -1,7 +1,7 @@
 {
   "format": "MyRendererRenderJob",
   "schemaVersion": 1,
-  "scene": "../scenes/01_multi_model_hierarchy.myscene",
+  "scene": "../scenes/fixtures/01_multi_model_hierarchy.myscene",
   "renderer": "cpu-path-traced",
   "camera": "scene",
   "resolution": [32, 32],

@@ -15,6 +15,9 @@
 
 #include "render/Camera.h"
 #include "render/CausticsMap.h"
+#include "render/CloudLayerRenderer.h"
+#include "render/CloudShadowRenderer.h"
+#include "render/GodRaysRenderer.h"
 #include "render/DebugGrid.h"
 #include "render/SelectionOutline.h"
 #include "render/EnvironmentMap.h"
@@ -76,6 +79,15 @@ Renderer::Renderer(
     const std::filesystem::path& debugFragmentShaderPath
 ) : shader_(std::make_unique<Shader>(vertexShaderPath, fragmentShaderPath)),
     causticsMap_(std::make_unique<CausticsMap>(vertexShaderPath.parent_path())),
+    // Placed here rather than after the post-processor to match the declaration order: C++ initialises
+    // members in declaration order regardless of the list, so a list that disagrees is a reorder
+    // warning on GCC and, worse, a reader who believes the wrong order.
+    cloudLayer_(std::make_unique<CloudLayerRenderer>(
+        vertexShaderPath.parent_path() / "fullscreen.vert",
+        vertexShaderPath.parent_path() / "cloud_layer.frag"
+    )),
+    cloudShadow_(std::make_unique<CloudShadowRenderer>(vertexShaderPath.parent_path())),
+    godRays_(std::make_unique<GodRaysRenderer>(vertexShaderPath.parent_path())),
     debugGrid_(std::make_unique<DebugGrid>(debugVertexShaderPath, debugFragmentShaderPath)),
     selectionOutline_(std::make_unique<SelectionOutline>(debugVertexShaderPath.parent_path())),
     environmentMap_(std::make_unique<EnvironmentMap>(
@@ -154,11 +166,10 @@ Renderer::~Renderer() {
 // A rebuild costs a few hundred milliseconds, so it only happens when the sun moved enough to be
 // visible in the sky or a parameter changed. This keeps dragging responsive while guaranteeing
 // that the rendered sky always matches the sun the shadows and the light use. The tolerance lives
-// in the atmosphere model so the CPU path tracer's own sky cache uses the same definition of
-// "changed" (atmosphere::parametersMatch).
+// in the atmosphere model; this bake uses only cloudless sky inputs.
 bool Renderer::atmosphereKeyMatches(const atmosphere::AtmosphereParameters& parameters) const {
     if (!atmosphereActive_) return false;
-    return atmosphere::parametersMatch(parameters, builtAtmosphere_);
+    return atmosphere::environmentParametersMatch(parameters, builtAtmosphere_);
 }
 
 void Renderer::updateAtmosphereEnvironment(const RendererSettings& settings) {
@@ -174,17 +185,24 @@ void Renderer::updateAtmosphereEnvironment(const RendererSettings& settings) {
     environmentMap_->useAtmosphere(settings.atmosphere);
     std::cout << "Atmosphere environment rebuilt in "
               << environmentMap_->lastBuildMilliseconds() << " ms (sun "
-              << settings.atmosphere.sunElevationDegrees << " deg)\n";
+              << settings.atmosphere.sunElevationDegrees << " deg"
+              << ")\n";
     builtAtmosphere_ = settings.atmosphere;
     atmosphereActive_ = true;
 }
 void Renderer::render(
     const std::vector<RenderItem>& renderItems,
     const Camera& camera,
-    const RendererSettings& settings,
+    const RendererSettings& requestedSettings,
     int width,
     int height
 ) {
+    RendererSettings settings = requestedSettings;
+    if (settings.atmosphere.cloudDeterministic) {
+        settings.atmosphere.cloudTemporalEnabled = false;
+        settings.temporalAaEnabled = false;
+        settings.shaderHotReloadEnabled = false;
+    }
     width = std::max(width, 1);
     height = std::max(height, 1);
     if (settings.shaderHotReloadEnabled && shaderReloadPollFrame_++ % 15U == 0U) {
@@ -196,7 +214,7 @@ void Renderer::render(
             shaderReloadFailed_ = false;
             shaderReloadStatus_ = "Reloaded " + std::to_string(reload.reloaded)
                 + " shader program(s)";
-            previousViewProjectionValid_ = false;
+            invalidateTemporalHistory();
         }
     }
     renderTarget_->resize(width, height, settings.msaaSamples);
@@ -582,6 +600,11 @@ void Renderer::render(
 
     // Cascade metadata shared by the forward and deferred paths. Both shaders declare the same
     // fixed-size arrays, so one binding pair serves both and cannot drift apart.
+    const bool cloudShadowEnabled = settings.shadowsEnabled && !gBufferDebugActive
+        && settings.atmosphere.enabled && settings.atmosphere.cloudsEnabled
+        && settings.atmosphere.cloudShadowsEnabled
+        && atmosphere::sunDirection(settings.atmosphere).y > 0.02f
+        && glm::dot(-lightDirection, atmosphere::sunDirection(settings.atmosphere)) > 0.999f;
     const auto bindCascadeSettings = [&](Shader& targetShader) {
         std::array<glm::mat4, shadow::maximumCascadeCount> cascadeMatrices{};
         for (std::size_t index = 0U; index < shadow::maximumCascadeCount; ++index) {
@@ -691,6 +714,7 @@ shader_->setMat4("uView", view);
         shader_->setInt("uBrdfLut", 14);
         shader_->setInt("uCausticsMap", 15);
         shader_->setInt("uTransmissionShadowMap", 16);
+        cloudShadow_->bind(*shader_, 17U, cloudShadowEnabled);
         shader_->setBool("uHasGlassBackfaceData", false);
         shader_->setInt("uGlassObjectId", 0);
         environmentMap_->bind(3U);
@@ -739,6 +763,7 @@ shader_->setMat4("uView", view);
             waterShader.setFloat("uTwilightFactor", twilight);
             waterShader.setBool("uShadowsEnabled", settings.shadowsEnabled);
             bindCascadeSettings(waterShader);
+            cloudShadow_->bind(waterShader, 5U, cloudShadowEnabled);
             waterShader.setInt("uPrefilteredEnvironmentMap", 0);
             waterShader.setInt("uIrradianceMap", 1);
             waterShader.setInt("uShadowMap", 2);
@@ -792,6 +817,21 @@ shader_->setMat4("uView", view);
         }
     }
     RenderPassSequence sequence(width, height);
+    if (cloudShadowEnabled) {
+        RenderPassContext context("Cloud sun transmission");
+        context.inputs = {"AtmosphereParameters + sunDirection"};
+        context.outputs = {"Cloud sun transmission map"};
+        context.viewportWidth = context.viewportHeight =
+            settings.atmosphere.cloudQuality == atmosphere::CloudQualityTier::High ? 256 : 128;
+        context.state.depthTest = false;
+        context.state.depthWrite = false;
+        sequence.add(std::move(context), [&] {
+            const float extent = std::max(camera.farPlane() * 1.5f,
+                settings.water.enabled ? settings.water.extent * 1.1f : 1.0f);
+            cloudShadow_->render(settings.atmosphere, camera.position(), extent, cloudMarchExtinction_);
+            if (cloudShadow_->active()) ++drawCallCount_;
+        });
+    }
     if (settings.shadowsEnabled) {
 sequence.add("Shadow maps", [&] {
             glViewport(0, 0, shadowMap_->resolution(), shadowMap_->resolution());
@@ -1164,6 +1204,7 @@ deferredLightingShader_->setVec3("uCameraPosition", camera.position());
             shadowMap_->bindTransmissionTexture(8U);
             causticsMap_->bindTexture(9U);
             ssaoRenderer_->bindTexture(10U);
+            cloudShadow_->bind(*deferredLightingShader_, 11U, cloudShadowEnabled);
             glDisable(GL_DEPTH_TEST);
             glDisable(GL_BLEND);
             glBindVertexArray(fullscreenVertexArray_);
@@ -1416,6 +1457,52 @@ deferredLightingShader_->setVec3("uCameraPosition", camera.position());
             glEnable(GL_DEPTH_TEST);
         });
     }
+    // Keep the volume march outside postprocessing so the existing asynchronous pass timers
+    // measure its GPU cost independently. The cloud target still composites before tone mapping.
+    const bool cloudPassEnabled = !gBufferDebugActive && cloudLayer_ != nullptr
+        && settings.atmosphere.enabled && settings.atmosphere.cloudsEnabled;
+    if (cloudLayer_ != nullptr && (!cloudPassEnabled || cloudHistoryInvalidated_
+        || cloudPreviousDeferred_ != deferredActive)) cloudLayer_->invalidateHistory();
+    cloudHistoryInvalidated_ = false;
+    cloudPreviousDeferred_ = deferredActive;
+    if (cloudPassEnabled) {
+        RenderPassContext cloudContext("Cloud volume march");
+        cloudContext.inputs = {"Camera + AtmosphereParameters"};
+        cloudContext.outputs = {"Cloud radiance + transmittance", "Cloud first-density + entry depth"};
+        cloudContext.viewportWidth = settings.atmosphere.cloudHalfResolution ? (width + 1) / 2 : width;
+        cloudContext.viewportHeight = settings.atmosphere.cloudHalfResolution ? (height + 1) / 2 : height;
+        cloudContext.state.depthTest = false;
+        cloudContext.state.depthWrite = false;
+        sequence.add(std::move(cloudContext), [&] {
+            cloud::MarchSettings marchSettings;
+            marchSettings.spatialJitter = true;
+            const auto budget = atmosphere::cloudTierBudget(settings.atmosphere.cloudQuality);
+            marchSettings.primarySteps = budget.primarySteps;
+            marchSettings.lightSteps = budget.lightSteps;
+            marchSettings.extinction = cloudMarchExtinction_;
+            const auto lighting = cloud::marchLighting(settings.atmosphere);
+            cloudLayer_->render(camera, settings.atmosphere, marchSettings, lighting.ambient,
+                lighting.sun, renderTarget_->width(), renderTarget_->height());
+            if (cloudLayer_->lastFrameActive()) drawCallCount_ +=
+                settings.atmosphere.cloudTemporalEnabled ? 2U : 1U;
+        });
+    }
+    bool godRaysActive = false;
+    if (cloudPassEnabled && cloudShadowEnabled && settings.atmosphere.cloudGodRaysEnabled
+        && (!settings.water.enabled || camera.position().y >= settings.water.level)) {
+        RenderPassContext raysContext("Cloud god rays");
+        raysContext.inputs = {"Cloud transmittance", "Cloud sun transmission map", "Scene depth"};
+        raysContext.outputs = {"Radial scattering"};
+        raysContext.viewportWidth = (width + 1) / 2;
+        raysContext.viewportHeight = (height + 1) / 2;
+        raysContext.state.depthTest = false;
+        raysContext.state.depthWrite = false;
+        sequence.add(std::move(raysContext), [&] {
+            godRaysActive = godRays_->render(camera, settings.atmosphere, *cloudShadow_,
+                cloudLayer_->radianceTexture(), renderTarget_->refractiveDepthTexture(), width, height);
+            if (godRaysActive) ++drawCallCount_;
+        });
+    }
     sequence.add(
         gBufferDebugActive
             ? "G-buffer debug output"
@@ -1504,6 +1591,12 @@ deferredLightingShader_->setVec3("uCameraPosition", camera.position());
         postSettings.previousViewProjection = previousViewProjectionValid_
             ? previousViewProjection_
             : currentViewProjection;
+        postSettings.cloudEnabled = cloudPassEnabled && cloudLayer_->lastFrameActive();
+        postSettings.cloudTexture = postSettings.cloudEnabled ? cloudLayer_->radianceTexture() : 0U;
+        postSettings.cloudDepthTexture = postSettings.cloudEnabled ? cloudLayer_->depthTexture() : 0U;
+        postSettings.godRaysEnabled = godRaysActive;
+        postSettings.godRaysTexture = godRaysActive ? godRays_->texture() : 0U;
+        postSettings.godRaysColor = lightColor * diffuseStrength;
         postProcessor_->process(*renderTarget_, postSettings);
         drawCallCount_ += (!gBufferDebugActive && settings.bloom ? 10U : 1U)
             + (temporalAaActive ? 1U : 0U);
@@ -1617,10 +1710,17 @@ std::size_t Renderer::estimatedRenderMemoryBytes() const {
         + selectionOutline_->estimatedBytes()
         + environmentMap_->estimatedBytes()
         + shadowMap_->estimatedBytes()
+        + cloudShadow_->estimatedBytes()
+        + cloudLayer_->noiseBytes()
+        + godRays_->estimatedBytes()
         + ssaoRenderer_->estimatedBytes()
         + causticsMap_->estimatedBytes()
         + spectralBeamRenderer_->vertexBufferBytes()
         + waterSurface_->estimatedBytes() + waterSurfaceLow_->estimatedBytes();
+}
+
+double Renderer::environmentBuildMilliseconds() const {
+    return environmentMap_ != nullptr ? environmentMap_->lastBuildMilliseconds() : 0.0;
 }
 
 std::size_t Renderer::estimatedOpaqueTrafficBytesPerFrame() const {

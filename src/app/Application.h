@@ -87,6 +87,7 @@ private:
     bool editorInteractionRegression();
     void drawInspectorPanel();
     void drawViewportPanel();
+    void updateViewportCameraNavigation();
     void drawModulePanel();
     // Aggregates the structured diagnostics the application already owns: import
     // diagnostics, render task history, frame/pass profile and the module log. It never
@@ -142,6 +143,10 @@ private:
     bool shutdownComplete_{false};
 
     std::unique_ptr<Renderer> renderer_;
+    // `MYRENDERER_CLOUD_EXTINCTION`. Read in the constructor, applied in `initializeRenderer`,
+    // because the renderer owns the value and does not exist yet when the environment is parsed.
+    bool cloudMarchExtinctionOverridden_{false};
+    float cloudMarchExtinctionOverride_{0.0f};
     std::unique_ptr<GpuModel> model_;
     std::vector<std::unique_ptr<GpuModel>> importedModels_;
     bool resetEditorLayout_{false};
@@ -347,6 +352,7 @@ private:
     bool referenceComparisonComplete_{false};
     bool referenceComparisonFailed_{false};
     bool temporalMotionDemoEnabled_{false};
+    float cameraHeightDemoStep_{0.0f};
     bool objectMotionDemoEnabled_{false};
     int objectMotionDemoFrame_{0};
     bool sceneFoundationDemoEnabled_{false};
@@ -364,4 +370,5 @@ private:
     PrismOpticalPreset prismOpticalPreset_{PrismOpticalPreset::CrownGlass};
     PrismDemoParameters prismParameters_{};
     double previousFrameTime_{0.0};
+    float frameDeltaTime_{0.0f};
 };

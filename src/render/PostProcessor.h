@@ -61,6 +61,17 @@ struct PostProcessSettings {
     glm::mat4 inverseProjection{1.0f};
     glm::mat4 inverseCurrentViewProjection{1.0f};
     glm::mat4 previousViewProjection{1.0f};
+    // The cloud layer's `(scattered radiance, transmittance)` attachment, produced by
+    // `CloudLayerRenderer` earlier in the frame. Composited here rather than drawn as its own pass
+    // because this is the first point after the opaque scene exists in one texture, which is what
+    // the layer has to be blended over; it also lands before tone mapping, where the layer's HDR
+    // range is still intact.
+    unsigned int cloudTexture{0U};
+    unsigned int cloudDepthTexture{0U};
+    bool cloudEnabled{false};
+    unsigned int godRaysTexture{0U};
+    bool godRaysEnabled{false};
+    glm::vec3 godRaysColor{1.0f};
 };
 
 class PostProcessor {

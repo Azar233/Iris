@@ -1,4 +1,5 @@
 #version 330 core
+#include "cloud_shadow_sample.glsl"
 
 // Must match `shadow::maximumCascadeCount`; an array-sized varying needs the constant first.
 const int MAX_SHADOW_CASCADES = 4;
@@ -520,6 +521,7 @@ void main() {
     float nDotL = max(dot(normal, lightDirection), 0.0);
     float nDotV = max(dot(normal, viewDirection), 0.001);
     vec3 visibility = shadowVisibility(normal, lightDirection);
+    visibility *= cloudShadowTransmittance(vWorldPosition);
     vec3 caustics = causticRadiance();
 
     if (uGlassDebugView == 11) {

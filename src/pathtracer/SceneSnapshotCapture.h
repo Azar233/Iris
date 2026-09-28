@@ -15,7 +15,9 @@ SceneSnapshot captureSceneSnapshot(
     SceneSnapshotLighting lighting = {}
 );
 
-SceneSnapshotLighting captureSceneLighting(const RendererSettings& settings);
+// `cameraHeight` is the eye's height in world units and feeds the cloud layer's projection, so a
+// traced frame places the same cloud in the same direction as the raster frame it is compared with.
+SceneSnapshotLighting captureSceneLighting(const RendererSettings& settings, float cameraHeight);
 
 SceneSnapshot captureSceneSnapshot(
     const Scene& scene,

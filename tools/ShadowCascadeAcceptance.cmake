@@ -7,7 +7,7 @@ foreach(required RENDERER COMPARATOR SOURCE_DIR OUTPUT_DIR)
 endforeach()
 
 file(MAKE_DIRECTORY "${OUTPUT_DIR}")
-set(scene "${SOURCE_DIR}/assets/scenes/19_coastal_cascades.myscene")
+set(scene "${SOURCE_DIR}/assets/scenes/fixtures/19_coastal_cascades.myscene")
 
 function(capture name path count debug)
     set(image "${OUTPUT_DIR}/${name}.png")

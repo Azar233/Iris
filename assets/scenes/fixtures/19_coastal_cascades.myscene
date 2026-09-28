@@ -1,0 +1,35 @@
+{
+  "format": "MyRendererScene",
+  "version": 1,
+  "camera": {"target": [0, 1.0, -18], "yawDegrees": -8, "pitchDegrees": 11, "distance": 30, "fieldOfViewDegrees": 45},
+  "renderer": {
+    "renderPath": 1, "shadingMode": 0,
+    "backgroundColor": [0.05, 0.06, 0.08], "showGrid": false, "showAxes": false,
+    "pbrEnabled": true, "iblEnabled": true, "skyboxEnabled": true, "environmentIntensity": 1.0,
+    "shadowsEnabled": true, "shadowCascadeCount": 3, "shadowCascadeSplitLambda": 0.75,
+    "toneMapping": true, "bloom": true, "bloomThreshold": 0.9,
+    "bloomIntensity": 0.12, "exposure": 1.0,
+    "lightDirection": [-0.61, -0.70, -0.36],
+    "atmosphereEnabled": true, "sunElevationDegrees": 12, "sunAzimuthDegrees": 118,
+    "skyTurbidity": 1.2, "skyIntensity": 3.0, "sunIntensity": 3.0, "groundAlbedo": 0.30,
+    "aerialPerspectiveEnabled": true, "aerialPerspectiveStrength": 1.0, "aerialPerspectiveScaleHeight": 120,
+    "localLights": []
+  },
+  "entities": [
+    {"id": 99, "name": "Coastal Sky Root", "parent": 0, "model": ""},
+
+    {"id": 1, "name": "Coastal Ground", "parent": 0, "model": "builtin:ground-plane", "transform": {"translation": [0, -0.5, 0], "scale": [12, 1, 12]}, "tint": [0.34, 0.31, 0.27], "castsShadow": false},
+
+    {"id": 2, "name": "Near Boulder", "parent": 0, "model": "../../models/sphere.obj", "transform": {"translation": [-6.5, 0.6, -7.0], "scale": [1.1, 1.1, 1.1]}, "tint": [0.46, 0.44, 0.41]},
+    {"id": 3, "name": "Near Pillar", "parent": 0, "model": "../../models/cube.obj", "transform": {"translation": [-1.5, 1.4, -10.0], "rotationDegrees": [0, 24, 0], "scale": [1.1, 2.8, 1.1]}, "tint": [0.55, 0.50, 0.44]},
+    {"id": 4, "name": "Shore Rock", "parent": 0, "model": "../../models/sphere.obj", "transform": {"translation": [7.0, 0.5, -14.0], "scale": [1.4, 1.0, 1.3]}, "tint": [0.40, 0.39, 0.38]},
+
+    {"id": 5, "name": "Mid Sea Stack", "parent": 0, "model": "../../models/cube.obj", "transform": {"translation": [-12.0, 2.6, -34.0], "rotationDegrees": [0, -18, 0], "scale": [1.8, 5.6, 1.8]}, "tint": [0.44, 0.42, 0.40]},
+    {"id": 6, "name": "Mid Outcrop", "parent": 0, "model": "../../models/sphere.obj", "transform": {"translation": [16.0, 1.2, -40.0], "scale": [2.6, 1.8, 2.4]}, "tint": [0.38, 0.37, 0.36]},
+    {"id": 7, "name": "Mid Buttress", "parent": 0, "model": "../../models/cube.obj", "transform": {"translation": [3.0, 3.2, -50.0], "rotationDegrees": [0, 12, 0], "scale": [2.2, 7.0, 2.2]}, "tint": [0.47, 0.44, 0.40]},
+
+    {"id": 8, "name": "Far Headland", "parent": 0, "model": "../../models/cube.obj", "transform": {"translation": [-24.0, 4.5, -74.0], "rotationDegrees": [0, -26, 0], "scale": [4.0, 10.0, 3.0]}, "tint": [0.42, 0.41, 0.39]},
+    {"id": 9, "name": "Far Sea Stack", "parent": 0, "model": "../../models/cube.obj", "transform": {"translation": [26.0, 3.8, -88.0], "rotationDegrees": [0, 20, 0], "scale": [2.6, 8.6, 2.6]}, "tint": [0.45, 0.43, 0.41]},
+    {"id": 10, "name": "Far Ridge", "parent": 0, "model": "../../models/sphere.obj", "transform": {"translation": [0.0, 1.6, -108.0], "scale": [9.0, 3.2, 7.0]}, "tint": [0.40, 0.39, 0.38]}
+  ]
+}

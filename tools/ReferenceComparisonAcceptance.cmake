@@ -63,7 +63,7 @@ set(required_artifacts
 
 file(MAKE_DIRECTORY "${reference_output_root}")
 foreach(scene IN LISTS reference_scenes)
-    set(scene_path "${SOURCE_DIR}/assets/scenes/${scene}.myscene")
+    set(scene_path "${SOURCE_DIR}/assets/scenes/fixtures/${scene}.myscene")
     set(output_directory "${reference_output_root}/${scene}")
     if(NOT EXISTS "${scene_path}")
         message(FATAL_ERROR "Reference scene is missing: ${scene_path}")

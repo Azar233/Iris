@@ -22,6 +22,10 @@ public:
     void orbit(float yawDelta, float pitchDelta);
     void pan(float xDelta, float yDelta);
     void zoom(float wheelDelta);
+    // Moves the camera and its orbit target together in the current view basis. This preserves
+    // yaw, pitch and orbit distance, so WASD navigation can coexist with the existing orbit/pan
+    // controls and saved CameraOrbitState without introducing a second camera mode.
+    void moveLocal(float forwardDelta, float rightDelta, float upDelta = 0.0f);
     void reset(const glm::vec3& target = glm::vec3(0.0f));
     void setOrbitPose(
         const glm::vec3& target,

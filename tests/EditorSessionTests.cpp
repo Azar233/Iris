@@ -27,7 +27,7 @@ int main() {
         session.request(EditorCommand{EditorCommandType::RetryRenderJob, 23U});
         session.request(EditorCommand{EditorCommandType::RefreshAssetCatalog});
         EditorCommand openScene{EditorCommandType::OpenSceneAsset};
-        openScene.text = "assets/scenes/10_reference_pathtracer_pbr_hdri.myscene";
+        openScene.text = "assets/scenes/fixtures/10_reference_pathtracer_pbr_hdri.myscene";
         session.request(std::move(openScene));
         EditorCommand importModel{EditorCommandType::ImportModelAsset};
         importModel.text = "assets/models/cube.obj";
@@ -157,7 +157,7 @@ int main() {
         require(commands[7].type == EditorCommandType::RefreshAssetCatalog,
                 "asset refresh command order changed");
         require(commands[8].type == EditorCommandType::OpenSceneAsset
-                && commands[8].text == "assets/scenes/10_reference_pathtracer_pbr_hdri.myscene",
+                && commands[8].text == "assets/scenes/fixtures/10_reference_pathtracer_pbr_hdri.myscene",
                 "scene asset command payload was lost");
         require(commands[9].type == EditorCommandType::ImportModelAsset
                 && commands[9].text == "assets/models/cube.obj",

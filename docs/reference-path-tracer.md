@@ -546,7 +546,7 @@ $env:MYRENDERER_REFERENCE_COMPARE_DIR = "output/reference-10"
 $env:MYRENDERER_REFERENCE_SPP = 512
 $env:MYRENDERER_REFERENCE_MAX_DEPTH = 8
 $env:MYRENDERER_REFERENCE_SEED = 20260915
-.\build-ci-msvc\Release\MyRenderer.exe .\assets\scenes\10_reference_pathtracer_pbr_hdri.myscene
+.\build-ci-msvc\Release\MyRenderer.exe .\assets\scenes\fixtures\10_reference_pathtracer_pbr_hdri.myscene
 ```
 
 现有 `MyRendererReferenceRender` / `path-tracing-acceptance` / `path-tracing-regression` 继续使用原来的

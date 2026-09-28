@@ -1,6 +1,7 @@
 #include "pathtracer/SceneSnapshotCapture.h"
 
 #include <algorithm>
+#include <cmath>
 #include <cstdint>
 #include <filesystem>
 #include <mutex>
@@ -28,6 +29,10 @@ struct SkyCache {
     std::mutex mutex;
     bool valid{false};
     atmosphere::AtmosphereParameters parameters;
+    // The cloud layer resolves its parallax against the eye, so the height is part of what the
+    // cached image *is* and not just of what produced it: two captures with the same parameters at
+    // different heights are different skies and must not share a cache entry.
+    float cameraHeight{0.0f};
     std::vector<glm::vec3> pixels;
 };
 
@@ -39,14 +44,17 @@ SkyCache& skyCache() {
 // Fills `pixels` from the cache, regenerating it only when the sun or a parameter moved. The copy
 // happens under the lock on purpose: `generateEquirect` on another thread would otherwise grow the
 // cached buffer while this one is reading it.
-void cachedSky(const atmosphere::AtmosphereParameters& parameters, std::vector<glm::vec3>& pixels) {
+void cachedSky(const atmosphere::AtmosphereParameters& parameters, float cameraHeight,
+               std::vector<glm::vec3>& pixels) {
     SkyCache& cache = skyCache();
     const std::lock_guard<std::mutex> lock(cache.mutex);
-    if (!cache.valid || !atmosphere::parametersMatch(cache.parameters, parameters)) {
+    if (!cache.valid || !atmosphere::parametersMatch(cache.parameters, parameters)
+        || std::abs(cache.cameraHeight - cameraHeight) > 0.01f) {
         cache.pixels = atmosphere::generateEquirect(
-            parameters, skyEquirectWidth, skyEquirectHeight
+            parameters, skyEquirectWidth, skyEquirectHeight, cameraHeight
         );
         cache.parameters = parameters;
+        cache.cameraHeight = cameraHeight;
         cache.valid = true;
     }
     pixels = cache.pixels;
@@ -54,7 +62,7 @@ void cachedSky(const atmosphere::AtmosphereParameters& parameters, std::vector<g
 
 } // namespace
 
-SceneSnapshotLighting captureSceneLighting(const RendererSettings& settings) {
+SceneSnapshotLighting captureSceneLighting(const RendererSettings& settings, float cameraHeight) {
     SceneSnapshotLighting lighting;
     const float directionLengthSquared = glm::dot(settings.lightDirection, settings.lightDirection);
     lighting.directional.direction = directionLengthSquared > 1.0e-12f
@@ -101,7 +109,7 @@ SceneSnapshotLighting captureSceneLighting(const RendererSettings& settings) {
     // radiance already carries `skyIntensity`, so the environment intensity stays a separate
     // control here just as it is for the raster environment.
     if (settings.atmosphere.enabled) {
-        cachedSky(settings.atmosphere, lighting.environment.radiancePixels);
+        cachedSky(settings.atmosphere, cameraHeight, lighting.environment.radiancePixels);
         lighting.environment.width = static_cast<std::uint32_t>(skyEquirectWidth);
         lighting.environment.height = static_cast<std::uint32_t>(skyEquirectHeight);
         lighting.environment.sourceName = "Analytic atmosphere sky";

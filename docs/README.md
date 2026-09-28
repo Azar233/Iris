@@ -59,7 +59,7 @@
 
 复现：`MYRENDERER_SUN_ELEVATION=10 MYRENDERER_SUN_AZIMUTH=120
 MYRENDERER_SCREENSHOT=build-ci-msvc/p1a-keylight-after-golden.png
-build-ci-msvc/Release/MyRenderer.exe assets/scenes/18_atmosphere_sky.myscene`
+build-ci-msvc/Release/MyRenderer.exe assets/scenes/fixtures/18_atmosphere_sky.myscene`
 ```
 
 规则：

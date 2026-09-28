@@ -1,4 +1,6 @@
 #include "app/Application.h"
+#include "optics/CloudNoiseVolume.h"
+#include "optics/CloudLightingLut.h"
 
 #include <algorithm>
 #include <iostream>
@@ -760,10 +762,69 @@ void Application::processEditorCommands() {
                     && atmosphere.aerialPerspectiveStrength <= 4.0f
                     && std::isfinite(atmosphere.aerialPerspectiveScaleHeight)
                     && atmosphere.aerialPerspectiveScaleHeight >= 0.01f
-                    && atmosphere.aerialPerspectiveScaleHeight <= 20000.0f;
+                    && atmosphere.aerialPerspectiveScaleHeight <= 20000.0f
+                    && std::isfinite(atmosphere.cloudBaseHeight)
+                    && atmosphere.cloudBaseHeight >= 0.0f
+                    && atmosphere.cloudBaseHeight <= 20000.0f
+                    && std::isfinite(atmosphere.cloudTopHeight)
+                    && atmosphere.cloudTopHeight >= 0.0f
+                    && atmosphere.cloudTopHeight <= 30000.0f
+                    && std::isfinite(atmosphere.cloudCoverage)
+                    && atmosphere.cloudCoverage >= 0.0f && atmosphere.cloudCoverage <= 1.0f
+                    && std::isfinite(atmosphere.cloudDensity)
+                    && atmosphere.cloudDensity >= 0.0f && atmosphere.cloudDensity <= 4.0f
+                    && std::isfinite(atmosphere.cloudWindOffsetX)
+                    && atmosphere.cloudWindOffsetX >= -60000.0f
+                    && atmosphere.cloudWindOffsetX <= 60000.0f
+                    && std::isfinite(atmosphere.cloudWindOffsetZ)
+                    && atmosphere.cloudWindOffsetZ >= -60000.0f
+                    && atmosphere.cloudWindOffsetZ <= 60000.0f
+                    && std::isfinite(atmosphere.cloudFeatureScale)
+                    && atmosphere.cloudFeatureScale >= 10.0f
+                    && atmosphere.cloudFeatureScale <= 200000.0f
+                    && std::isfinite(atmosphere.cloudNoisePeriod)
+                    && atmosphere.cloudNoisePeriod >= 1.0f && atmosphere.cloudNoisePeriod <= 16.0f
+                    && (!atmosphere.cloudOfflineNoise || std::lround(atmosphere.cloudNoisePeriod)==4)
+                    && std::isfinite(atmosphere.cloudWeatherScale)
+                    && atmosphere.cloudWeatherScale >= 100.0f
+                    && atmosphere.cloudWeatherScale <= 400000.0f
+                    && std::isfinite(atmosphere.cloudCoverageVariation)
+                    && atmosphere.cloudCoverageVariation >= 0.0f
+                    && atmosphere.cloudCoverageVariation <= 1.0f
+                    && std::isfinite(atmosphere.cloudType)
+                    && atmosphere.cloudType >= 0.0f && atmosphere.cloudType <= 1.0f
+                    && std::isfinite(atmosphere.cloudTypeVariation)
+                    && atmosphere.cloudTypeVariation >= 0.0f
+                    && atmosphere.cloudTypeVariation <= 1.0f
+                    && std::isfinite(atmosphere.cloudHeightVariation)
+                    && atmosphere.cloudHeightVariation >= 0.0f
+                    && atmosphere.cloudHeightVariation <= 1.0f
+                    && std::isfinite(atmosphere.cloudDetailStrength)
+                    && atmosphere.cloudDetailStrength >= 0.0f
+                    && atmosphere.cloudDetailStrength <= 1.0f
+                    && std::isfinite(atmosphere.cloudDetailEdge)
+                    && atmosphere.cloudDetailEdge >= 0.0f
+                    && atmosphere.cloudDetailEdge <= 1.0f
+                    && atmosphere.cloudQuality >= 0 && atmosphere.cloudQuality <= 1
+                    && std::isfinite(atmosphere.cloudHorizonFadeDegrees)
+                    && atmosphere.cloudHorizonFadeDegrees >= 0.0f
+                    && atmosphere.cloudHorizonFadeDegrees <= 30.0f
+                    && std::isfinite(atmosphere.cloudAmbientElevationDegrees)
+                    && atmosphere.cloudAmbientElevationDegrees >= 0.0f
+                    && atmosphere.cloudAmbientElevationDegrees <= 89.0f
+                    && std::isfinite(atmosphere.cloudAmbientScale)
+                    && atmosphere.cloudAmbientScale >= 0.0f
+                    && atmosphere.cloudAmbientScale <= 4.0f;
                 if (!valid) {
                     statusMessage_ = "Inspector rejected invalid atmosphere settings.";
                     break;
+                }
+                if(atmosphere.cloudOfflineNoise) {
+                    try {
+                        (void)cloud::canonicalNoiseVolume();
+                        (void)cloud::canonicalLightingLut();
+                    }
+                    catch(const std::exception& error) { statusMessage_=error.what();break; }
                 }
                 rendererSettings_.atmosphere.enabled = atmosphere.enabled;
                 rendererSettings_.atmosphere.sunElevationDegrees =
@@ -783,6 +844,40 @@ void Application::processEditorCommands() {
                     atmosphere.aerialPerspectiveStrength;
                 rendererSettings_.atmosphere.aerialPerspectiveScaleHeight =
                     atmosphere.aerialPerspectiveScaleHeight;
+                rendererSettings_.atmosphere.cloudsEnabled = atmosphere.cloudsEnabled;
+                rendererSettings_.atmosphere.cloudBaseHeight = atmosphere.cloudBaseHeight;
+                rendererSettings_.atmosphere.cloudTopHeight = atmosphere.cloudTopHeight;
+                rendererSettings_.atmosphere.cloudCoverage = atmosphere.cloudCoverage;
+                rendererSettings_.atmosphere.cloudDensity = atmosphere.cloudDensity;
+                rendererSettings_.atmosphere.cloudWindOffsetX = atmosphere.cloudWindOffsetX;
+                rendererSettings_.atmosphere.cloudWindOffsetZ = atmosphere.cloudWindOffsetZ;
+                rendererSettings_.atmosphere.cloudFeatureScale = atmosphere.cloudFeatureScale;
+                rendererSettings_.atmosphere.cloudNoisePeriod = atmosphere.cloudNoisePeriod;
+                rendererSettings_.atmosphere.cloudWeatherScale = atmosphere.cloudWeatherScale;
+                rendererSettings_.atmosphere.cloudCoverageVariation =
+                    atmosphere.cloudCoverageVariation;
+                rendererSettings_.atmosphere.cloudType = atmosphere.cloudType;
+                rendererSettings_.atmosphere.cloudTypeVariation = atmosphere.cloudTypeVariation;
+                rendererSettings_.atmosphere.cloudHeightVariation =
+                    atmosphere.cloudHeightVariation;
+                rendererSettings_.atmosphere.cloudDetailStrength =
+                    atmosphere.cloudDetailStrength;
+                rendererSettings_.atmosphere.cloudDetailEdge = atmosphere.cloudDetailEdge;
+                rendererSettings_.atmosphere.cloudHalfResolution = atmosphere.cloudHalfResolution;
+                rendererSettings_.atmosphere.cloudTemporalEnabled = atmosphere.cloudTemporalEnabled;
+                rendererSettings_.atmosphere.cloudShadowsEnabled = atmosphere.cloudShadowsEnabled;
+                rendererSettings_.atmosphere.cloudGodRaysEnabled = atmosphere.cloudGodRaysEnabled;
+                rendererSettings_.atmosphere.cloudDeterministic = atmosphere.cloudDeterministic;
+                rendererSettings_.atmosphere.cloudOfflineNoise = atmosphere.cloudOfflineNoise;
+                rendererSettings_.atmosphere.cloudGodRaysStrength = std::clamp(atmosphere.cloudGodRaysStrength, 0.0f, 1.0f);
+                rendererSettings_.atmosphere.cloudQuality = atmosphere.cloudQuality == 1
+                    ? atmosphere::CloudQualityTier::High
+                    : atmosphere::CloudQualityTier::Low;
+                rendererSettings_.atmosphere.cloudHorizonFadeDegrees =
+                    atmosphere.cloudHorizonFadeDegrees;
+                rendererSettings_.atmosphere.cloudAmbientElevationDegrees =
+                    atmosphere.cloudAmbientElevationDegrees;
+                rendererSettings_.atmosphere.cloudAmbientScale = atmosphere.cloudAmbientScale;
                 cpuPreviewRestartRequested_ = true;
                 if (renderer_ != nullptr) renderer_->invalidateTemporalHistory();
                 break;

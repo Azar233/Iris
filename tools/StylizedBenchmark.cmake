@@ -19,7 +19,7 @@ function(run_stylized_benchmark name scene preset render_path msaa width height 
             "MYRENDERER_TAA=${taa}"
             "MYRENDERER_HIDE_SELECTION_OUTLINE=1"
             "${RENDERER}"
-            "${SOURCE_DIR}/assets/scenes/${scene}"
+            "${SOURCE_DIR}/assets/scenes/fixtures/${scene}"
         WORKING_DIRECTORY "${SOURCE_DIR}"
         RESULT_VARIABLE benchmark_result
     )

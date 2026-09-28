@@ -1,4 +1,4 @@
-﻿# Accepts the P1-0C C++ module rendering path end to end:
+# Accepts the P1-0C C++ module rendering path end to end:
 #   simulate (dry run) -> bake (deterministic cache) -> render sequence
 #   -> reproducible output across runs -> verified cache reuse
 #   -> stale and missing cache are reported instead of silently reused.
@@ -25,8 +25,8 @@ string(REPLACE "../../build-ci-msvc/render-jobs/03_cpu_turntable_module" "${OUTP
        JOB_TEXT "${JOB_TEXT}")
 # The job file moves out of assets/renderjobs, so its relative scene path is rewritten
 # to the absolute source path instead of depending on the new location.
-string(REPLACE "\"scene\": \"../scenes/01_multi_model_hierarchy.myscene\""
-       "\"scene\": \"${SOURCE_DIR}/assets/scenes/01_multi_model_hierarchy.myscene\""
+string(REPLACE "\"scene\": \"../scenes/fixtures/01_multi_model_hierarchy.myscene\""
+       "\"scene\": \"${SOURCE_DIR}/assets/scenes/fixtures/01_multi_model_hierarchy.myscene\""
        JOB_TEXT "${JOB_TEXT}")
 set(JOB "${OUTPUT_DIR}/job.renderjob")
 file(WRITE "${JOB}" "${JOB_TEXT}")
@@ -96,7 +96,7 @@ function(export_gui_frame stem)
                 "MYRENDERER_TIMELINE_FRAME=${GUI_FRAME}"
                 "MYRENDERER_MODULE=${GUI_MODULE}"
                 "MYRENDERER_CPU_PREVIEW_EXPORT=${stem}"
-                "${RENDERER}" "${SOURCE_DIR}/assets/scenes/01_multi_model_hierarchy.myscene"
+                "${RENDERER}" "${SOURCE_DIR}/assets/scenes/fixtures/01_multi_model_hierarchy.myscene"
         WORKING_DIRECTORY "${SOURCE_DIR}"
         RESULT_VARIABLE result
         OUTPUT_VARIABLE output

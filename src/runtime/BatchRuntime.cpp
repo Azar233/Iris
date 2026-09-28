@@ -64,7 +64,7 @@ pathtracer::SceneSnapshot loadSnapshot(const RenderJob& job, const SceneDocument
     snapshotCamera.verticalFieldOfViewRadians = glm::radians(camera.fieldOfView());
     pathtracer::SceneSnapshotBuilder builder(
         snapshotCamera,
-        pathtracer::captureSceneLighting(document.renderer)
+        pathtracer::captureSceneLighting(document.renderer, snapshotCamera.position.y)
     );
 
     std::unordered_map<SceneEntityId, std::size_t> indices;

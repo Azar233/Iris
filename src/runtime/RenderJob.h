@@ -23,14 +23,14 @@ struct RenderJobModule {
 };
 
 struct RenderJob {
-    // Schema 2 adds the optional module section. Schema 1 jobs still load and simply
-    // render the scene as authored; a schema 2 job opened by an older binary is
-    // rejected loudly instead of silently rendering without its module.
-    static constexpr int currentSchemaVersion = 2;
+    // Schema 2 adds modules; schema 3 adds explicit raster capture controls. Old jobs
+    // keep loading with zero warmup, fixed sampling and temporal accumulation disabled.
+    static constexpr int currentSchemaVersion = 3;
     static constexpr int minimumSchemaVersion = 1;
 
     int schemaVersion{currentSchemaVersion};
     std::filesystem::path sourcePath;
+    std::string loadedSourceFingerprint; // Exact authored bytes parsed by the loader.
     std::filesystem::path scenePath;
     std::string renderer{"cpu-path-traced"};
     std::string camera{"scene"};
@@ -47,6 +47,9 @@ struct RenderJob {
     std::filesystem::path outputStemPattern;
     std::filesystem::path simulationCache;
     bool resume{false};
+    bool rasterDeterminism{true};
+    int rasterWarmupFrames{0};
+    bool rasterTemporalAccumulation{false};
     RenderJobFailurePolicy failurePolicy{RenderJobFailurePolicy::Stop};
 };
 

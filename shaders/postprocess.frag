@@ -6,6 +6,11 @@ uniform sampler2D uMotion;
 uniform sampler2D uDepth;
 uniform sampler2D uEncodedNormal;
 uniform sampler3D uColorGradingLut;
+uniform sampler2D uCloud;
+uniform sampler2D uCloudDepth;
+uniform sampler2D uGodRays;
+uniform bool uGodRaysEnabled;
+uniform vec3 uGodRaysColor;
 uniform int uTemporalDebugView;
 uniform bool uToneMapping;
 uniform bool uBloomEnabled;
@@ -35,6 +40,7 @@ uniform bool uUnderwaterFogEnabled;
 uniform vec3 uUnderwaterAbsorption;
 uniform vec3 uUnderwaterColor;
 uniform bool uColorGradingEnabled;
+uniform bool uCloudEnabled;
 uniform float uColorGradingStrength;
 uniform int uStylizedDebugView;
 uniform float uInverseWidth;
@@ -219,6 +225,52 @@ void main() {
     vec3 color = texture(uScene, vUv).rgb;
     if (uBloomEnabled) color += texture(uBloom, vUv).rgb * uBloomIntensity;
     float deviceDepth = texture(uDepth, vUv).r;
+    // The cloud layer composites here: after the opaque scene and bloom exist in one linear HDR
+    // colour, and before tone mapping, so the layer's own HDR range survives. The attachment carries
+    // `(scattered radiance, transmittance)`, so this is a radiance-over-background blend and the
+    // background is whatever the scene had -- geometry the layer occludes, or the sky behind it.
+    //
+    // The height fog, the aerial perspective and the underwater fog below then treat the cloud as
+    // part of the scene, which is what keeps one air model in front of everything rather than a
+    // separate one for the layer.
+    bool cloudPresent = false;
+    if (uCloudEnabled) {
+        // Depth-guided four-tap reconstruction from the cloud's own first-density depth. Opaque
+        // depth only decides whether geometry is in front; it never guides the cloud upsample.
+        ivec2 cloudSize = textureSize(uCloud, 0);
+        vec2 location = vUv * vec2(cloudSize) - 0.5;
+        ivec2 base = ivec2(floor(location));
+        vec2 fraction = fract(location);
+        ivec2 nearest = clamp(ivec2(floor(location + 0.5)), ivec2(0), cloudSize - 1);
+        float referenceDepth = texelFetch(uCloudDepth, nearest, 0).r;
+        vec4 layer = vec4(0.0);
+        float sum = 0.0;
+        for (int y = 0; y < 2; ++y) {
+            for (int x = 0; x < 2; ++x) {
+                ivec2 samplePixel = clamp(base + ivec2(x,y), ivec2(0), cloudSize - 1);
+                float depth = texelFetch(uCloudDepth, samplePixel, 0).r;
+                float weight = (x == 0 ? 1.0 - fraction.x : fraction.x)
+                    * (y == 0 ? 1.0 - fraction.y : fraction.y);
+                if ((depth > 0.0) != (referenceDepth > 0.0)) weight = 0.0;
+                else if (referenceDepth > 0.0)
+                    weight *= exp(-abs(depth - referenceDepth) / max(referenceDepth * 0.1, 50.0));
+                layer += texelFetch(uCloud, samplePixel, 0) * weight;
+                sum += weight;
+            }
+        }
+        layer = sum > 0.00001 ? layer / sum : texelFetch(uCloud, nearest, 0);
+        if (deviceDepth < 0.999999 && referenceDepth > 0.0) {
+            vec4 surface = uInverseCurrentViewProjection * vec4(vUv * 2.0 - 1.0, deviceDepth * 2.0 - 1.0, 1.0);
+            float surfaceDistance = length(surface.xyz / surface.w - uCameraPosition);
+            if (surfaceDistance < referenceDepth) layer = vec4(0.0, 0.0, 0.0, 1.0);
+        }
+        // A fully transmissive, non-scattering sample means the ray missed the slab entirely, and
+        // skipping it keeps a cloudless frame bit-identical to what it was before this pass existed.
+        cloudPresent = layer.a < 0.99999 || dot(layer.rgb, layer.rgb) > 0.0;
+        color = layer.rgb + color * layer.a;
+    }
+    if (uGodRaysEnabled && deviceDepth >= 0.999999)
+        color += texture(uGodRays, vUv).r * uGodRaysColor;
     // One reconstruction serves both effects: the height fog needs it only when it is on, but the
     // aerial perspective needs it whenever it is on, and neither can share the other's early-out.
     float aerialDistance = 0.0;

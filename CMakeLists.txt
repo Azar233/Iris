@@ -111,8 +111,23 @@ target_compile_definitions(imgui_backend PRIVATE
 )
 target_link_libraries(imgui_backend PUBLIC glfw glad_gl_core_33)
 
+# Offline cloud assets have no GL or editor dependency. Upload remains on the context thread.
+add_library(MyRendererCloudNoise STATIC src/optics/CloudNoiseVolume.cpp src/optics/CloudLightingLut.cpp)
+target_include_directories(MyRendererCloudNoise PUBLIC src)
+target_compile_definitions(MyRendererCloudNoise PRIVATE MYRENDERER_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
+if(MSVC)
+    target_compile_options(MyRendererCloudNoise PRIVATE /W4 /permissive- /utf-8)
+else()
+    target_compile_options(MyRendererCloudNoise PRIVATE -Wall -Wextra -Wpedantic)
+endif()
+add_executable(MyRendererCloudLightingAsset tools/CloudLightingAsset.cpp)
+target_link_libraries(MyRendererCloudLightingAsset PRIVATE MyRendererCloudNoise)
+add_executable(MyRendererCloudNoiseAsset tools/CloudNoiseAsset.cpp)
+target_link_libraries(MyRendererCloudNoiseAsset PRIVATE MyRendererCloudNoise)
+
 add_library(MyRendererPathTracing STATIC
     src/optics/Atmosphere.cpp
+    src/optics/CloudReference.cpp
     src/pathtracer/AovDenoiser.cpp
     src/pathtracer/Bvh.cpp
     src/pathtracer/InstancedBvh.cpp
@@ -134,7 +149,7 @@ target_compile_definitions(MyRendererPathTracing PRIVATE
     MYRENDERER_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}"
 )
 find_package(Threads REQUIRED)
-target_link_libraries(MyRendererPathTracing PUBLIC glm::glm Threads::Threads PRIVATE tinyexr zlibstatic)
+target_link_libraries(MyRendererPathTracing PUBLIC glm::glm Threads::Threads MyRendererCloudNoise PRIVATE tinyexr zlibstatic)
 target_include_directories(MyRendererPathTracing PRIVATE
     ${assimp_SOURCE_DIR}/contrib/stb
     ${assimp_SOURCE_DIR}/contrib/zlib
@@ -149,11 +164,16 @@ add_executable(MyRendererAdaptiveSamplingBenchmark tools/AdaptiveSamplingBenchma
 target_link_libraries(MyRendererAdaptiveSamplingBenchmark PRIVATE MyRendererPathTracing)
 add_executable(MyRendererDenoisingExperiment tools/DenoisingExperiment.cpp)
 target_link_libraries(MyRendererDenoisingExperiment PRIVATE MyRendererPathTracing)
+# Cloud layer measurement: prints the sky and cloud radiance a scene's parameters produce, so the
+# layer's lighting can be calibrated from numbers instead of from repeated image edits.
+add_executable(MyRendererCloudCalibration tools/CloudCalibration.cpp)
+target_link_libraries(MyRendererCloudCalibration PRIVATE MyRendererPathTracing)
 
 add_library(MyRendererBatchRuntime STATIC
     src/runtime/BatchRuntime.cpp
     src/runtime/RenderQueue.cpp
-    src/runtime/RenderJob.cpp
+    src/runtime/RenderJob.cpp # Raster schema 3 capture contract.
+    src/runtime/RasterFrameReport.cpp
     src/asset/BuiltinModels.cpp
     src/io/AssimpImporter.cpp
     src/io/GltfMaterialExtensions.cpp
@@ -255,6 +275,10 @@ add_executable(MyRenderer
     src/pathtracer/SceneLighting.cpp
     src/render/Camera.cpp
     src/render/CausticsMap.cpp
+    src/render/CloudLayerRenderer.cpp
+    src/render/CloudShadowRenderer.cpp
+    src/render/CloudNoiseTexture.cpp
+    src/render/GodRaysRenderer.cpp
     src/render/DebugGrid.cpp
     src/render/EnvironmentMap.cpp
     src/render/GBuffer.cpp
@@ -381,7 +405,26 @@ if(BUILD_TESTING)
                 -P ${CMAKE_CURRENT_SOURCE_DIR}/tools/BatchOutputOverrideTest.cmake
     )
 
-    add_executable(MyRendererRenderQueueTests tests/RenderQueueTests.cpp)
+    add_executable(MyRendererRasterCaptureTests tests/RasterCaptureTests.cpp)
+    target_link_libraries(MyRendererRasterCaptureTests PRIVATE MyRendererBatchRuntime glad_gl_core_33)
+    target_compile_definitions(MyRendererRasterCaptureTests PRIVATE MYRENDERER_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
+    if(MSVC)
+        target_compile_options(MyRendererRasterCaptureTests PRIVATE /W4 /permissive- /utf-8)
+    else()
+        target_compile_options(MyRendererRasterCaptureTests PRIVATE -Wall -Wextra -Wpedantic)
+    endif()
+    add_test(NAME raster-capture-contract COMMAND MyRendererRasterCaptureTests)
+    add_custom_target(cloud-determinism-acceptance
+        COMMAND ${CMAKE_COMMAND}
+            -DRENDERER=$<TARGET_FILE:MyRenderer>
+            -DSOURCE_DIR=${CMAKE_CURRENT_SOURCE_DIR}
+            -DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/cloud-determinism-acceptance
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/tools/CloudDeterminismAcceptance.cmake
+        DEPENDS MyRenderer
+        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+        COMMENT "Checking raster cloud repeatability, warmup invariance and capture metadata")
+
+    add_executable(MyRendererRenderQueueTests tests/RenderQueueTests.cpp) # Capture contract is separate from queue lifecycle.
     target_link_libraries(MyRendererRenderQueueTests PRIVATE MyRendererBatchRuntime MyRendererModules)
     target_compile_definitions(MyRendererRenderQueueTests PRIVATE
         MYRENDERER_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}"
@@ -404,6 +447,19 @@ if(BUILD_TESTING)
         target_compile_options(MyRendererEditorSessionTests PRIVATE -Wall -Wextra -Wpedantic)
     endif()
     add_test(NAME editor-session COMMAND MyRendererEditorSessionTests)
+
+    add_executable(MyRendererCameraNavigationTests
+        tests/CameraNavigationTests.cpp
+        src/render/Camera.cpp
+    )
+    target_include_directories(MyRendererCameraNavigationTests PRIVATE src)
+    target_link_libraries(MyRendererCameraNavigationTests PRIVATE glm::glm)
+    if(MSVC)
+        target_compile_options(MyRendererCameraNavigationTests PRIVATE /W4 /permissive- /utf-8)
+    else()
+        target_compile_options(MyRendererCameraNavigationTests PRIVATE -Wall -Wextra -Wpedantic)
+    endif()
+    add_test(NAME camera-navigation COMMAND MyRendererCameraNavigationTests)
 
     # Cascade fitting is pure matrix math, so it is verified without an OpenGL context: the split
     # scheme, the sub-frustum corners, the box containment and the texel-grid stability are the
@@ -443,6 +499,21 @@ if(BUILD_TESTING)
         target_compile_options(MyRendererAtmosphereTests PRIVATE -Wall -Wextra -Wpedantic)
     endif()
     add_test(NAME atmosphere-model COMMAND MyRendererAtmosphereTests)
+
+    # The CPU reference raymarcher is the golden value the GPU march is checked against, so its own
+    # contracts are tested separately from the analytic sky it shares a density field with.
+    add_executable(MyRendererCloudTests tests/CloudReferenceTests.cpp)
+    target_link_libraries(MyRendererCloudTests PRIVATE MyRendererPathTracing)
+    target_include_directories(MyRendererCloudTests PRIVATE src)
+    if(MSVC)
+        target_compile_options(MyRendererCloudTests PRIVATE /W4 /permissive- /utf-8)
+    else()
+        target_compile_options(MyRendererCloudTests PRIVATE -Wall -Wextra -Wpedantic)
+    endif()
+    add_test(NAME cloud-reference COMMAND MyRendererCloudTests)
+    add_test(NAME cloud-shape-acceptance COMMAND MyRendererCloudCalibration
+        --acceptance ${CMAKE_CURRENT_BINARY_DIR}/cloud-calibration)
+    set_tests_properties(cloud-shape-acceptance PROPERTIES TIMEOUT 60)
 
     add_executable(MyRendererTimelineTests tests/TimelineTests.cpp)
     target_include_directories(MyRendererTimelineTests PRIVATE src)
@@ -503,7 +574,7 @@ if(BUILD_TESTING)
             MYRENDERER_EDITOR_WINDOW_HEIGHT=680
             MYRENDERER_EDITOR_SCREENSHOT=${CMAKE_CURRENT_BINARY_DIR}/asset-thumbnail-layout-1100x680.png
             $<TARGET_FILE:MyRenderer>
-            ${CMAKE_CURRENT_SOURCE_DIR}/assets/scenes/01_multi_model_hierarchy.myscene
+            ${CMAKE_CURRENT_SOURCE_DIR}/assets/scenes/fixtures/01_multi_model_hierarchy.myscene
         DEPENDS MyRenderer
         WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
         COMMENT "Checking raster thumbnail upload and the 1100x680 editor layout"
@@ -571,7 +642,7 @@ if(BUILD_TESTING)
     target_compile_definitions(MyRendererSceneDocumentTests PRIVATE
         MYRENDERER_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}"
     )
-    target_link_libraries(MyRendererSceneDocumentTests PRIVATE glm::glm glad_gl_core_33)
+    target_link_libraries(MyRendererSceneDocumentTests PRIVATE glm::glm glad_gl_core_33 MyRendererCloudNoise)
     if(MSVC)
         target_compile_options(MyRendererSceneDocumentTests PRIVATE /W4 /permissive- /utf-8)
     else()
@@ -626,6 +697,149 @@ if(BUILD_TESTING)
         COMMENT "Verifying fail-safe Shader hot reload with a real OpenGL context"
     )
 
+    # GPU / CPU parity for the shared cloud density field. Needs a real context because the whole
+    # point is to run the field through a GPU driver's compiler and compare it with the C++ one, so
+    # it is a `gpu-*` custom target rather than a CTest case: a machine without a GPU must still be
+    # able to run the CPU suite.
+    add_executable(MyRendererCloudCaptureInputTests tests/CloudCaptureInputTests.cpp)
+    target_link_libraries(MyRendererCloudCaptureInputTests PRIVATE MyRendererCloudNoise)
+    add_test(NAME cloud-capture-inputs COMMAND MyRendererCloudCaptureInputTests)
+    add_executable(MyRendererCloudNoiseTests tests/CloudNoiseVolumeTests.cpp)
+    target_link_libraries(MyRendererCloudNoiseTests PRIVATE MyRendererCloudNoise)
+    add_test(NAME cloud-noise-asset COMMAND MyRendererCloudNoiseTests)
+    add_executable(MyRendererCloudNoiseGpuTests
+        tests/CloudNoiseGpuTests.cpp src/render/CloudNoiseTexture.cpp
+        src/render/Shader.cpp src/render/OpenGlStateCache.cpp)
+    target_include_directories(MyRendererCloudNoiseGpuTests PRIVATE src)
+    target_compile_definitions(MyRendererCloudNoiseGpuTests PRIVATE
+        MYRENDERER_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
+    target_link_libraries(MyRendererCloudNoiseGpuTests PRIVATE
+        MyRendererCloudNoise glad_gl_core_33 glfw glm::glm)
+    foreach(target MyRendererCloudNoiseAsset MyRendererCloudLightingAsset MyRendererCloudCaptureInputTests MyRendererCloudNoiseTests MyRendererCloudNoiseGpuTests)
+        if(MSVC)
+            target_compile_options(${target} PRIVATE /W4 /permissive- /utf-8)
+        else()
+            target_compile_options(${target} PRIVATE -Wall -Wextra -Wpedantic)
+        endif()
+    endforeach()
+    add_custom_target(cloud-noise-acceptance
+        COMMAND $<TARGET_FILE:MyRendererCloudNoiseGpuTests> ${CMAKE_CURRENT_BINARY_DIR}/cloud-noise-acceptance
+        COMMAND ${CMAKE_COMMAND}
+            -DGENERATOR=$<TARGET_FILE:MyRendererCloudNoiseAsset>
+            -DCANONICAL_ASSET=${CMAKE_CURRENT_SOURCE_DIR}/assets/clouds/noise-v1-64-period4.cloudnoise
+            -DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/cloud-noise-acceptance
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/tools/CloudNoiseAssetAcceptance.cmake
+        DEPENDS MyRendererCloudNoiseGpuTests MyRendererCloudNoiseAsset
+        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+        COMMENT "Checking offline cloud noise identity, corruption and CPU/GPU sampling")
+
+    add_executable(MyRendererCloudFieldParityTests
+        tests/CloudFieldParityTests.cpp
+        src/render/Shader.cpp
+    )
+    target_include_directories(MyRendererCloudFieldParityTests PRIVATE src)
+    target_compile_definitions(MyRendererCloudFieldParityTests PRIVATE
+        MYRENDERER_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}"
+    )
+    target_link_libraries(MyRendererCloudFieldParityTests PRIVATE glad_gl_core_33 glfw glm::glm MyRendererCloudNoise)
+    if(MSVC)
+        target_compile_options(MyRendererCloudFieldParityTests PRIVATE /W4 /permissive- /utf-8)
+    else()
+        target_compile_options(MyRendererCloudFieldParityTests PRIVATE -Wall -Wextra -Wpedantic)
+    endif()
+    add_custom_target(cloud-field-parity
+        COMMAND $<TARGET_FILE:MyRendererCloudFieldParityTests>
+        DEPENDS MyRendererCloudFieldParityTests
+        COMMENT "Comparing the shared cloud density field on the GPU against the CPU"
+    )
+
+    # The GPU ray march against the CPU reference integral. Separate from the field parity above
+    # because the two answer different questions: that one asks whether both compilers evaluate one
+    # density field, this one whether they integrate it the same way.
+    add_executable(MyRendererCloudMarchParityTests
+        tests/CloudMarchParityTests.cpp
+        src/render/Shader.cpp
+        src/render/CloudLayerRenderer.cpp
+        src/render/Camera.cpp
+    )
+    target_include_directories(MyRendererCloudMarchParityTests PRIVATE src)
+    target_compile_definitions(MyRendererCloudMarchParityTests PRIVATE
+        MYRENDERER_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}"
+    )
+    target_link_libraries(MyRendererCloudMarchParityTests PRIVATE
+        MyRendererPathTracing glad_gl_core_33 glfw glm::glm
+    )
+    if(MSVC)
+        target_compile_options(MyRendererCloudMarchParityTests PRIVATE /W4 /permissive- /utf-8)
+    else()
+        target_compile_options(MyRendererCloudMarchParityTests PRIVATE -Wall -Wextra -Wpedantic)
+    endif()
+    add_custom_target(cloud-march-parity
+        COMMAND $<TARGET_FILE:MyRendererCloudMarchParityTests>
+        DEPENDS MyRendererCloudMarchParityTests
+        COMMENT "Comparing the GPU cloud ray march against the CPU reference integral"
+    )
+
+    add_executable(MyRendererCloudShadowTests
+        tests/CloudShadowTests.cpp
+        src/render/CloudShadowRenderer.cpp
+        src/render/Shader.cpp)
+    target_include_directories(MyRendererCloudShadowTests PRIVATE src)
+    target_compile_definitions(MyRendererCloudShadowTests PRIVATE
+        MYRENDERER_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
+    target_link_libraries(MyRendererCloudShadowTests PRIVATE
+        MyRendererPathTracing glad_gl_core_33 glfw glm::glm)
+    if(MSVC)
+        target_compile_options(MyRendererCloudShadowTests PRIVATE /W4 /permissive- /utf-8)
+    else()
+        target_compile_options(MyRendererCloudShadowTests PRIVATE -Wall -Wextra -Wpedantic)
+    endif()
+    add_custom_target(cloud-shadow-acceptance
+        COMMAND $<TARGET_FILE:MyRendererCloudShadowTests> ${CMAKE_CURRENT_BINARY_DIR}/cloud-shadow-acceptance
+        DEPENDS MyRendererCloudShadowTests
+        COMMENT "Checking shared sun-ray transmission, shadow advection and stable projection")
+
+    add_executable(MyRendererGodRaysTests
+        tests/GodRaysTests.cpp src/render/GodRaysRenderer.cpp src/render/CloudShadowRenderer.cpp
+        src/render/Camera.cpp src/render/Shader.cpp)
+    target_include_directories(MyRendererGodRaysTests PRIVATE src)
+    target_compile_definitions(MyRendererGodRaysTests PRIVATE MYRENDERER_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
+    target_link_libraries(MyRendererGodRaysTests PRIVATE MyRendererPathTracing glad_gl_core_33 glfw glm::glm)
+    if(MSVC)
+        target_compile_options(MyRendererGodRaysTests PRIVATE /W4 /permissive- /utf-8)
+    else()
+        target_compile_options(MyRendererGodRaysTests PRIVATE -Wall -Wextra -Wpedantic)
+    endif()
+    add_custom_target(god-rays-acceptance
+        COMMAND $<TARGET_FILE:MyRendererGodRaysTests> ${CMAKE_CURRENT_BINARY_DIR}/god-rays-acceptance
+        DEPENDS MyRendererGodRaysTests
+        COMMENT "Checking radial scattering, cloud/geometry occlusion, solar transmission and skip behavior")
+
+    add_executable(MyRendererCloudTemporalTests
+        tests/CloudTemporalTests.cpp
+        src/render/Shader.cpp
+        src/render/CloudLayerRenderer.cpp
+        src/render/Camera.cpp
+    )
+    target_include_directories(MyRendererCloudTemporalTests PRIVATE src)
+    target_compile_definitions(MyRendererCloudTemporalTests PRIVATE
+        MYRENDERER_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
+    target_link_libraries(MyRendererCloudTemporalTests PRIVATE
+        MyRendererPathTracing glad_gl_core_33 glfw glm::glm)
+    if(MSVC)
+        target_compile_options(MyRendererCloudTemporalTests PRIVATE /W4 /permissive- /utf-8)
+    else()
+        target_compile_options(MyRendererCloudTemporalTests PRIVATE -Wall -Wextra -Wpedantic)
+    endif()
+    foreach(cloudTarget MyRendererCloudMarchParityTests MyRendererCloudShadowTests MyRendererGodRaysTests MyRendererCloudTemporalTests)
+        target_sources(${cloudTarget} PRIVATE src/render/CloudNoiseTexture.cpp)
+    endforeach()
+    add_custom_target(cloud-temporal-acceptance
+        COMMAND $<TARGET_FILE:MyRendererCloudTemporalTests>
+            ${CMAKE_CURRENT_BINARY_DIR}/cloud-temporal-acceptance
+        DEPENDS MyRendererCloudTemporalTests
+        COMMENT "Checking cloud history, half-resolution depth, flicker and camera/wind motion")
+
     add_executable(MyRendererPrismOpticsTests
         tests/PrismOpticsTests.cpp
     src/optics/PrismOptics.cpp
@@ -676,6 +890,125 @@ if(BUILD_TESTING)
         DEPENDS MyRenderer MyRendererImageComparison
         WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
         COMMENT "Checking ocean transmission, underwater fog, sea states, quality, parity, and motion"
+    )
+
+    add_custom_target(cloud-layer-acceptance
+        COMMAND ${CMAKE_COMMAND}
+            -DRENDERER=$<TARGET_FILE:MyRenderer>
+            -DCOMPARATOR=$<TARGET_FILE:MyRendererImageComparison>
+            -DSOURCE_DIR=${CMAKE_CURRENT_SOURCE_DIR}
+            -DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/cloud-layer-acceptance
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/tools/CloudLayerAcceptance.cmake
+        DEPENDS MyRenderer MyRendererImageComparison
+        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+        COMMENT "Capturing calibrated cloud presets and checking deterministic volume compositing"
+    )
+
+    add_custom_target(cloud-layer-benchmark
+        COMMAND ${CMAKE_COMMAND}
+            -DRENDERER=$<TARGET_FILE:MyRenderer>
+            -DSOURCE_DIR=${CMAKE_CURRENT_SOURCE_DIR}
+            -DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/cloud-layer-benchmark
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/tools/CloudLayerBenchmark.cmake
+        DEPENDS MyRenderer
+        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+        COMMENT "Measuring independent cloud GPU cost at 1280x720 for Low and High"
+    )
+    add_custom_target(god-rays-benchmark
+        COMMAND ${CMAKE_COMMAND}
+            -DRENDERER=$<TARGET_FILE:MyRenderer>
+            -DSOURCE_DIR=${CMAKE_CURRENT_SOURCE_DIR}
+            -DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/god-rays-benchmark
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/tools/GodRaysBenchmark.cmake
+        DEPENDS MyRenderer
+        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+        COMMENT "Measuring Low/High half-resolution radial scattering at 1280x720")
+    add_custom_target(god-rays-visual-acceptance
+        COMMAND ${CMAKE_COMMAND}
+            -DRENDERER=$<TARGET_FILE:MyRenderer>
+            -DCOMPARATOR=$<TARGET_FILE:MyRendererImageComparison>
+            -DSOURCE_DIR=${CMAKE_CURRENT_SOURCE_DIR}
+            -DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/god-rays-visual-acceptance
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/tools/GodRaysVisualAcceptance.cmake
+        DEPENDS MyRenderer MyRendererImageComparison
+        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+        COMMENT "Checking god rays visibility, render paths, night/behind-camera skip and repeatability")
+    add_custom_target(cloud-shadow-benchmark
+        COMMAND ${CMAKE_COMMAND}
+            -DRENDERER=$<TARGET_FILE:MyRenderer>
+            -DSOURCE_DIR=${CMAKE_CURRENT_SOURCE_DIR}
+            -DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/cloud-shadow-benchmark
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/tools/CloudShadowBenchmark.cmake
+        DEPENDS MyRenderer
+        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+        COMMENT "Measuring the independent solar cloud transmission pass")
+
+    add_custom_target(cloud-shadow-visual-acceptance
+        COMMAND ${CMAKE_COMMAND}
+            -DRENDERER=$<TARGET_FILE:MyRenderer>
+            -DCOMPARATOR=$<TARGET_FILE:MyRendererImageComparison>
+            -DSOURCE_DIR=${CMAKE_CURRENT_SOURCE_DIR}
+            -DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/cloud-shadow-visual-acceptance
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/tools/CloudShadowVisualAcceptance.cmake
+        DEPENDS MyRenderer MyRendererImageComparison
+        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+        COMMENT "Checking cloud shadows on ground/water, render-path parity and night skip")
+
+    if(WIN32)
+        find_program(MYRENDERER_POWERSHELL NAMES pwsh powershell REQUIRED)
+        add_custom_target(cloud-capture-mutation-acceptance
+            COMMAND ${MYRENDERER_POWERSHELL} -NoProfile -ExecutionPolicy Bypass
+                -File ${CMAKE_CURRENT_SOURCE_DIR}/tools/CloudCaptureMutationAcceptance.ps1
+                -Renderer $<TARGET_FILE:MyRenderer> -SourceRoot ${CMAKE_CURRENT_SOURCE_DIR}
+                -OutputDirectory ${CMAKE_CURRENT_BINARY_DIR}/cloud-capture-mutation-acceptance
+            DEPENDS MyRenderer VERBATIM)
+    endif()
+    add_custom_target(cloud-offline-production-acceptance
+        COMMAND ${CMAKE_COMMAND}
+            -DRENDERER=$<TARGET_FILE:MyRenderer>
+            -DCOMPARATOR=$<TARGET_FILE:MyRendererImageComparison>
+            -DSOURCE_DIR=${CMAKE_CURRENT_SOURCE_DIR}
+            -DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/cloud-offline-production-acceptance
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/tools/CloudOfflineProductionAcceptance.cmake
+        COMMAND ${CMAKE_COMMAND} -E env MYRENDERER_TEST_OFFLINE_NOISE=1
+            $<TARGET_FILE:MyRendererCloudMarchParityTests>
+        COMMAND ${CMAKE_COMMAND} -E env MYRENDERER_TEST_OFFLINE_NOISE=1
+            $<TARGET_FILE:MyRendererCloudShadowTests> ${CMAKE_CURRENT_BINARY_DIR}/cloud-offline-production-acceptance/shadow
+        DEPENDS MyRenderer MyRendererImageComparison MyRendererCloudMarchParityTests MyRendererCloudShadowTests
+        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+        COMMENT "Checking production offline cloud appearance, integrals and GPU cost")
+
+    add_custom_target(camera-environment-acceptance
+        COMMAND ${CMAKE_COMMAND}
+            -DRENDERER=$<TARGET_FILE:MyRenderer>
+            -DSOURCE_DIR=${CMAKE_CURRENT_SOURCE_DIR}
+            -DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/camera-environment-acceptance
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/tools/CameraEnvironmentAcceptance.cmake
+        DEPENDS MyRenderer
+        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+        COMMENT "Checking camera motion does not rebake the cloudless environment")
+
+    add_custom_target(cloud-temporal-visual-acceptance
+        COMMAND ${CMAKE_COMMAND}
+            -DRENDERER=$<TARGET_FILE:MyRenderer>
+            -DCOMPARATOR=$<TARGET_FILE:MyRendererImageComparison>
+            -DSOURCE_DIR=${CMAKE_CURRENT_SOURCE_DIR}
+            -DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/cloud-temporal-visual-acceptance
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/tools/CloudTemporalVisualAcceptance.cmake
+        DEPENDS MyRenderer MyRendererImageComparison
+        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+        COMMENT "Checking final cloud composites and reproducible independent history"
+    )
+    add_custom_target(cloud-temporal-benchmark
+        COMMAND ${CMAKE_COMMAND}
+            -DRENDERER=$<TARGET_FILE:MyRenderer>
+            -DSOURCE_DIR=${CMAKE_CURRENT_SOURCE_DIR}
+            -DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/cloud-temporal-benchmark
+            -DHALF_RESOLUTION=1 -DTEMPORAL=1
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/tools/CloudLayerBenchmark.cmake
+        DEPENDS MyRenderer
+        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+        COMMENT "Measuring half-resolution cloud march and independent history at 1280x720"
     )
 
     add_custom_target(water-synthesis-benchmark
@@ -1074,7 +1407,7 @@ add_custom_target(gpu-smoke
             MYRENDERER_SUN_ELEVATION=8
             MYRENDERER_SUN_AZIMUTH=120
             $<TARGET_FILE:MyRenderer>
-            ${CMAKE_CURRENT_SOURCE_DIR}/assets/scenes/18_atmosphere_sky.myscene
+            ${CMAKE_CURRENT_SOURCE_DIR}/assets/scenes/fixtures/18_atmosphere_sky.myscene
     COMMAND ${CMAKE_COMMAND} -E env
             MYRENDERER_SMOKE_TEST=1
             MYRENDERER_MSAA=4
@@ -1083,7 +1416,7 @@ add_custom_target(gpu-smoke
             MYRENDERER_SUN_ELEVATION=8
             MYRENDERER_SUN_AZIMUTH=120
             $<TARGET_FILE:MyRenderer>
-            ${CMAKE_CURRENT_SOURCE_DIR}/assets/scenes/18_atmosphere_sky.myscene
+            ${CMAKE_CURRENT_SOURCE_DIR}/assets/scenes/fixtures/18_atmosphere_sky.myscene
     # The On/Off and scale-height pairs are what the slice is accepted against, and each is a
     # distinct uniform path through the compositor.
     COMMAND ${CMAKE_COMMAND} -E env
@@ -1091,7 +1424,7 @@ add_custom_target(gpu-smoke
             MYRENDERER_MSAA=4
             MYRENDERER_AERIAL_PERSPECTIVE=0
             $<TARGET_FILE:MyRenderer>
-            ${CMAKE_CURRENT_SOURCE_DIR}/assets/scenes/18_atmosphere_sky.myscene
+            ${CMAKE_CURRENT_SOURCE_DIR}/assets/scenes/fixtures/18_atmosphere_sky.myscene
     COMMAND ${CMAKE_COMMAND} -E env
             MYRENDERER_SMOKE_TEST=1
             MYRENDERER_MSAA=4
@@ -1099,7 +1432,7 @@ add_custom_target(gpu-smoke
             MYRENDERER_AERIAL_STRENGTH=3
             MYRENDERER_AERIAL_SCALE_HEIGHT=2
             $<TARGET_FILE:MyRenderer>
-            ${CMAKE_CURRENT_SOURCE_DIR}/assets/scenes/18_atmosphere_sky.myscene
+            ${CMAKE_CURRENT_SOURCE_DIR}/assets/scenes/fixtures/18_atmosphere_sky.myscene
     # Cascaded shadows: one, three and four cascades are three different uniform paths through the
     # cascade array, and the open coastal fixture is where the split distances actually matter.
     COMMAND ${CMAKE_COMMAND} -E env
@@ -1107,13 +1440,13 @@ add_custom_target(gpu-smoke
             MYRENDERER_MSAA=4
             MYRENDERER_SHADOW_CASCADES=1
             $<TARGET_FILE:MyRenderer>
-            ${CMAKE_CURRENT_SOURCE_DIR}/assets/scenes/19_coastal_cascades.myscene
+            ${CMAKE_CURRENT_SOURCE_DIR}/assets/scenes/fixtures/19_coastal_cascades.myscene
     COMMAND ${CMAKE_COMMAND} -E env
             MYRENDERER_SMOKE_TEST=1
             MYRENDERER_MSAA=4
             MYRENDERER_SHADOW_CASCADES=3
             $<TARGET_FILE:MyRenderer>
-            ${CMAKE_CURRENT_SOURCE_DIR}/assets/scenes/19_coastal_cascades.myscene
+            ${CMAKE_CURRENT_SOURCE_DIR}/assets/scenes/fixtures/19_coastal_cascades.myscene
     COMMAND ${CMAKE_COMMAND} -E env
             MYRENDERER_SMOKE_TEST=1
             MYRENDERER_MSAA=4
@@ -1122,7 +1455,7 @@ add_custom_target(gpu-smoke
             MYRENDERER_SHADOW_CASCADES=4
             MYRENDERER_SHADOW_SPLIT_LAMBDA=0.5
             $<TARGET_FILE:MyRenderer>
-            ${CMAKE_CURRENT_SOURCE_DIR}/assets/scenes/19_coastal_cascades.myscene
+            ${CMAKE_CURRENT_SOURCE_DIR}/assets/scenes/fixtures/19_coastal_cascades.myscene
     COMMAND ${CMAKE_COMMAND} -E env
             MYRENDERER_SMOKE_TEST=1
             MYRENDERER_MSAA=4

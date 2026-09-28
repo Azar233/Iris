@@ -1,3 +1,4 @@
+#include "asset/InputManifest.h"
 #include "render/Texture2D.h"
 
 #include <algorithm>
@@ -175,6 +176,7 @@ std::shared_ptr<Texture2D> Texture2D::fromSource(const TextureData& source) {
 
     std::vector<std::uint8_t> bytes = source.encodedData;
     if (bytes.empty() && !source.sourcePath.empty()) {
+        capture::recordInput(source.sourcePath);
         bytes = readBinaryFile(source.sourcePath);
     }
     if (bytes.empty()) {

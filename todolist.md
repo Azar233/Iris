@@ -42,6 +42,8 @@
 
 体积云的调研结论是它不需要 compute shader（ray march、时间累积、深度引导升采样都是逐像素操作），因此并入第 4 条主线作为 P1-A 切片 6，而不是留在 P2。极光、FFT Ocean、浅水与完整天气不与上述主线并行开发。
 
+[`docs/research/cloud_and_ephemeris_intake_brief.md`](docs/research/cloud_and_ephemeris_intake_brief.md) 是上述简报的**增量补充**：它记录了两篇体积云教学文章中值得吸收的三项工程细节（深度图降采样取极值、边缘重绘、两次采样的廉价光照档），并登记了"分帧/棋盘格更新"为何**不**进入切片 6 主路径；同时给出 Astronomy Engine 的依赖评估与"日月星历"切片 7 的接入安排。该简报不替换主简报的算法主线结论。
+
 ### 1.3 UI 与工作流目标
 
 界面采用“大视口 + Scene Explorer + Inspector + Content Browser”的渲染工作台布局；当前 ImGui Docking 外壳继续演进，不替换 UI 框架。推荐默认工作区：
@@ -117,9 +119,9 @@ Content Browser 只保留与渲染和模拟有关的分类：Scenes、Models、M
 
 固定场景：
 
-- `assets/scenes/10_reference_pathtracer_pbr_hdri.myscene`
-- `assets/scenes/11_reference_pathtracer_lights.myscene`
-- `assets/scenes/12_reference_pathtracer_volume.myscene`
+- `assets/scenes/fixtures/10_reference_pathtracer_pbr_hdri.myscene`
+- `assets/scenes/fixtures/11_reference_pathtracer_lights.myscene`
+- `assets/scenes/fixtures/12_reference_pathtracer_volume.myscene`
 
 证据：[`docs/reference-path-tracer.md`](docs/reference-path-tracer.md)。
 
@@ -350,16 +352,18 @@ P1-0 验收：一个固定 C++ Module 驱动场景与 24 帧参数动画，GUI P
 
 ### P1-A：自然 Hero Scene——天空、室外阴影与 Gerstner 海面（预计 4～6 周）
 
-分片交付。切片 1「Rayleigh/Mie 天空与统一太阳方向」已收口，见 [`docs/atmosphere-sky.md`](docs/atmosphere-sky.md)；体积云（切片 6）的调研依据见 [`docs/research/volumetric_clouds_brief.md`](docs/research/volumetric_clouds_brief.md)。
+分片交付。切片 1「Rayleigh/Mie 天空与统一太阳方向」已收口，见 [`docs/atmosphere-sky.md`](docs/atmosphere-sky.md)；体积云（切片 6）与日月星历（切片 7）的调研依据见 [`docs/research/`](docs/research/)。
 
 | 切片 | 状态 | 已落地 | 待办 |
 | --- | --- | --- | --- |
 | 1 天空与统一太阳 | 已收口 | `src/optics/Atmosphere.*` 解析式单次散射模型、`EnvironmentMap::useAtmosphere/useHdrSource`、`.myscene` atmosphere 字段、Inspector `Atmosphere` 分组（`SetAtmosphereSettings` 域命令）、`18_atmosphere_sky.myscene` 外景夹具、逐通道方向光颜色（`skyLightColor` + `uLightColor` + CPU PT 同一光源）、CPU Path Tracer 同一天空（`captureSceneLighting` 生成 equirect + `parametersMatch` 缓存，Raster/PT 对照 MAE 0.061）、`atmosphere-model` 测试与 `gpu-smoke` 双后端覆盖 | - |
 | 2 Aerial Perspective | 已收口 | `opticalDepthAlongSegment()` / `verticalOpticalDepth()` 有限线段积分器与整柱光学厚度、`.myscene` 三个新字段、Inspector `Aerial perspective` 子节、`postprocess.frag` 深度重建合成（Height Fog → Aerial Perspective → 显示变换）、disk-free 天顶/地平线 in-scatter、`MYRENDERER_AERIAL_*` 覆盖项、`gpu-smoke` On/Off 两条分支、[`docs/atmosphere-sky.md`](docs/atmosphere-sky.md) 记录实现与近似 | CPU Path Tracer 尚不做空中透视 |
 | 3 室外阴影 | 已收口 | 3～4 级 CSM、Texel Snapping、Bounds 拟合、Bias、Forward/Deferred 选层与调试视图、`.myscene`/Inspector、海岸夹具与 GPU 计时；证据见 [`docs/shadow-cascades.md`](docs/shadow-cascades.md) | PCSS 留给后续质量档 |
-| 4 海面 | 已收口 | 相机相关连续网格、Gerstner 波、场景颜色/深度透射、Beer-Lambert 吸收、白冠/岸线泡沫、水下雾、Forward/Deferred 与 TAA 运动矢量、Calm/Windy/Storm、Low/High 质量及 GPU 预算；证据见 [`docs/water-synthesis.md`](docs/water-synthesis.md) | 屏幕空间折射和 CPU Path Tracer 水面仍是已知边界 |
+| 4 海面 | 功能基线已收口，写实质量待升级 | 相机相关连续网格、四组 Gerstner 波、高档单点屏幕空间折射、场景颜色/深度透射、Beer-Lambert 吸收、白冠/岸线泡沫、水下雾、Forward/Deferred 与 TAA 运动矢量、Calm/Windy/Storm、Low/High 质量及 GPU 预算；证据见 [`docs/water-synthesis.md`](docs/water-synthesis.md) | 当前固定图仍是程序化原型观感；缺多尺度频谱与微法线、粗糙度相关反射、稳定 SSR/平面反射、水面投射焦散、水下体积光束/悬浮颗粒和 CPU Path Tracer 水面 |
 | 5 昼夜与海况序列 | 已收口 | `myrenderer.core.coastal-sequence` 参数化太阳、月光、星空、雾、风、波浪和相机；共享环境与方向光从日光过渡到月光，隐藏 OpenGL 栅格 Render Job 输出 13 帧 Beauty PNG，双运行哈希一致并检查夜帧亮度；证据见 [`docs/coastal-sequence.md`](docs/coastal-sequence.md) | 真实天体历、月相及恒星星表尚未实现；栅格任务的 AOV、Resume、Simulation Cache、逐帧 Report 留给 Batch 平台扩展；CPU Path Tracer 水面仍是已知边界 |
-| 6 体积云 | 调研完成，未开始 | 文献、算法流水线、OpenGL 3.3 可行性边界、集成风险、分阶段路径与确定性要求已写入 [`docs/research/volumetric_clouds_brief.md`](docs/research/volumetric_clouds_brief.md) | 见下方「P1-A 切片 6」工作包 C1～C7 |
+| 6 体积云 | C1～C4 与 C6 已接入；C5 程序化形态标定完成，离线资产仍待补齐 | 共享 CPU/GPU 三维密度场、重复纹理修复、形态与消光标定、半分辨率独立云历史、地面/海面云阴影及屏幕空间径向光束均已验收；证据见 [`docs/cloud-calibration.md`](docs/cloud-calibration.md)、[`docs/cloud-temporal.md`](docs/cloud-temporal.md)、[`docs/cloud-shadows.md`](docs/cloud-shadows.md) 与 [`docs/god-rays.md`](docs/god-rays.md) | C7 确定性、离线噪声/LUT 与捕获输入合同已收口，见 [`docs/cloud-c7-contract.md`](docs/cloud-c7-contract.md)；下一步 C3 光照标定与 C5 authored weather；屏幕空间光束只在天空合成，窄遮挡边缘漏光已记录，三维空气积分与写实光柱尚未完成 |
+| 7 日月星历 | 调研完成，未开始 | Astronomy Engine（MIT、零依赖、VSOP87 + NOVAS）依赖评估、API 对应、四条接入硬约束与工作包 7-A～7-C 已写入 [`docs/research/cloud_and_ephemeris_intake_brief.md`](docs/research/cloud_and_ephemeris_intake_brief.md) | 经纬度/日期驱动的日月位置与月相 |
+| 8 恒星与星座 | 未决策 | `Astronomy_DefineStar` 仅支持 8 颗自定义星，**无内置星表**，缺口是数据而非算法 | 先决定星表来源与许可证再立项；在此之前保持程序化星点，不假装天文准确 |
 
 - [x] 实现 Rayleigh/Mie Atmosphere（解析单次散射 + Kasten-Young 气团 + 闭式指数积分）并统一太阳方向：天空、方向光、阴影贴图、方向光能量共用同一 `sunDirection()`；太阳盘亮度锚定到晴天地面照度比 `E_sun/E_sky≈10`，使环境下半球与关键光照亮的地面一致。
 - [x] 统一太阳的逐通道颜色：`skyLightColor()` 把 `sunTransmittance` 归一化到最亮通道，`uLightColor` 进入 Forward/Deferred 的 PBR、非 PBR 与 Stylized 三条直接光路径，`captureSceneLighting()` 让 CPU Path Tracer 的方向光共享同一方向、能量与颜色；大气关闭时恒为白色，既有固定图不变。
@@ -367,12 +371,13 @@ P1-0 验收：一个固定 C++ Module 驱动场景与 24 帧参数动画，GUI P
 - [x] 完成统一太阳的剩余部分：Aerial Perspective（相机到场景的同一积分器）。`opticalDepthAlongSegment()` 沿同一指数剖面与同一 Kasten-Young 气团约定积分有限线段，`verticalOpticalDepth()` 给出整根气柱作为计量单位；合成放在 `postprocess.frag`（复用已有的深度重建，透明物体与天空自动走同一路径），顺序为 Height Fog → Aerial Perspective → 显示变换；in-scatter 取不含太阳盘的天顶/地平线天空色，保证无穷远精确收敛到天空、零距离不改像素。`gpu-smoke` 增加 On/Off 两条分支，`atmosphere-model` 覆盖两个积分极限、单位换算与极端输入，证据见 [`docs/atmosphere-sky.md`](docs/atmosphere-sky.md)。已知边界：CPU Path Tracer 尚未接入。
 - [x] 完成稳定 3～4 级 CSM、Texel Snapping、Bounds 拟合、Bias 与 Cascade 调试；`shadow-cascade-acceptance` 在海岸夹具上检查 Forward/Deferred 选层一致性并测量 1/3/4 级阴影 pass，PCSS 仅作为后续质量档。证据见 [`docs/shadow-cascades.md`](docs/shadow-cascades.md)。
 - [x] 用相机相关的连续平方映射网格承载大范围海面：`192×192` 逻辑网格在 `extent=110` 时由中心约 `0.012` 世界单位单格连续增长到边缘约 `2.28` 世界单位，避免分块接缝；证据见 [`docs/water-synthesis.md`](docs/water-synthesis.md)。
+- [x] 收拢自然场景入口：Content Browser 与 `Open bundled scene` 只显示 `01_volumetric_cloud_lab` 和集成天空/云/海面/海底的 `02_ocean_weather_hero`；原 22 个阶段场景迁入 `assets/scenes/fixtures` 并继续服务自动验收。Hero 海面范围提高到 500，低机位避免有限网格外圈进入默认画面；1100×680 实测显示 `Scenes (2)`，MSVC 全量 CTest 22/22 通过。
 - [x] 实现四组 Gerstner Waves，输出解析位移、法线、切线与速度；明确标注为 Wave Synthesis，`water-wave-synthesis` 用时间差分验算速度。
 - [x] 复用 Fresnel、IOR、Transmission、Beer-Lambert 与环境反射，增加真实海床水深、白冠/岸线泡沫和水下雾；固定深度与水下夹具及图像对照见 [`docs/water-synthesis.md`](docs/water-synthesis.md)。
 - [x] 水面接入 Shadow、Motion Vector、TAA 与运动调试图，制作 Calm / Windy / Storm 三组海况及 Low/High 档；`water-synthesis-acceptance` 覆盖 On/Off、时间变化、双路径、运动、水深、预设和质量档，`water-synthesis-benchmark` 固定 1280×720 GPU 预算。
 - [x] 将太阳方位、雾、风、波浪和相机轨迹暴露为 C++ Module 参数；通过栅格 Render Job 输出可重复的 13 帧正午、日落、夜间海况序列，证据见 [`docs/coastal-sequence.md`](docs/coastal-sequence.md)。
 - [x] 修复夜帧全黑：夜空开关默认关闭，海岸序列启用程序化星点与月盘、冷色月光主光及夜间海面照明；增加夜帧亮度与重复渲染验收，证据见 [`docs/coastal-sequence.md`](docs/coastal-sequence.md)。
-- [ ] 如需天文准确的昼夜循环，再加入经纬度/日期驱动的日月位置、月相和恒星星表；当前为可重复的视觉演示轨道。
+- [ ] 切片 7「日月星历」：用 Astronomy Engine 把太阳/月球位置从手工插值升级为经纬度 + 日期驱动的真实星历，并加入月相。依赖评估、API 对应、四条接入硬约束与工作包 7-A～7-C 见 [`docs/research/cloud_and_ephemeris_intake_brief.md`](docs/research/cloud_and_ephemeris_intake_brief.md)。未完成前维持当前可重复的视觉演示轨道。
 
 #### P1-A 切片 6：体积云
 
@@ -383,10 +388,25 @@ P1-0 验收：一个固定 C++ Module 驱动场景与 24 帧参数动画，GUI P
 - [ ] **C1 云层参数与 2D 解析云层**：`RendererSettings` 增加云层开关、云底/云顶高度、coverage、密度尺度与风向；先用一张可平铺 2D 噪声做解析投影，确认「云在天空里」的构图与参数语义，不引入新 pass 结构。验收：固定机位云量 On/Off 对照图 + CPU 侧可复算的解析期望值；明确记录「无厚度、无视差、无自阴影」的限制。
 - [ ] **C2 CPU 生成 3D 噪声资产 + Raymarched slab**：CPU 生成可平铺 Worley + Perlin FBM（32³～64³），用 `glTexImage3D`/`glTexSubImage3D` 上传；实现 slab 内 24～48 步 march、coverage 重映射与 detail 侵蚀、蓝噪声抖动、`T < 0.01` 提前退出，不做时间累积。验收：与 C1 的形状连续性对照；**建立 CPU 参考 raymarch**（复用同一密度函数与采样方案）做数值交叉验证，这是本仓库相对其他引擎的独特优势，必须在这一步就建立而不是等到最后。
 - [ ] **C3 Sun light march + 多重散射近似**：每个有效样本向太阳走 4～6 步累加光学深度；相位函数用双叶 Henyey-Greenstein（前向 `g≈0.8`，后向 `g≈-0.3`，混合权重约 `0.5`）得到 silver lining；多重散射先做 Hillaire octave 近似（多次 HG + 衰减 `a≈0.5～0.7`），预计算 LUT 作为后续可选路径。硬约束：云的太阳方向与辐照度必须与 shadow map、`sunTransmittance()` 共用同一 `sunDirection()`，这是最容易做错且观感代价最大的一点。验收：日出/正午/黄昏三组固定机位对照，确认云被照亮的方向与地面阴影一致。
-- [ ] **C4 半分辨率 + 时间重投影**：1/2 分辨率渲染，用低分辨率 pass 自身的「首个非零密度处深度」做深度引导升采样（不能用 opaque depth 直接双线性）；为云体积生成独立 volume motion vector（取云层入口深度的风场位移），history 拒绝用低分辨率深度差 + 邻域 min/max clamp；云缓冲与几何 TAA 解耦，避免半分辨率噪声渗入前景几何。验收：Low/High 两档；稳定相机下的多帧一致性（闪烁度量）与运动相机的 ghosting 失败案例都要出图。
+- [x] **C4 半分辨率 + 时间重投影**：1/2 分辨率渲染，用低分辨率 pass 自身的「首个非零密度处深度」做深度引导升采样（不能用 opaque depth 直接双线性）；为云体积生成独立 volume motion vector（取云层入口深度的风场位移），history 拒绝用低分辨率深度差 + 邻域 min/max clamp；云缓冲与几何 TAA 解耦，避免半分辨率噪声渗入前景几何。验收：Low/High 两档；稳定相机下的多帧一致性（闪烁度量）与运动相机的 ghosting 失败案例都要出图。
+  - **2026-09-28 完成**：独立 RGBA16F 云颜色/透射率与 RG32F 首密度/入口深度、双缓冲历史、入口风场重投影、深度拒绝、3×3 clamp 与深度引导四点升采样已接入；正常相机/风场移动复用历史，尺寸/FOV/参数/视角切换/关闭重开/热重载失效。两个默认场景启用，旧场景默认全分辨率且历史关闭。GPU Low/High 静止帧间透射率变化降低 74.1%/81.0%；同版本 1280×720 云 pass GPU P95 从 13.07/28.38 ms 降至 4.16/9.00 ms。MSVC CTest 23/23、MinGW focused 5/5、两个编译器的 `cloud-temporal-acceptance`、`gpu-smoke` 与 1100×680 缩略图布局通过；对照截图、错误历史案例、复现和边界见 [`docs/cloud-temporal.md`](docs/cloud-temporal.md)。不宣称解决所有厚云视差与拖影，正式 Render Job determinism 元数据仍属 C7。
 - [ ] **C5 Weather map 与云型预设**：2D weather map（R = coverage，G = cloud type，B = height）由 CPU 生成或离线导入；提供 cumulus / stratus / cirrus 预设与 Low/High 参数档。验收：同一 weather map 在 Low/High 下结构一致，且 CPU 参考图使用同一 weather map；明确记录 cirrus 这类薄高层云与 slab 模型不匹配、需要单独密度剖面。
-- [ ] **C6 云阴影与 god rays**：太阳正交视图额外跑一次廉价 raymarch 得到云透射率，调制地面与水面；god rays 复用该透射率缓冲做屏幕空间径向散射。验收：云影位置与太阳方向/时间一致；屏幕空间 god rays 在遮挡边缘的漏光作为已知 artifact 记录，不假装解决。
-- [ ] **C7 确定性模式与验收合同**：提供一等公民的 `determinism` 开关——history 权重置 0、抖动使用固定序列而非帧序号、禁用自适应步数；3D 噪声与 LUT 来自 CPU 生成且可哈希校验的离线资产；headless Render Job 必须显式声明预热帧数与是否启用时间累积并写入输出元数据。验收：确定性模式下固定机位 PNG 可入库为基线；跨厂商逐像素一致**不做承诺**，基线按「给定 GPU + 驱动」固化，或对云区域使用更宽容差而非放松非云区域。
+  - **实现已落地，验收未完成。** base/detail 分离（最细八度只侵蚀内部、不再参与剪影阈值）、三通道程序化 weather map、`cumulus/stratus/cirrus` 预设、Low 24/4 与 High 48/6 两档步数（档位只改步数不改密度参数）、coverage 语义由「阈值」翻转为「覆盖率」，均已进入共享密度场、`.myscene`、领域载荷、入口校验、Inspector、缓存键与 `MYRENDERER_CLOUD_*`。新增契约见 [`docs/cloud-layer-c1.md`](docs/cloud-layer-c1.md) 的「C5」一节（`cloud-reference` 第 16 条断言细节八度不能造云、第 17 条断言零对比度时 weather map 完全惰性），全量 CTest 21/21 通过。
+  - **2026-09-28 重复纹理修复验收**：`cloudNoisePeriod` 接入共享字段，二维 Worley 最近点改为九邻域，基础云形与侵蚀细节最终升级为三维 Worley（27 邻域）；掠射视线增加最大 march 距离与地平线淡出，GPU 采用固定像素坐标的确定性采样抖动。两个默认场景目视检查已不再出现规则帘纹与斜向细纹；证据与复现命令见 [`docs/cloud-layer-c1.md`](docs/cloud-layer-c1.md)。`cloud-field-parity` density 最大绝对误差 `6.11e-7`，`cloud-march-parity` 透射率误差由 `0.751` 降至 `0.000498`，抖动双绘制逐值一致；MSVC Release CTest 22/22、MinGW Debug 云层/大气 2/2、1100×680 缩略图布局验收通过。旧 `edgeDensity=0.520` 属于修复前字段；新形态、消光和性能预算仍需重新标定，C5 不标记完成。**离线 authored weather map、3D 噪声纹理上传明确未做**。
+  - 只读审计另修好一处**会污染验收证据**的优先级错误：`MYRENDERER_CLOUD_PRESET` 原排在各项显式覆盖项之后，而 `applyCloudPreset` 会重写 `cloudsEnabled` 与高度/覆盖率，于是 `MYRENDERER_CLOUDS=0` + preset 会渲染出有云的一帧——不报错，只产出一张错的基线。现已把 preset 移到覆盖项之前，规则为「preset 提供默认值，显式覆盖优先」。
+  - [x] **2026-09-28 新字段标定与性能验收**：密度指标从 slab 中点采样改为独立 64 点积分，增加 `cloud-shape-acceptance` 的固定 96×64 Low/High 合同；积云覆盖参数从 0.50 调到 0.60，层云从 0.70 调到 0.95，实测覆盖率分别为 30.7% 与 88.7%。积云边缘密度 0.160、档位剪影 IoU 98.6%，达到本步形态目标。生产绘制移除每帧整图同步回读，并拆出独立 `Cloud volume march` 计时；1280×720 Low/High GPU P95 为 12.04/26.45 ms，作为 C4 优化对照。MSVC CTest 23/23、MinGW focused 3/3；复现、截图与限制见 [`docs/cloud-calibration.md`](docs/cloud-calibration.md)。本阶段不将 authored weather map、3D 纹理上传及写实云光照标记完成；下一项为 C4 半分辨率与独立时间历史。
+- [x] **C6 云阴影与 god rays**：太阳正交视图额外跑一次廉价 raymarch 得到云透射率，调制地面与水面；god rays 复用该透射率缓冲做屏幕空间径向散射。验收：云影位置与太阳方向/时间一致；屏幕空间 god rays 在遮挡边缘的漏光作为已知 artifact 记录，不假装解决。
+  - [x] **2026-09-28 云阴影接入**：共享太阳方向与云密度生成 R16F 太阳正交透射率，Low 128²/24 步、High 256²/48 步；稳定网格投影、边界淡出、随风移动及太阳/月亮关键光判定，Forward/Deferred 地面和海面接入，保留环境光。旧场景默认关闭，两个可见场景开启。周期 5 验收修复负坐标 GLSL 取模问题；CPU/GPU 最大透射率误差 0.000489，MSVC CTest 23/23、MinGW focused 5/5、双编译器云影 GPU 对照、共享云场/历史 GPU 回归、gpu-smoke 与 1100×680 布局通过。独立云影 pass 1280×720 GPU P95 Low/High 为 1.79/4.63 ms；High 成本仍需优化。截图、复现及近似见 [`docs/cloud-shadows.md`](docs/cloud-shadows.md)。后续 god rays 已完成，见下一条。
+  - [x] **2026-09-28 god rays 接入**：半分辨率 R16F 径向散射复用云 alpha、太阳透射率图与场景深度，Low/High 24/48 采样；天空区域在色调映射前合成，夜间、背向或屏幕外太阳、云内与水下跳过。旧场景默认关闭，两个可见场景开启；窄遮挡条另一侧仍漏光的已知病例已出图，未宣称三维正确遮挡。MSVC CTest 23/23、MinGW focused 4/4、双编译器 god-rays-acceptance、画面开关/路径/档位/重复/夜间/背向对照、gpu-smoke 与 1100×680 布局通过。1280×720 独立光束 pass GPU P95 Low/High 为 0.046/0.077 ms。实现、截图和边界见 [`docs/god-rays.md`](docs/god-rays.md)。
+- [x] **C7 确定性模式与验收合同**：提供一等公民的 `determinism` 开关——history 权重置 0、抖动使用固定序列而非帧序号、禁用自适应步数；3D 噪声与 LUT 来自 CPU 生成且可哈希校验的离线资产；headless Render Job 必须显式声明预热帧数与是否启用时间累积并写入输出元数据。验收：确定性模式下固定机位 PNG 可入库为基线；跨厂商逐像素一致**不做承诺**，基线按「给定 GPU + 驱动」固化，或对云区域使用更宽容差而非放松非云区域。
+  - [x] **2026-09-28 捕获控制与元数据**：`cloudDeterministic` 经场景/领域/Inspector/环境变量接入；有效渲染关闭云历史、TAA 与热重载，固定云抖动和档位步数，不改写作者偏好。Render Job schema 3 显式声明 determinism/warmupFrames/temporalAccumulation；每个输出先重置历史及抖动序列，再在固定时间预热并生成 PNG/帧报告。新增 `05_cloud_determinism.renderjob`；15 组图/报告验证重复输出、0/5 帧预热不变性和时间积累重复性，旧 13 帧昼夜作业兼容通过。MSVC CTest 24/24、MinGW focused 5/5、gpu-smoke 与 1100×680 布局通过。实现与证据见 [`docs/cloud-determinism.md`](docs/cloud-determinism.md)。**离线 3D 噪声/LUT、资产哈希校验与完整输入 manifest 尚未完成；C7 总项保持未完成。**
+
+
+  - [x] **2026-09-28 离线噪声基础与独立采样验收**：CPU 工具生成小端 RGBA16 的 32³/64³ Worley + Perlin FBM，提供二进制/JSON、版本/尺寸/准确长度/内容指纹校验；上下文线程 3D 上传恢复 GL 像素存储和 PBO 状态，同身份不重传，失败保留旧资源。32³/64³ × period 3/4/5 的六组 CPU/GPU 显式三线性采样最大误差 `5.96e-8`；64³/period 4 相对原程序化主体 RMSE `0.005719`。修复共享 C++ sqrt/floor 重载差异后，MSVC 与 MinGW 独立生成二进制/清单逐字节相同；仓库增加固定资产。复现与插图见 [`docs/cloud-noise-assets.md`](docs/cloud-noise-assets.md)。**这是基础验收，生产云/云影/CPU Reference/报告尚未切到资产；LUT 与完整 manifest 未做，C2/C7 保持未完成。**
+
+
+  - [x] **2026-09-28 离线噪声生产接入**：`cloudOfflineNoise` 经 Scene/领域/Inspector/环境覆盖接入；固定 64³/period 4 的已校验不可变数据同时供可见云、sun march、云影和 CPU Reference 使用。两个展示场景默认开启，旧场景默认关闭；首次上传后复用 GPU 资源，来源切换失效云历史而不重建 IBL，资产身份写入 Raster 帧报告。1280×720 同配置 High 整帧 GPU P50 云 Lab `14.631→7.244 ms`、海洋 `12.638→6.579 ms`；完整密度 RMSE `0.006076`、占据 IoU `94.886%`，离线云/云影 CPU-GPU 误差均通过。MSVC CTest 25/25；图像、重投影、元数据与复现见 [`docs/cloud-offline-runtime.md`](docs/cloud-offline-runtime.md)。**LUT、完整输入 manifest 与写实光照标定仍未完成，C7 总项不勾选。**
+  - [x] **2026-09-28 C7 收口**：CPU 生成并校验 8,193 样本 Q24 Beer–Lambert LUT，可见云、云影与 CPU Reference 共享；GPU 采样最大误差 `2.98e-8`。Raster 捕获按实际读取跟踪场景/作业、模型/MTL/外部 BIN/贴图/环境图、shader/include、噪声/LUT 及 Windows 非系统二进制，发布前核对完整内容，变更拒绝输出；15 组确定性图/报告和真实渲染中修改模型副本验收通过。MSVC CTest 26/26、MinGW 新增合同 2/2、gpu-smoke 与 1100×680 布局通过。证据、性能与边界见 [`docs/cloud-c7-contract.md`](docs/cloud-c7-contract.md)。上面的未完成说明是各切片当时状态，C7 现在完成；C2/C3/C5 的画质、蓝噪声、authored weather 与高级散射仍保持未完成。
 
 
 完成门槛：同一海岸场景能从正午平静海面切到日落风浪，天空、太阳、雾、水面与阴影方向一致；同一 C++ Module + Render Job 可重复输出参数动画，并有 Low/High GPU 预算。
@@ -532,9 +552,10 @@ cmake --build build-ci-msvc --config Release --target renderer-benchmark-suite
 4. **P0-D AOV Denoising + Sampling 改进（已完成；GPU 接口按门槛暂不冻结）**。
 5. **P1-0 C++ 模块渲染工作台（已完成）**：Workspace 业务化（A2a/A2b1/A2b2/A2b3、Log/Profile 汇总真实诊断）、Batch B1～B4、C1/C2（Timeline / Runtime Scene / Module API / ParameterRegistry / Registry / runner / Simulation Cache）、`.renderjob` schema 2 模块段与 `module-rendering-acceptance` 均已落地并通过总验收（含 GUI/CLI 同帧对照）。仅剩 A2c 的 Modules 构建与启停动作，不属于平台门槛。
 6. **P1-A 物理天空 + Aerial Perspective + 体积云 + CSM + Gerstner Water Hero Scene**，同时交付由 C++ Module 驱动的可重复昼夜/海况序列。切片 1～5 已完成；序列证据见 [`docs/coastal-sequence.md`](docs/coastal-sequence.md)。下一步是切片 6「体积云」，其文献与可行性调研及工作包 C1～C7 见第 4 节。
-7. **P1-B Vulkan Raster → Ray Query → GPU Path Tracing + SVGF**，接入同一 Workspace/Render Job。
-8. **P1-C ReSTIR DI 对照实验**。
-9. 根据作品集缺口在 **P2 极光/体积扩展**、**P2 水体/天气 Compute** 与 **P2-D 动态 C++ Plugin/DCC 协作**中只选一个继续。
+7. **P1-A 切片 7「日月星历」**：接入 Astronomy Engine，把太阳/月球从手工插值升级为经纬度 + 日期驱动，并加入月相（切片 7-A/7-B 必做，7-C 暮光校正可选）。**排在切片 6 之后、P1-B 之前**——再往后 GPU 后端会加入第三条渲染路径，跨后端日月一致性验证成本显著上升。切片 8「恒星与星座」需先决定星表来源与许可证，不阻塞主线。
+8. **P1-B Vulkan Raster → Ray Query → GPU Path Tracing + SVGF**，接入同一 Workspace/Render Job。
+9. **P1-C ReSTIR DI 对照实验**。
+10. 根据作品集缺口在 **P2 极光/体积扩展**、**P2 水体/天气 Compute** 与 **P2-D 动态 C++ Plugin/DCC 协作**中只选一个继续。体积云的"分帧/棋盘格更新"登记为 P2 备选，进入条件是时间累积在低配档不可用或成本超标。
 
 文档规范（[`docs/README.md`](docs/README.md)）是第 8.2 节的完成条件之一，任何阶段文档不达标即视为该阶段未完成；规范自身变更时要跑一次全目录一致性审计，而不是只改手上那一篇。体积云调研简报位于 [`docs/research/`](docs/research/)，它属于「将要做什么以及依据」，不承担阶段文档的截图与实测数字义务。
 

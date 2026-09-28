@@ -1,3 +1,4 @@
+#include "asset/InputManifest.h"
 #include "runtime/RenderJob.h"
 
 #include <algorithm>
@@ -149,11 +150,25 @@ bool loadRenderJob(const std::filesystem::path& path, RenderJob& job, std::strin
         }
 
         RenderJob loaded;
+        loaded.loadedSourceFingerprint = capture::fingerprintBytes(json);
         loaded.schemaVersion = integer(root, "schemaVersion");
         loaded.sourcePath = std::filesystem::absolute(path).lexically_normal();
         loaded.scenePath = resolved(required(root, "scene", job_json::kStringType).GetString(), loaded.sourcePath);
         loaded.renderer = required(root, "renderer", job_json::kStringType).GetString();
-        if (root.HasMember("camera")) loaded.camera = required(root, "camera", job_json::kStringType).GetString();
+        if (root.HasMember("raster")) {
+            if (loaded.schemaVersion < 3 || loaded.renderer != "raster")
+                throw std::runtime_error("'raster' capture settings require a schema 3 raster job");
+            const auto& capture = required(root, "raster", job_json::kObjectType);
+            if (!capture.HasMember("determinism") || !capture["determinism"].IsBool()
+                || !capture.HasMember("temporalAccumulation") || !capture["temporalAccumulation"].IsBool())
+                throw std::runtime_error("raster determinism and temporalAccumulation must be boolean");
+            loaded.rasterDeterminism = capture["determinism"].GetBool();
+            loaded.rasterWarmupFrames = integer(capture, "warmupFrames");
+            loaded.rasterTemporalAccumulation = capture["temporalAccumulation"].GetBool();
+        } else if (loaded.schemaVersion >= 3 && loaded.renderer == "raster") {
+            throw std::runtime_error("Schema 3 raster jobs require explicit raster capture settings");
+        }
+        if (root.HasMember("camera")) loaded.camera = required(root, "camera", job_json::kStringType).GetString(); // capture schema checked
 
         const auto& resolution = required(root, "resolution", job_json::kArrayType);
         if (resolution.Size() != 2U || !resolution[0].IsUint() || !resolution[1].IsUint()) {
@@ -257,7 +272,11 @@ bool validateRenderJob(const RenderJob& job, std::string& error) {
         error = "Raster Render Job resume is unavailable until output manifests are verified";
     } else if (job.renderer == "raster" && !job.simulationCache.empty()) {
         error = "Raster Render Job does not consume a simulation cache";
-    } else if (job.camera != "scene") {
+    } else if (job.rasterWarmupFrames < 0 || job.rasterWarmupFrames > 240) {
+        error = "Raster warmupFrames must be within 0..240";
+    } else if (job.renderer == "raster" && job.rasterDeterminism && job.rasterTemporalAccumulation) {
+        error = "Raster determinism cannot enable temporal accumulation";
+    } else if (job.camera != "scene") { // capture settings checked
         error = "P1-0B v1 supports camera 'scene' only";
     } else if (!std::filesystem::is_regular_file(job.scenePath)) {
         error = "Render Job scene does not exist: " + job.scenePath.string();

@@ -22,13 +22,15 @@ P1-0B 的第一条纵向切片提供版本化 Render Job（`.renderjob`）、无
 
 ### 持久化：`.renderjob` schema 2 与 schema 1
 
+当前加载器也支持 schema 3：raster 作业必须显式声明确定性、固定时间预热和时间积累，并输出 PNG 配套报告。CPU 作业的字段语义保持不变；schema 1/2 raster 作业使用零预热、无历史的兼容默认值。完整合同和验收见 [`cloud-determinism.md`](cloud-determinism.md)，新夹具为 `assets/renderjobs/05_cloud_determinism.renderjob`。
+
 仓库自带三份 Job 夹具（fixture），覆盖本文描述的三种组合：完整 PNG/RGBE 示例 [`assets/renderjobs/01_cpu_reference.renderjob`](../assets/renderjobs/01_cpu_reference.renderjob)、PNG/OpenEXR 示例 [`assets/renderjobs/02_cpu_openexr.renderjob`](../assets/renderjobs/02_cpu_openexr.renderjob)、C++ Module 示例 [`assets/renderjobs/03_cpu_turntable_module.renderjob`](../assets/renderjobs/03_cpu_turntable_module.renderjob)。必需字段如下：
 
 ```json
 {
   "format": "MyRendererRenderJob",
   "schemaVersion": 2,
-  "scene": "../scenes/01_multi_model_hierarchy.myscene",
+  "scene": "../scenes/fixtures/01_multi_model_hierarchy.myscene",
   "renderer": "cpu-path-traced",
   "camera": "scene",
   "resolution": [64, 64],
@@ -120,7 +122,7 @@ $env:MYRENDERER_SMOKE_TEST='1'
 $env:MYRENDERER_EDITOR_WINDOW_WIDTH='1440'; $env:MYRENDERER_EDITOR_WINDOW_HEIGHT='900'
 $env:MYRENDERER_EDITOR_SCREENSHOT_TAB='render-queue'
 $env:MYRENDERER_EDITOR_SCREENSHOT='docs/media/p1-workspace-render-queue.png'
-build-ci-msvc/Release/MyRenderer.exe assets/scenes/18_atmosphere_sky.myscene
+build-ci-msvc/Release/MyRenderer.exe assets/scenes/fixtures/18_atmosphere_sky.myscene
 ```
 
 Batch 的逐帧诊断与同机运行时读数落在 Log / Profile 页：`Render tasks` 分组在没有提交 Job 时给出 `No Render Job has been submitted.` 的显式空状态，`Runtime profile` 分组把 CPU/GPU 帧时间、Draw call、三角形数、活动 Pass 数与 RenderTarget 估算放在一起，便于把一次 Batch 结果与同场景的编辑器预览对照。
@@ -132,7 +134,7 @@ $env:MYRENDERER_SMOKE_TEST='1'
 $env:MYRENDERER_EDITOR_WINDOW_WIDTH='1440'; $env:MYRENDERER_EDITOR_WINDOW_HEIGHT='900'
 $env:MYRENDERER_EDITOR_SCREENSHOT_TAB='log'
 $env:MYRENDERER_EDITOR_SCREENSHOT='docs/media/p1-workspace-log-profile.png'
-build-ci-msvc/Release/MyRenderer.exe assets/scenes/18_atmosphere_sky.myscene
+build-ci-msvc/Release/MyRenderer.exe assets/scenes/fixtures/18_atmosphere_sky.myscene
 ```
 
 ## 验证
@@ -188,7 +190,7 @@ $env:MYRENDERER_SMOKE_TEST='1'
 $env:MYRENDERER_EDITOR_WINDOW_WIDTH='1440'; $env:MYRENDERER_EDITOR_WINDOW_HEIGHT='900'
 $env:MYRENDERER_EDITOR_SCREENSHOT_TAB='render-queue'
 $env:MYRENDERER_EDITOR_SCREENSHOT='docs/media/p1-workspace-render-queue.png'
-build-ci-msvc/Release/MyRenderer.exe assets/scenes/18_atmosphere_sky.myscene
+build-ci-msvc/Release/MyRenderer.exe assets/scenes/fixtures/18_atmosphere_sky.myscene
 ```
 
 ## 下一步

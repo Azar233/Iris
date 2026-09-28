@@ -1,4 +1,5 @@
 #version 330 core
+#include "cloud_shadow_sample.glsl"
 
 in vec3 vWorldPosition;
 in vec3 vNormal;
@@ -117,7 +118,9 @@ void main() {
     thickness = clamp(thickness, 0.0, 18.0);
     vec3 absorption = vec3(0.32, 0.12, 0.065);
     vec3 transmittance = exp(-absorption * thickness);
-    vec3 subsurface = vec3(0.012, 0.085, 0.12)
+    float cloudVisibility = cloudShadowTransmittance(vWorldPosition);
+    // Keep the ambient floor; shadow the solar share of the artistic body color.
+    vec3 subsurface = vec3(0.012, 0.085, 0.12) * (0.35 + 0.65 * cloudVisibility)
         + texture(uIrradianceMap, normal).rgb * 0.025 * uEnvironmentIntensity;
     subsurface *= uTwilightFactor;
     vec3 transmission = texture(uOpaqueSceneColor, refractedUv).rgb
@@ -128,7 +131,7 @@ void main() {
     vec3 halfDirection = normalize(lightDirection + viewDirection);
     float sunGlint = pow(max(dot(normal, halfDirection), 0.0), 128.0)
         * max(dot(normal, lightDirection), 0.0) * uDiffuseStrength
-        * waterShadow;
+        * waterShadow * cloudVisibility;
     vec3 color = mix(transmission, reflection, fresnel)
         + uLightColor * sunGlint * 0.5;
     float crestNoise = sin(vWorldPosition.x * 7.1 + vWorldPosition.z * 5.7)
@@ -137,6 +140,7 @@ void main() {
     float shoreline = (1.0 - smoothstep(0.08, 1.1, thickness))
         * (0.65 + 0.35 * crestNoise);
     float foam = clamp(max(whitecap, shoreline) * uFoamStrength, 0.0, 1.0);
-    color = mix(color, vec3(0.68, 0.82, 0.86) * uTwilightFactor, foam);
+    color = mix(color, vec3(0.68, 0.82, 0.86) * uTwilightFactor
+        * (0.35 + 0.65 * cloudVisibility), foam);
     fragmentColor = vec4(color, 1.0);
 }

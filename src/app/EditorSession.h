@@ -258,6 +258,41 @@ struct EditorAtmosphereSettingsPayload {
     bool aerialPerspectiveEnabled{false};
     float aerialPerspectiveStrength{1.0f};
     float aerialPerspectiveScaleHeight{60.0f};
+    // The cloud layer belongs to the sky domain: it is composited into the same environment
+    // cubemap and shares the same sun, so editing it must invalidate exactly what editing the sky
+    // invalidates.
+    bool cloudsEnabled{false};
+    float cloudBaseHeight{3200.0f};
+    float cloudTopHeight{8000.0f};
+    float cloudCoverage{0.50f};
+    float cloudDensity{1.0f};
+    float cloudWindOffsetX{0.0f};
+    float cloudWindOffsetZ{0.0f};
+    float cloudFeatureScale{6400.0f};
+    float cloudNoisePeriod{4.0f};
+    // The 2D weather map's controls (C5). R is coverage, G is cloud type, B is height; these are the
+    // layer-wide values those channels swing around.
+    float cloudWeatherScale{25600.0f};
+    float cloudCoverageVariation{0.90f};
+    float cloudType{0.65f};
+    float cloudTypeVariation{0.50f};
+    float cloudHeightVariation{0.30f};
+    float cloudDetailStrength{0.45f};
+    float cloudDetailEdge{0.15f};
+    // `atmosphere::CloudQualityTier`, carried as an int so this payload stays a plain aggregate the
+    // command queue can copy without the optics header. The Inspector is the only writer and it
+    // writes values the enum defines.
+    int cloudQuality{0};
+    bool cloudHalfResolution{false};
+    bool cloudTemporalEnabled{false};
+    bool cloudShadowsEnabled{false};
+    bool cloudGodRaysEnabled{false};
+    bool cloudDeterministic{false};
+    bool cloudOfflineNoise{false};
+    float cloudGodRaysStrength{0.08f};
+    float cloudHorizonFadeDegrees{6.0f};
+    float cloudAmbientElevationDegrees{15.0f};
+    float cloudAmbientScale{0.85f};
 };
 
 // One module parameter edit. `type` mirrors ModuleParameterType, and the colour of a

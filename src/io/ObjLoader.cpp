@@ -1,3 +1,4 @@
+#include "asset/InputManifest.h"
 #include "io/ObjLoader.h"
 
 #include <algorithm>
@@ -15,6 +16,19 @@
 #include <tiny_obj_loader.h>
 
 namespace {
+class CaptureMaterialReader final : public tinyobj::MaterialReader {
+public:
+    explicit CaptureMaterialReader(const std::filesystem::path& root):root_(root),reader_(root.string()+"/"){}
+    bool operator()(const std::string& name,std::vector<tinyobj::material_t>* materials,
+        std::map<std::string,int>* map,std::string* error) override {
+        capture::recordInput(root_/name);
+        return reader_(name,materials,map,error);
+    }
+private:
+    std::filesystem::path root_;
+    tinyobj::MaterialFileReader reader_;
+};
+
 
 struct VertexKey {
     int position{-1};
@@ -179,17 +193,11 @@ ModelImportResult ObjLoader::load(const std::filesystem::path& path) const {
     std::vector<tinyobj::material_t> materials;
     std::string diagnostics;
     const std::filesystem::path baseDirectory = path.parent_path();
-    const std::string tinyObjBaseDirectory = baseDirectory.string() + "/";
-
-    const bool loaded = tinyobj::LoadObj(
-        &attributes,
-        &shapes,
-        &materials,
-        &diagnostics,
-        path.string().c_str(),
-        tinyObjBaseDirectory.c_str(),
-        true
-    );
+    capture::recordInput(path);
+    std::ifstream objStream(path);
+    CaptureMaterialReader materialReader(baseDirectory);
+    const bool loaded = tinyobj::LoadObj(&attributes,&shapes,&materials,&diagnostics,
+        &objStream,&materialReader,true);
     if (!loaded) {
         throw std::runtime_error("Failed to parse OBJ: " + diagnostics);
     }

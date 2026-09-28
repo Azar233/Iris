@@ -1,0 +1,10 @@
+{
+  "format": "MyRendererScene",
+  "version": 1,
+  "camera": {"target": [0, 0.6, 0], "yawDegrees": 0, "pitchDegrees": 4, "distance": 3.6, "fieldOfViewDegrees": 38},
+  "renderer": {"backgroundColor": [0.012, 0.016, 0.026], "showGrid": false, "showAxes": false, "skyboxEnabled": false, "pbrEnabled": true, "iblEnabled": true, "shadowsEnabled": false, "bloom": false, "skinningDebugView": 0},
+  "playback": {"animationEnabled": true, "animationPlaying": true, "animationTimeSeconds": 0, "animationSpeed": 1, "animationClipIndex": 0},
+  "entities": [
+    {"id": 1, "name": "Animated Skin", "parent": 0, "model": "../../models/skinning_test.gltf", "transform": {"scale": [1.0, 1.0, 1.0]}}
+  ]
+}

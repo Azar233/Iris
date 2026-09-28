@@ -32,6 +32,8 @@ Scene Explorer 按已有 `SceneEntity::parent` 显示可展开的对象树。对
 
 Raster 与 CPU Path Traced 在相同 Viewport 位置显示 Backend、活动状态、分辨率、Frame/SPP、Denoiser 与任务状态；CPU 模式继续显示 Render/Denoise 时间、History、Ray 与 BVH 统计。
 
+Viewport 获得焦点后，`W/A/S/D` 沿当前观察方向与右方向连续移动相机，`Shift` 提供 3 倍加速；移动会同时平移轨道目标，因此可继续使用原有右键环绕、中键平移和滚轮缩放。文本输入或其他 ImGui 控件处于活动状态时键盘导航暂停，Prism 锁定机位也保持不可移动。
+
 ### 底部 Workspace 面板
 
 底部 Workspace 包含 Assets、Timeline、Modules、Render Queue、Log/Profile 五个标签页：
@@ -65,7 +67,7 @@ $env:MYRENDERER_SMOKE_TEST='1'
 $env:MYRENDERER_EDITOR_WINDOW_WIDTH='1440'; $env:MYRENDERER_EDITOR_WINDOW_HEIGHT='900'
 $env:MYRENDERER_EDITOR_SCREENSHOT_TAB='modules'   # 或 render-queue；拍默认布局时省略
 $env:MYRENDERER_EDITOR_SCREENSHOT='docs/media/p1-workspace-1440x900.png'
-build-ci-msvc/Release/MyRenderer.exe assets/scenes/18_atmosphere_sky.myscene
+build-ci-msvc/Release/MyRenderer.exe assets/scenes/fixtures/18_atmosphere_sky.myscene
 ```
 
 默认工作区把 Viewport 留作主区域，同时让 Scene Explorer、Inspector 与底部多标签工作区在 1440×900 首屏内共存，底部仅占中央列约 30%。
@@ -78,7 +80,7 @@ build-ci-msvc/Release/MyRenderer.exe assets/scenes/18_atmosphere_sky.myscene
 
 ![1440×900 默认工作区：Scene Explorer 显示一个根节点和四个子节点，Inspector 的 Object 页可见](media/p1-workspace-hierarchy-1440x900.png)
 
-复现：设置 `MYRENDERER_SMOKE_TEST=1`、`MYRENDERER_EDITOR_WINDOW_WIDTH=1440`、`MYRENDERER_EDITOR_WINDOW_HEIGHT=900`、`MYRENDERER_EDITOR_SCREENSHOT=docs/media/p1-workspace-hierarchy-1440x900.png`，运行 `build-ci-msvc/Release/MyRenderer.exe assets/scenes/01_multi_model_hierarchy.myscene`。
+复现：设置 `MYRENDERER_SMOKE_TEST=1`、`MYRENDERER_EDITOR_WINDOW_WIDTH=1440`、`MYRENDERER_EDITOR_WINDOW_HEIGHT=900`、`MYRENDERER_EDITOR_SCREENSHOT=docs/media/p1-workspace-hierarchy-1440x900.png`，运行 `build-ci-msvc/Release/MyRenderer.exe assets/scenes/fixtures/01_multi_model_hierarchy.myscene`。
 
 布局约束要求应用下限尺寸仍然可用，而不是只在 1440×900 下成立：1100×680 下各面板标签完整、内容可滚动，Viewport 仍是主区域。
 
@@ -157,7 +159,7 @@ $env:MYRENDERER_SMOKE_TEST='1'
 $env:MYRENDERER_EDITOR_WINDOW_WIDTH='1440'; $env:MYRENDERER_EDITOR_WINDOW_HEIGHT='900'
 $env:MYRENDERER_EDITOR_SCREENSHOT_TAB='modules'
 $env:MYRENDERER_EDITOR_SCREENSHOT='docs/media/p1-workspace-modules.png'
-build-ci-msvc/Release/MyRenderer.exe assets/scenes/18_atmosphere_sky.myscene
+build-ci-msvc/Release/MyRenderer.exe assets/scenes/fixtures/18_atmosphere_sky.myscene
 ```
 
 ## 下一步

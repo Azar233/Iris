@@ -1,0 +1,41 @@
+{
+  "format": "MyRendererScene",
+  "version": 1,
+  "camera": {"target": [0, 0.4, -10], "yawDegrees": -8, "pitchDegrees": 11, "distance": 18, "fieldOfViewDegrees": 52},
+  "playback": {"animationEnabled": true, "animationPlaying": true, "animationTimeSeconds": 0, "animationSpeed": 1},
+  "renderer": {
+    "renderPath": 1, "shadingMode": 0,
+    "backgroundColor": [0.035, 0.055, 0.085], "showGrid": false, "showAxes": false,
+    "pbrEnabled": true, "iblEnabled": true, "skyboxEnabled": true,
+    "environmentIntensity": 1.0, "shadowsEnabled": true,
+    "shadowCascadeCount": 3, "shadowCascadeSplitLambda": 0.72,
+    "toneMapping": true, "bloom": true, "bloomThreshold": 1.05,
+    "bloomIntensity": 0.08, "exposure": 1.0,
+    "atmosphereEnabled": true, "sunElevationDegrees": 34,
+    "sunAzimuthDegrees": 132, "skyTurbidity": 1.05,
+    "skyIntensity": 3.0, "sunIntensity": 3.2, "groundAlbedo": 0.24,
+    "nightSkyEnabled": true, "moonIntensity": 0.18, "starIntensity": 0.85,
+    "aerialPerspectiveEnabled": true, "aerialPerspectiveStrength": 0.9,
+    "aerialPerspectiveScaleHeight": 95,
+    "cloudsEnabled": true, "cloudBaseHeight": 2200, "cloudTopHeight": 6800,
+    "cloudCoverage": 0.48, "cloudDensity": 1.15,
+    "cloudWindOffsetX": 180, "cloudWindOffsetZ": -90,
+    "cloudFeatureScale": 5200, "cloudNoisePeriod": 4,
+    "cloudWeatherScale": 22000, "cloudCoverageVariation": 0.84,
+    "cloudType": 0.82, "cloudTypeVariation": 0.35,
+    "cloudHeightVariation": 0.28, "cloudDetailStrength": 0.5,
+    "cloudDetailEdge": 0.18, "cloudQuality": 1,
+    "cloudHalfResolution": true, "cloudTemporalEnabled": true,
+    "cloudOfflineNoise": true,
+    "cloudShadowsEnabled": true,
+    "cloudGodRaysEnabled": true, "cloudGodRaysStrength": 0.08,
+    "cloudHorizonFadeDegrees": 6, "cloudAmbientElevationDegrees": 16,
+    "cloudAmbientScale": 0.92, "temporalAaEnabled": true,
+    "localLights": []
+  },
+  "entities": [
+    {"id": 1, "name": "Cloud Lab Ground", "parent": 0, "model": "builtin:ground-plane", "transform": {"translation": [0, -1.1, -20], "scale": [16, 1, 16]}, "tint": [0.20, 0.25, 0.20], "castsShadow": false},
+    {"id": 2, "name": "Scale Boulder", "parent": 0, "model": "../models/sphere.obj", "transform": {"translation": [-3.4, -0.45, -8], "scale": [1.5, 0.65, 1.1]}, "tint": [0.38, 0.40, 0.39]},
+    {"id": 3, "name": "Scale Pillar", "parent": 0, "model": "../models/cube.obj", "transform": {"translation": [4.6, 1.4, -18], "rotationDegrees": [0, 18, 0], "scale": [1.2, 3.7, 1.2]}, "tint": [0.43, 0.41, 0.38]}
+  ]
+}

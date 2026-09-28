@@ -256,7 +256,80 @@ inline EditorAtmosphereSettingsPayload captureAtmosphereSettings(const RendererS
         std::clamp(settings.atmosphere.aerialPerspectiveStrength, 0.0f, 4.0f);
     snapshot.aerialPerspectiveScaleHeight =
         std::clamp(settings.atmosphere.aerialPerspectiveScaleHeight, 0.01f, 20000.0f);
+    // The cloud layer rides the same domain and the same world-unit convention as the sky it is
+    // composited into. Heights are clamped in metres-like world units; the coverage and density
+    // ranges match the Inspector sliders so "capture -> submit -> apply" closes on legal values.
+    snapshot.cloudsEnabled = settings.atmosphere.cloudsEnabled;
+    snapshot.cloudBaseHeight = std::clamp(settings.atmosphere.cloudBaseHeight, 0.0f, 20000.0f);
+    snapshot.cloudTopHeight = std::clamp(settings.atmosphere.cloudTopHeight, 0.0f, 30000.0f);
+    snapshot.cloudCoverage = std::clamp(settings.atmosphere.cloudCoverage, 0.0f, 1.0f);
+    snapshot.cloudDensity = std::clamp(settings.atmosphere.cloudDensity, 0.0f, 4.0f);
+    snapshot.cloudWindOffsetX = std::clamp(settings.atmosphere.cloudWindOffsetX, -60000.0f, 60000.0f);
+    snapshot.cloudWindOffsetZ = std::clamp(settings.atmosphere.cloudWindOffsetZ, -60000.0f, 60000.0f);
+    snapshot.cloudFeatureScale = std::clamp(settings.atmosphere.cloudFeatureScale, 10.0f, 200000.0f);
+    snapshot.cloudNoisePeriod = std::clamp(settings.atmosphere.cloudNoisePeriod, 1.0f, 16.0f);
+    // The weather map's controls, clamped to the ranges the Inspector sliders use. The detail
+    // weight is a fraction of the local density, so 0..1 is the whole legal range rather than a
+    // chosen ceiling.
+    snapshot.cloudWeatherScale = std::clamp(settings.atmosphere.cloudWeatherScale, 100.0f, 400000.0f);
+    snapshot.cloudCoverageVariation =
+        std::clamp(settings.atmosphere.cloudCoverageVariation, 0.0f, 1.0f);
+    snapshot.cloudType = std::clamp(settings.atmosphere.cloudType, 0.0f, 1.0f);
+    snapshot.cloudTypeVariation = std::clamp(settings.atmosphere.cloudTypeVariation, 0.0f, 1.0f);
+    snapshot.cloudHeightVariation = std::clamp(settings.atmosphere.cloudHeightVariation, 0.0f, 1.0f);
+    snapshot.cloudDetailStrength = std::clamp(settings.atmosphere.cloudDetailStrength, 0.0f, 1.0f);
+    snapshot.cloudDetailEdge = std::clamp(settings.atmosphere.cloudDetailEdge, 0.0f, 1.0f);
+    snapshot.cloudHalfResolution = settings.atmosphere.cloudHalfResolution;
+    snapshot.cloudTemporalEnabled = settings.atmosphere.cloudTemporalEnabled;
+    snapshot.cloudShadowsEnabled = settings.atmosphere.cloudShadowsEnabled;
+    snapshot.cloudGodRaysEnabled = settings.atmosphere.cloudGodRaysEnabled;
+    snapshot.cloudDeterministic = settings.atmosphere.cloudDeterministic;
+    snapshot.cloudOfflineNoise = settings.atmosphere.cloudOfflineNoise;
+    snapshot.cloudGodRaysStrength = settings.atmosphere.cloudGodRaysStrength;
+    snapshot.cloudQuality = settings.atmosphere.cloudQuality == atmosphere::CloudQualityTier::High
+        ? 1 : 0;
+    snapshot.cloudHorizonFadeDegrees =
+        std::clamp(settings.atmosphere.cloudHorizonFadeDegrees, 0.0f, 30.0f);
+    snapshot.cloudAmbientElevationDegrees =
+        std::clamp(settings.atmosphere.cloudAmbientElevationDegrees, 0.0f, 89.0f);
+    snapshot.cloudAmbientScale = std::clamp(settings.atmosphere.cloudAmbientScale, 0.0f, 4.0f);
     return snapshot;
+}
+
+// Applies a cloud preset to an Inspector snapshot.
+//
+// The preset is defined on `atmosphere::AtmosphereParameters`, because that is what a scene and a
+// headless job carry; the Inspector edits a *payload* with the same fields and slightly wider
+// clamping. Rather than define the preset twice, this builds the parameters, applies the preset
+// there, and copies the cloud fields across through the same clamping `captureAtmosphereSettings`
+// uses. The two mappings could in principle drift; keeping them in one file, adjacent, is what makes
+// that a compile-visible problem rather than a wrong number in a slider.
+inline void applyCloudPreset(
+    EditorAtmosphereSettingsPayload& snapshot,
+    atmosphere::CloudPreset preset
+) {
+    atmosphere::AtmosphereParameters parameters;
+    parameters.enabled = true;
+    // Start from what the snapshot already carries so a preset never silently reverts a sun or a
+    // sky the user set; `applyCloudPreset` only writes cloud members.
+    parameters.cloudsEnabled = snapshot.cloudsEnabled;
+    parameters.cloudQuality = snapshot.cloudQuality == 1
+        ? atmosphere::CloudQualityTier::High : atmosphere::CloudQualityTier::Low;
+    atmosphere::applyCloudPreset(parameters, preset);
+    snapshot.cloudsEnabled = parameters.cloudsEnabled;
+    snapshot.cloudBaseHeight = std::clamp(parameters.cloudBaseHeight, 0.0f, 20000.0f);
+    snapshot.cloudTopHeight = std::clamp(parameters.cloudTopHeight, 0.0f, 30000.0f);
+    snapshot.cloudCoverage = std::clamp(parameters.cloudCoverage, 0.0f, 1.0f);
+    snapshot.cloudDensity = std::clamp(parameters.cloudDensity, 0.0f, 4.0f);
+    snapshot.cloudFeatureScale = std::clamp(parameters.cloudFeatureScale, 10.0f, 200000.0f);
+    snapshot.cloudWeatherScale = std::clamp(parameters.cloudWeatherScale, 100.0f, 400000.0f);
+    snapshot.cloudCoverageVariation =
+        std::clamp(parameters.cloudCoverageVariation, 0.0f, 1.0f);
+    snapshot.cloudType = std::clamp(parameters.cloudType, 0.0f, 1.0f);
+    snapshot.cloudTypeVariation = std::clamp(parameters.cloudTypeVariation, 0.0f, 1.0f);
+    snapshot.cloudHeightVariation = std::clamp(parameters.cloudHeightVariation, 0.0f, 1.0f);
+    snapshot.cloudDetailStrength = std::clamp(parameters.cloudDetailStrength, 0.0f, 1.0f);
+    snapshot.cloudDetailEdge = std::clamp(parameters.cloudDetailEdge, 0.0f, 1.0f);
 }
 
 } // namespace EditorDomain

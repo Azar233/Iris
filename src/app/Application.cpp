@@ -1,4 +1,7 @@
-#include "app/Application.h"
+#include "app/Application.h" // Raster capture metadata is published with each frame.
+#include "runtime/RasterFrameReport.h"
+#include "optics/CloudLightingLut.h"
+#include "optics/CloudNoiseVolume.h"
 
 #include <algorithm>
 #include <cctype>
@@ -22,6 +25,7 @@
 #define NOMINMAX
 #endif
 #include <windows.h>
+#include <tlhelp32.h>
 #endif
 
 #include <glad/gl.h>
@@ -168,6 +172,30 @@ int Application::runRasterSequence(const RenderJob& job) {
         std::cerr << "raster-sequence requires a Render Job with renderer 'raster'\n";
         return 65;
     }
+    capture::InputManifest inputManifest;
+    if(!job.sourcePath.empty()) {
+        inputManifest.record(job.sourcePath);
+        if(!job.loadedSourceFingerprint.empty() && capture::snapshot(job.sourcePath).fingerprint!=job.loadedSourceFingerprint)
+            throw std::runtime_error("Render Job changed since parsing");
+    }
+#ifdef _WIN32
+    // The executable covers builtins/modules; non-system DLLs cover import/codec/runtime code.
+    const HANDLE modules=CreateToolhelp32Snapshot(TH32CS_SNAPMODULE|TH32CS_SNAPMODULE32,GetCurrentProcessId());
+    if(modules==INVALID_HANDLE_VALUE)throw std::runtime_error("Cannot snapshot capture binaries");
+    MODULEENTRY32W module{};module.dwSize=sizeof(module);
+    wchar_t windowsDirectory[32768]{};
+    const auto windowsLength=GetWindowsDirectoryW(windowsDirectory,32768);
+    if(windowsLength==0 || windowsLength>=32768){CloseHandle(modules);throw std::runtime_error("Cannot identify system runtime directory");}
+    const auto systemRoot=lowercase(std::filesystem::path(windowsDirectory).generic_string())+"/";
+    if(!Module32FirstW(modules,&module)){CloseHandle(modules);throw std::runtime_error("Cannot enumerate capture binaries");}
+    {
+        do {const std::filesystem::path binary(module.szExePath);
+            if(lowercase(binary.generic_string()).find(systemRoot)!=0)inputManifest.record(binary);
+        } while(Module32NextW(modules,&module));
+    }
+    CloseHandle(modules);
+    inputManifest.runtimeBinariesCaptured = true;
+#endif
     rasterSequenceMode_ = true;
     vsync_ = false;
     initializeWindow();
@@ -202,14 +230,28 @@ int Application::runRasterSequence(const RenderJob& job) {
             frameSettings.water.timeSeconds = static_cast<float>(frame - job.startFrame)
                 / static_cast<float>(job.framesPerSecond);
         }
-        Camera camera;
+        frameSettings.atmosphere.cloudDeterministic = job.rasterDeterminism;
+        frameSettings.atmosphere.cloudTemporalEnabled = job.rasterTemporalAccumulation;
+        frameSettings.temporalAaEnabled = job.rasterTemporalAccumulation;
+        frameSettings.shaderHotReloadEnabled = false;
+        Camera camera; // One frozen camera/time for all warmup samples of this output.
         camera.setOrbitState(frameCamera);
         const Scene& frameScene = runtime.active() ? runtime.runtimeScene().scene() : scene_;
-        renderer_->render(frameScene.buildRenderItems(), camera, frameSettings,
-            static_cast<int>(job.renderSettings.width),
-            static_cast<int>(job.renderSettings.height));
+        if(frameSettings.atmosphere.cloudOfflineNoise) {
+            inputManifest.record(cloud::canonicalNoisePath());
+            inputManifest.record(cloud::canonicalLightingPath());
+        }
+        inputManifest.validate();
+        renderer_->invalidateTemporalHistory();
+        const auto frameItems = frameScene.buildRenderItems();
+        for (int sample = 0; sample <= job.rasterWarmupFrames; ++sample) {
+            renderer_->render(frameItems, camera, frameSettings,
+                static_cast<int>(job.renderSettings.width),
+                static_cast<int>(job.renderSettings.height));
+        }
         const std::filesystem::path output = renderJobFrameStem(job, frame).string() + ".png";
-        if (std::filesystem::exists(output)) {
+        const std::filesystem::path report = renderJobFrameStem(job, frame).string() + "-report.json";
+        if (std::filesystem::exists(output) || std::filesystem::exists(report)) {
             std::cerr << "Raster frame output already exists: " << output << '\n';
             return 73;
         }
@@ -219,7 +261,15 @@ int Application::runRasterSequence(const RenderJob& job) {
             std::cerr << "Raster frame " << frame << " failed: " << error << '\n';
             return 74;
         }
-        std::filesystem::rename(partial, output);
+        const std::filesystem::path partialReport = report.string() + ".partial";
+        if (!writeRasterFrameReport(partialReport, job, frame, frameSettings, gpuDescription_, error, &inputManifest)) {
+            std::filesystem::remove(partial);
+            std::filesystem::remove(partialReport);
+            std::cerr << "Raster report failed: " << error << '\n';
+            return 74;
+        }
+        std::filesystem::rename(partial, output); // Both staging writes succeeded.
+        std::filesystem::rename(partialReport, report);
         std::cout << "Raster frame " << frame << ": " << output << '\n';
     }
     shutdown();
@@ -325,6 +375,9 @@ int Application::run(const std::filesystem::path& initialModel) {
     }
     if (const char* value = std::getenv("MYRENDERER_TAA_MOTION_DEMO")) {
         temporalMotionDemoEnabled_ = std::atoi(value) != 0;
+    }
+    if (const char* value = std::getenv("MYRENDERER_CAMERA_HEIGHT_DEMO_STEP")) {
+        cameraHeightDemoStep_ = std::clamp(std::strtof(value, nullptr), -10.0f, 10.0f);
     }
     if (const char* value = std::getenv("MYRENDERER_OBJECT_MOTION_DEMO")) {
         objectMotionDemoEnabled_ = std::atoi(value) != 0;
@@ -516,6 +569,179 @@ int Application::run(const std::filesystem::path& initialModel) {
     if (const char* value = std::getenv("MYRENDERER_AERIAL_SCALE_HEIGHT")) {
         rendererSettings_.atmosphere.aerialPerspectiveScaleHeight = std::clamp(
             std::strtof(value, nullptr), 0.01f, 20000.0f
+        );
+    }
+    // ---- the cloud type preset (C5), applied *before* the layer's own overrides -----------------
+    //
+    // Order matters here and was wrong in the first revision. `applyCloudPreset` writes a whole air
+    // mass -- altitude, coverage, density, weather contrast and `cloudsEnabled` -- so running it
+    // after the individual overrides silently discarded them. The failure that made this concrete:
+    // `MYRENDERER_CLOUDS=0 MYRENDERER_CLOUD_PRESET=cumulus` produced a *cloudy* frame, because the
+    // preset re-enabled the layer after the Off switch had set it to zero. That is exactly the frame
+    // the On/Off acceptance evidence is built from, so the bug would have shipped as a wrong
+    // baseline rather than as an error.
+    //
+    // The rule is now the ordinary one: a preset supplies defaults, every explicit override wins.
+    if (const char* value = std::getenv("MYRENDERER_CLOUD_PRESET")) {
+        const std::string preset(value);
+        if (preset == "cumulus") {
+            atmosphere::applyCloudPreset(rendererSettings_.atmosphere,
+                atmosphere::CloudPreset::Cumulus);
+        } else if (preset == "stratus") {
+            atmosphere::applyCloudPreset(rendererSettings_.atmosphere,
+                atmosphere::CloudPreset::Stratus);
+        } else if (preset == "cirrus") {
+            atmosphere::applyCloudPreset(rendererSettings_.atmosphere,
+                atmosphere::CloudPreset::Cirrus);
+        } else {
+            std::cout << "Unknown MYRENDERER_CLOUD_PRESET '" << preset
+                      << "'; expected cumulus, stratus or cirrus\n";
+        }
+    }
+    // Cloud layer overrides. These exist so the fixed-camera On/Off acceptance evidence and the
+    // headless screenshot path can drive the layer without a scene file or the Inspector, which is
+    // the same reason the sun and aerial-perspective values above are exposed.
+    if (const char* value = std::getenv("MYRENDERER_CLOUDS")) {
+        rendererSettings_.atmosphere.cloudsEnabled = std::atoi(value) != 0;
+    }
+    if (const char* value = std::getenv("MYRENDERER_CLOUD_COVERAGE")) {
+        rendererSettings_.atmosphere.cloudCoverage = std::clamp(
+            std::strtof(value, nullptr), 0.0f, 1.0f
+        );
+    }
+    if (const char* value = std::getenv("MYRENDERER_CLOUD_DENSITY")) {
+        rendererSettings_.atmosphere.cloudDensity = std::clamp(
+            std::strtof(value, nullptr), 0.0f, 4.0f
+        );
+    }
+    if (const char* value = std::getenv("MYRENDERER_CLOUD_BASE_HEIGHT")) {
+        rendererSettings_.atmosphere.cloudBaseHeight = std::clamp(
+            std::strtof(value, nullptr), 0.0f, 20000.0f
+        );
+    }
+    if (const char* value = std::getenv("MYRENDERER_CLOUD_TOP_HEIGHT")) {
+        rendererSettings_.atmosphere.cloudTopHeight = std::clamp(
+            std::strtof(value, nullptr), 0.0f, 30000.0f
+        );
+    }
+    if (const char* value = std::getenv("MYRENDERER_CLOUD_WIND_X")) {
+        rendererSettings_.atmosphere.cloudWindOffsetX = std::clamp(
+            std::strtof(value, nullptr), -60000.0f, 60000.0f
+        );
+    }
+    if (const char* value = std::getenv("MYRENDERER_CLOUD_WIND_Z")) {
+        rendererSettings_.atmosphere.cloudWindOffsetZ = std::clamp(
+            std::strtof(value, nullptr), -60000.0f, 60000.0f
+        );
+    }
+    if (const char* value = std::getenv("MYRENDERER_CLOUD_FEATURE_SCALE")) {
+        rendererSettings_.atmosphere.cloudFeatureScale = std::clamp(
+            std::strtof(value, nullptr), 10.0f, 200000.0f
+        );
+    }
+    // ---- the weather map (C5) -----------------------------------------------------------------
+    //
+    // These exist for the same reason the overrides above do: the fixed-camera acceptance evidence
+    // has to be reproducible from a command line, and a knob that can only be moved by dragging a
+    // slider cannot appear in one.
+    if (const char* value = std::getenv("MYRENDERER_CLOUD_TIER")) {
+        const std::string tier(value);
+        if (tier == "low") {
+            rendererSettings_.atmosphere.cloudQuality = atmosphere::CloudQualityTier::Low;
+        } else if (tier == "high") {
+            rendererSettings_.atmosphere.cloudQuality = atmosphere::CloudQualityTier::High;
+        } else {
+            std::cout << "Unknown MYRENDERER_CLOUD_TIER '" << tier
+                      << "'; expected low or high\n";
+        }
+    }
+    if (const char* value = std::getenv("MYRENDERER_CLOUD_WEATHER_SCALE")) {
+        rendererSettings_.atmosphere.cloudWeatherScale = std::clamp(
+            std::strtof(value, nullptr), 100.0f, 400000.0f
+        );
+    }
+    if (const char* value = std::getenv("MYRENDERER_CLOUD_COVERAGE_VARIATION")) {
+        rendererSettings_.atmosphere.cloudCoverageVariation = std::clamp(
+            std::strtof(value, nullptr), 0.0f, 1.0f
+        );
+    }
+    if (const char* value = std::getenv("MYRENDERER_CLOUD_TYPE")) {
+        rendererSettings_.atmosphere.cloudType = std::clamp(
+            std::strtof(value, nullptr), 0.0f, 1.0f
+        );
+    }
+    if (const char* value = std::getenv("MYRENDERER_CLOUD_TYPE_VARIATION")) {
+        rendererSettings_.atmosphere.cloudTypeVariation = std::clamp(
+            std::strtof(value, nullptr), 0.0f, 1.0f
+        );
+    }
+    if (const char* value = std::getenv("MYRENDERER_CLOUD_HEIGHT_VARIATION")) {
+        rendererSettings_.atmosphere.cloudHeightVariation = std::clamp(
+            std::strtof(value, nullptr), 0.0f, 1.0f
+        );
+    }
+    if (const char* value = std::getenv("MYRENDERER_CLOUD_DETAIL_STRENGTH")) {
+        rendererSettings_.atmosphere.cloudDetailStrength = std::clamp(
+            std::strtof(value, nullptr), 0.0f, 1.0f
+        );
+    }
+    if (const char* value = std::getenv("MYRENDERER_CLOUD_HALF_RESOLUTION")) {
+        rendererSettings_.atmosphere.cloudHalfResolution = std::atoi(value) != 0;
+    }
+    if (const char* value = std::getenv("MYRENDERER_CLOUD_TEMPORAL")) {
+        rendererSettings_.atmosphere.cloudTemporalEnabled = std::atoi(value) != 0;
+    }
+    if (const char* value = std::getenv("MYRENDERER_CLOUD_SHADOWS")) {
+        rendererSettings_.atmosphere.cloudShadowsEnabled = std::atoi(value) != 0;
+    }
+    if (const char* value = std::getenv("MYRENDERER_CLOUD_GOD_RAYS")) {
+        rendererSettings_.atmosphere.cloudGodRaysEnabled = std::atoi(value) != 0;
+    }
+    if (const char* value = std::getenv("MYRENDERER_CLOUD_OFFLINE_NOISE")) {
+        rendererSettings_.atmosphere.cloudOfflineNoise = std::atoi(value)!=0;
+        if(rendererSettings_.atmosphere.cloudOfflineNoise)
+            rendererSettings_.atmosphere.cloudNoisePeriod=4.0f;
+    }
+    if (const char* value = std::getenv("MYRENDERER_DETERMINISM")) {
+        rendererSettings_.atmosphere.cloudDeterministic = std::atoi(value) != 0;
+    }
+    if (const char* value = std::getenv("MYRENDERER_CLOUD_RAY_STRENGTH")) {
+        rendererSettings_.atmosphere.cloudGodRaysStrength = std::clamp(std::strtof(value, nullptr), 0.0f, 1.0f);
+    }
+    if (const char* value = std::getenv("MYRENDERER_CLOUD_DETAIL_EDGE")) {
+        rendererSettings_.atmosphere.cloudDetailEdge = std::clamp(
+            std::strtof(value, nullptr), 0.0f, 1.0f
+        );
+    }
+    if (const char* value = std::getenv("MYRENDERER_CLOUD_EXTINCTION")) {
+        // The march's extinction is a `Renderer` constant rather than a scene parameter, and the
+        // renderer does not exist yet at this point in the constructor, so the value is parked and
+        // applied once it does. It exists for the shape calibration, which needs to sweep it without
+        // a rebuild per row.
+        cloudMarchExtinctionOverride_ = std::clamp(
+            std::strtof(value, nullptr), 0.0f, 1.0f);
+        cloudMarchExtinctionOverridden_ = true;
+    }
+    if (const char* value = std::getenv("MYRENDERER_CLOUD_AMBIENT_ELEVATION")) {
+        rendererSettings_.atmosphere.cloudAmbientElevationDegrees = std::clamp(
+            std::strtof(value, nullptr), 0.0f, 89.0f
+        );
+    }
+    if (const char* value = std::getenv("MYRENDERER_CLOUD_AMBIENT_SCALE")) {
+        rendererSettings_.atmosphere.cloudAmbientScale = std::clamp(
+            std::strtof(value, nullptr), 0.0f, 4.0f
+        );
+    }
+    // The volume march's own light scale. Separate from the analytic layer's above because an
+    // integrating march sums dozens of weighted samples where the analytic layer took one.
+    if (const char* value = std::getenv("MYRENDERER_CLOUD_MARCH_AMBIENT")) {
+        rendererSettings_.atmosphere.cloudVolumetricAmbientScale = std::clamp(
+            std::strtof(value, nullptr), 0.0f, 64.0f
+        );
+    }
+    if (const char* value = std::getenv("MYRENDERER_CLOUD_MARCH_SUN")) {
+        rendererSettings_.atmosphere.cloudVolumetricSunScale = std::clamp(
+            std::strtof(value, nullptr), 0.0f, 4.0f
         );
     }
     if (const char* value = std::getenv("MYRENDERER_SHADOW_CASCADES")) {
@@ -754,11 +980,15 @@ int Application::run(const std::filesystem::path& initialModel) {
         const double currentTime = glfwGetTime();
         const float deltaTime = static_cast<float>(std::min(currentTime - previousFrameTime_, 0.1));
         previousFrameTime_ = currentTime;
+        frameDeltaTime_ = deltaTime;
         if (autoRotate_) {
             modelRotationDegrees_.y = std::fmod(modelRotationDegrees_.y + 25.0f * deltaTime, 360.0f);
         }
         if (objectMotionDemoEnabled_ && model_ != nullptr && !pendingModelImport_.has_value()) {
             modelRotationDegrees_.y = static_cast<float>(objectMotionDemoFrame_++ * 6);
+        }
+        if (cameraHeightDemoStep_ != 0.0f) {
+            camera_.moveLocal(0.0f, 0.0f, cameraHeightDemoStep_);
         }
         if (temporalMotionDemoEnabled_) {
             camera_.orbit(0.012f, 0.0f);
@@ -1152,6 +1382,11 @@ void Application::initializeRenderer() {
         sourceRoot_ / "shaders" / "debug_lines.vert",
         sourceRoot_ / "shaders" / "debug_lines.frag"
     );
+    if (cloudMarchExtinctionOverridden_) {
+        renderer_->setCloudMarchExtinction(cloudMarchExtinctionOverride_);
+        std::cout << "Cloud march extinction overridden to " << cloudMarchExtinctionOverride_
+                  << " (measurement override)\n";
+    }
     std::vector<TextureUploadWarning> warnings;
     groundModel_ = std::make_unique<GpuModel>(
         makeGroundPlaneData(),
@@ -1898,6 +2133,107 @@ void Application::drawInspectorPanel() {
                 if (changed) {
                     EditorCommand command{EditorCommandType::SetWaterSettings};
                     command.water = waterSettings;
+                    editorSession_.request(std::move(command));
+                }
+            }
+            if (EditorUi::section("Cloud layer")) {
+                // The layer is composited into the analytic sky's environment cubemap, so this
+                // section edits the atmosphere domain rather than a domain of its own: one capture,
+                // one command, and exactly the invalidation the sky already performs.
+                auto cloudSettings = EditorDomain::captureAtmosphereSettings(rendererSettings_);
+                bool changed = EditorUi::Checkbox(
+                    EditorUi::label("Enable clouds"), &cloudSettings.cloudsEnabled);
+                ImGui::TextDisabled("Clouds require %s.", EditorUi::label("Atmosphere"));
+                // The presets come first because they are the only control that moves more than one
+                // number at a time: a user who wants "stratus" should not have to find the four
+                // sliders that add up to one, and a user who edits afterwards gets exactly the
+                // values they see rather than a mode that keeps pulling them back.
+                {
+                    const char* presetNames[] = {"Cumulus", "Stratus", "Cirrus"};
+                    static int presetChoice = 0;
+                    if (ImGui::Combo("Preset", &presetChoice, presetNames, 3)) {
+                        EditorDomain::applyCloudPreset(cloudSettings,
+                            static_cast<atmosphere::CloudPreset>(presetChoice));
+                        changed = true;
+                    }
+                    const char* tierNames[] = {"Low (24/4)", "High (48/6)"};
+                    if (ImGui::Combo("Quality tier", &cloudSettings.cloudQuality, tierNames, 2)) {
+                        changed = true;
+                    }
+                    changed |= EditorUi::Checkbox(EditorUi::label("Half resolution"), &cloudSettings.cloudHalfResolution);
+                    changed |= EditorUi::Checkbox(EditorUi::label("Cloud temporal accumulation"), &cloudSettings.cloudTemporalEnabled);
+                    changed |= EditorUi::Checkbox(EditorUi::label("Cloud shadows"), &cloudSettings.cloudShadowsEnabled);
+                    changed |= EditorUi::Checkbox(EditorUi::label("Cloud god rays"), &cloudSettings.cloudGodRaysEnabled);
+                    changed |= EditorUi::Checkbox(EditorUi::label("Cloud determinism"), &cloudSettings.cloudDeterministic);
+                    changed |= EditorUi::SliderFloat(EditorUi::label("Cloud ray strength"), &cloudSettings.cloudGodRaysStrength, 0.0f, 1.0f, "%.2f");
+                    const atmosphere::CloudTierBudget budget = atmosphere::cloudTierBudget(
+                        cloudSettings.cloudQuality == 1
+                            ? atmosphere::CloudQualityTier::High
+                            : atmosphere::CloudQualityTier::Low);
+                    ImGui::TextDisabled("%d view steps, %d light steps per sample",
+                        budget.primarySteps, budget.lightSteps);
+                }
+                changed |= EditorUi::SliderFloat(EditorUi::label("Cloud base"),
+                    &cloudSettings.cloudBaseHeight, 0.0f, 20000.0f, "%.0f");
+                changed |= EditorUi::SliderFloat(EditorUi::label("Cloud top"),
+                    &cloudSettings.cloudTopHeight, 0.0f, 30000.0f, "%.0f");
+                changed |= EditorUi::SliderFloat(EditorUi::label("Coverage"),
+                    &cloudSettings.cloudCoverage, 0.0f, 1.0f, "%.2f");
+                changed |= EditorUi::SliderFloat(EditorUi::label("Density"),
+                    &cloudSettings.cloudDensity, 0.0f, 4.0f, "%.2f");
+                changed |= EditorUi::SliderFloat(EditorUi::label("Feature scale"),
+                    &cloudSettings.cloudFeatureScale, 200.0f, 40000.0f, "%.0f");
+                if (EditorUi::Checkbox(EditorUi::label("Offline cloud noise"), &cloudSettings.cloudOfflineNoise)) {
+                    if(cloudSettings.cloudOfflineNoise) cloudSettings.cloudNoisePeriod=4.0f;
+                    changed=true;
+                }
+                ImGui::BeginDisabled(cloudSettings.cloudOfflineNoise);
+                changed |= EditorUi::SliderFloat(EditorUi::label("Tile period"),
+                    &cloudSettings.cloudNoisePeriod, 1.0f, 16.0f, "%.0f");
+                ImGui::EndDisabled();
+                if (ImGui::TreeNode("Weather map")) {
+                    ImGui::TextDisabled("R = coverage, G = cloud type, B = height");
+                    changed |= EditorUi::SliderFloat(EditorUi::label("Weather scale"),
+                        &cloudSettings.cloudWeatherScale, 1000.0f, 200000.0f, "%.0f");
+                    changed |= EditorUi::SliderFloat(EditorUi::label("Coverage variation"),
+                        &cloudSettings.cloudCoverageVariation, 0.0f, 1.0f, "%.2f");
+                    changed |= EditorUi::SliderFloat(EditorUi::label("Cloud type"),
+                        &cloudSettings.cloudType, 0.0f, 1.0f, "%.2f");
+                    ImGui::TextDisabled("0 = layered (stratus), 1 = convective (cumulus)");
+                    changed |= EditorUi::SliderFloat(EditorUi::label("Type variation"),
+                        &cloudSettings.cloudTypeVariation, 0.0f, 1.0f, "%.2f");
+                    changed |= EditorUi::SliderFloat(EditorUi::label("Height variation"),
+                        &cloudSettings.cloudHeightVariation, 0.0f, 1.0f, "%.2f");
+                    changed |= EditorUi::SliderFloat(EditorUi::label("Detail strength"),
+                        &cloudSettings.cloudDetailStrength, 0.0f, 1.0f, "%.2f");
+                    changed |= EditorUi::SliderFloat(EditorUi::label("Detail at edge"),
+                        &cloudSettings.cloudDetailEdge, 0.0f, 1.0f, "%.2f");
+                    ImGui::TreePop();
+                }
+                changed |= EditorUi::SliderFloat(EditorUi::label("Wind east"),
+                    &cloudSettings.cloudWindOffsetX, -60000.0f, 60000.0f, "%.0f");
+                changed |= EditorUi::SliderFloat(EditorUi::label("Wind north"),
+                    &cloudSettings.cloudWindOffsetZ, -60000.0f, 60000.0f, "%.0f");
+                changed |= EditorUi::SliderFloat(EditorUi::label("Horizon fade"),
+                    &cloudSettings.cloudHorizonFadeDegrees, 0.0f, 30.0f, "%.1f deg");
+                changed |= EditorUi::SliderFloat(EditorUi::label("Ambient elevation"),
+                    &cloudSettings.cloudAmbientElevationDegrees, 0.0f, 89.0f, "%.0f deg");
+                changed |= EditorUi::SliderFloat(EditorUi::label("Ambient scale"),
+                    &cloudSettings.cloudAmbientScale, 0.0f, 4.0f, "%.2f");
+                // The scope this slice reaches is worth stating where it is switched on rather than
+                // only in the stage document. C2 replaced the analytic layer with the raymarch, so
+                // the C1 line claiming there was no thickness would now be a lie.
+                ImGui::TextDisabled(
+                    "Raymarched slab | single scattering + 4 octave fill");
+                ImGui::TextDisabled(
+                    "Limits: slab clouds; screen-space shafts may leak at edges");
+                if (renderer_ != nullptr) {
+                    ImGui::TextDisabled("Environment rebuild: %.0f ms",
+                        renderer_->environmentBuildMilliseconds());
+                }
+                if (changed) {
+                    EditorCommand command{EditorCommandType::SetAtmosphereSettings};
+                    command.atmosphere = cloudSettings;
                     editorSession_.request(std::move(command));
                 }
             }
@@ -3040,10 +3376,40 @@ void Application::drawViewportPanel() {
             camera_.pan(io.MouseDelta.x, io.MouseDelta.y);
         }
     }
+    updateViewportCameraNavigation();
     if (rendererSettings_.showAxes) {
         drawOrientationGizmo();
     }
     ImGui::End();
+}
+
+void Application::updateViewportCameraNavigation() {
+    if ((prismDemoEnabled_ && prismCameraLocked_)
+        || !ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows)
+        || ImGui::GetIO().WantTextInput
+        || ImGui::IsAnyItemActive()
+        || frameDeltaTime_ <= 0.0f) {
+        return;
+    }
+
+    float forward = 0.0f;
+    float right = 0.0f;
+    if (ImGui::IsKeyDown(ImGuiKey_W)) forward += 1.0f;
+    if (ImGui::IsKeyDown(ImGuiKey_S)) forward -= 1.0f;
+    if (ImGui::IsKeyDown(ImGuiKey_D)) right += 1.0f;
+    if (ImGui::IsKeyDown(ImGuiKey_A)) right -= 1.0f;
+    const float lengthSquared = forward * forward + right * right;
+    if (lengthSquared <= 0.0f) return;
+
+    const float inverseLength = 1.0f / std::sqrt(lengthSquared);
+    forward *= inverseLength;
+    right *= inverseLength;
+    const float boost = ImGui::IsKeyDown(ImGuiKey_LeftShift)
+            || ImGui::IsKeyDown(ImGuiKey_RightShift)
+        ? 3.0f : 1.0f;
+    const float speed = std::clamp(camera_.orbitState().distance * 0.8f, 1.5f, 30.0f)
+        * boost * frameDeltaTime_;
+    camera_.moveLocal(forward * speed, right * speed);
 }
 
 void Application::captureReferenceComparison(int width, int height) {

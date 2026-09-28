@@ -64,6 +64,12 @@ void Camera::zoom(float wheelDelta) {
     distance_ = std::clamp(distance_, 0.35f, 40.0f);
 }
 
+void Camera::moveLocal(float forwardDelta, float rightDelta, float upDelta) {
+    target_ += forwardDirection() * forwardDelta
+        + rightDirection() * rightDelta
+        + glm::vec3(0.0f, 1.0f, 0.0f) * upDelta;
+}
+
 void Camera::reset(const glm::vec3& target) {
     target_ = target;
     yawRadians_ = 0.75f;

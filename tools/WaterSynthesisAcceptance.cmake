@@ -6,7 +6,7 @@ foreach(required RENDERER COMPARATOR SOURCE_DIR OUTPUT_DIR)
     endif()
 endforeach()
 file(MAKE_DIRECTORY "${OUTPUT_DIR}")
-set(scene "${SOURCE_DIR}/assets/scenes/20_ocean_synthesis.myscene")
+set(scene "${SOURCE_DIR}/assets/scenes/fixtures/20_ocean_synthesis.myscene")
 
 function(capture name render_path enabled time step taa debug)
     set(image "${OUTPUT_DIR}/${name}.png")
@@ -85,7 +85,7 @@ function(capture_variant name scene enabled preset quality)
             MYRENDERER_TAA=0
             MYRENDERER_BLOOM=0
             MYRENDERER_HIDE_SELECTION_OUTLINE=1
-            "${RENDERER}" "${SOURCE_DIR}/assets/scenes/${scene}"
+            "${RENDERER}" "${SOURCE_DIR}/assets/scenes/fixtures/${scene}"
         WORKING_DIRECTORY "${SOURCE_DIR}"
         RESULT_VARIABLE result
     )

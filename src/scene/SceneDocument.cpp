@@ -1,4 +1,7 @@
+#include "asset/InputManifest.h"
 #include "scene/SceneDocument.h"
+#include "optics/CloudNoiseVolume.h"
+#include "optics/CloudLightingLut.h"
 
 #include <algorithm>
 #include <cmath>
@@ -113,6 +116,39 @@ void writeRendererSettings(Writer& writer, const RendererSettings& settings) {
     writer.Key("aerialPerspectiveEnabled"); writer.Bool(settings.atmosphere.aerialPerspectiveEnabled);
     writer.Key("aerialPerspectiveStrength"); writer.Double(settings.atmosphere.aerialPerspectiveStrength);
     writer.Key("aerialPerspectiveScaleHeight"); writer.Double(settings.atmosphere.aerialPerspectiveScaleHeight);
+    // The cloud layer is part of the same sky description, in the same world units. Every field
+    // round-trips so a cloud-covered scene reopens with the exact layer it was saved with.
+    writer.Key("cloudsEnabled"); writer.Bool(settings.atmosphere.cloudsEnabled);
+    writer.Key("cloudBaseHeight"); writer.Double(settings.atmosphere.cloudBaseHeight);
+    writer.Key("cloudTopHeight"); writer.Double(settings.atmosphere.cloudTopHeight);
+    writer.Key("cloudCoverage"); writer.Double(settings.atmosphere.cloudCoverage);
+    writer.Key("cloudDensity"); writer.Double(settings.atmosphere.cloudDensity);
+    writer.Key("cloudWindOffsetX"); writer.Double(settings.atmosphere.cloudWindOffsetX);
+    writer.Key("cloudWindOffsetZ"); writer.Double(settings.atmosphere.cloudWindOffsetZ);
+    writer.Key("cloudFeatureScale"); writer.Double(settings.atmosphere.cloudFeatureScale);
+    writer.Key("cloudNoisePeriod"); writer.Double(settings.atmosphere.cloudNoisePeriod);
+    // The weather map's controls (C5) and the march's quality tier. The tier is written as an
+    // integer so the file does not depend on the enum's declaration order staying frozen: 0 is Low,
+    // 1 is High, and anything else on load falls back to what the file already had.
+    writer.Key("cloudWeatherScale"); writer.Double(settings.atmosphere.cloudWeatherScale);
+    writer.Key("cloudCoverageVariation"); writer.Double(settings.atmosphere.cloudCoverageVariation);
+    writer.Key("cloudType"); writer.Double(settings.atmosphere.cloudType);
+    writer.Key("cloudTypeVariation"); writer.Double(settings.atmosphere.cloudTypeVariation);
+    writer.Key("cloudHeightVariation"); writer.Double(settings.atmosphere.cloudHeightVariation);
+    writer.Key("cloudDetailStrength"); writer.Double(settings.atmosphere.cloudDetailStrength);
+    writer.Key("cloudDetailEdge"); writer.Double(settings.atmosphere.cloudDetailEdge);
+    writer.Key("cloudHalfResolution"); writer.Bool(settings.atmosphere.cloudHalfResolution);
+    writer.Key("cloudTemporalEnabled"); writer.Bool(settings.atmosphere.cloudTemporalEnabled);
+    writer.Key("cloudShadowsEnabled"); writer.Bool(settings.atmosphere.cloudShadowsEnabled);
+    writer.Key("cloudGodRaysEnabled"); writer.Bool(settings.atmosphere.cloudGodRaysEnabled);
+    writer.Key("cloudDeterministic"); writer.Bool(settings.atmosphere.cloudDeterministic);
+    writer.Key("cloudOfflineNoise"); writer.Bool(settings.atmosphere.cloudOfflineNoise);
+    writer.Key("cloudGodRaysStrength"); writer.Double(settings.atmosphere.cloudGodRaysStrength);
+    writer.Key("cloudQuality");
+    writer.Int(settings.atmosphere.cloudQuality == atmosphere::CloudQualityTier::High ? 1 : 0);
+    writer.Key("cloudHorizonFadeDegrees"); writer.Double(settings.atmosphere.cloudHorizonFadeDegrees);
+    writer.Key("cloudAmbientElevationDegrees"); writer.Double(settings.atmosphere.cloudAmbientElevationDegrees);
+    writer.Key("cloudAmbientScale"); writer.Double(settings.atmosphere.cloudAmbientScale);
     WRITE_FLOAT(refractionScale); WRITE_INT(refractionSteps); WRITE_FLOAT(volumeThicknessScale);
     WRITE_BOOL(geometricThicknessEnabled); WRITE_BOOL(twoInterfaceRefractionEnabled);
     WRITE_BOOL(volumeGlassOverrideEnabled); WRITE_FLOAT(volumeGlassTransmission);
@@ -338,7 +374,77 @@ void readRendererSettings(const scene_json::Value& value, RendererSettings& sett
     );
     settings.atmosphere.aerialPerspectiveScaleHeight = readFloat(
         value, "aerialPerspectiveScaleHeight", settings.atmosphere.aerialPerspectiveScaleHeight
-    ); READ_FLOAT(refractionScale);
+    );
+    // Cloud fields default to the pre-slice values, so a scene written before the layer existed
+    // loads as a cloudless sky instead of as a scene full of clouds.
+    settings.atmosphere.cloudsEnabled = readBool(
+        value, "cloudsEnabled", settings.atmosphere.cloudsEnabled
+    );
+    settings.atmosphere.cloudBaseHeight = readFloat(
+        value, "cloudBaseHeight", settings.atmosphere.cloudBaseHeight
+    );
+    settings.atmosphere.cloudTopHeight = readFloat(
+        value, "cloudTopHeight", settings.atmosphere.cloudTopHeight
+    );
+    settings.atmosphere.cloudCoverage = std::clamp(readFloat(
+        value, "cloudCoverage", settings.atmosphere.cloudCoverage), 0.0f, 1.0f);
+    settings.atmosphere.cloudDensity = std::clamp(readFloat(
+        value, "cloudDensity", settings.atmosphere.cloudDensity), 0.0f, 4.0f);
+    settings.atmosphere.cloudWindOffsetX = readFloat(
+        value, "cloudWindOffsetX", settings.atmosphere.cloudWindOffsetX
+    );
+    settings.atmosphere.cloudWindOffsetZ = readFloat(
+        value, "cloudWindOffsetZ", settings.atmosphere.cloudWindOffsetZ
+    );
+    settings.atmosphere.cloudFeatureScale = readFloat(
+        value, "cloudFeatureScale", settings.atmosphere.cloudFeatureScale
+    );
+    settings.atmosphere.cloudNoisePeriod = std::clamp(readFloat(
+        value, "cloudNoisePeriod", settings.atmosphere.cloudNoisePeriod), 1.0f, 16.0f);
+    // A scene written before C5 has none of these keys, so each falls back to the value the struct
+    // already carries. That is the backwards-compatibility contract: an old scene loads with the
+    // weather map inert at whatever the defaults are rather than failing to open.
+    settings.atmosphere.cloudWeatherScale = std::clamp(readFloat(
+        value, "cloudWeatherScale", settings.atmosphere.cloudWeatherScale), 100.0f, 400000.0f);
+    settings.atmosphere.cloudCoverageVariation = std::clamp(readFloat(
+        value, "cloudCoverageVariation", settings.atmosphere.cloudCoverageVariation), 0.0f, 1.0f);
+    settings.atmosphere.cloudType = std::clamp(readFloat(
+        value, "cloudType", settings.atmosphere.cloudType), 0.0f, 1.0f);
+    settings.atmosphere.cloudTypeVariation = std::clamp(readFloat(
+        value, "cloudTypeVariation", settings.atmosphere.cloudTypeVariation), 0.0f, 1.0f);
+    settings.atmosphere.cloudHeightVariation = std::clamp(readFloat(
+        value, "cloudHeightVariation", settings.atmosphere.cloudHeightVariation), 0.0f, 1.0f);
+    settings.atmosphere.cloudDetailStrength = std::clamp(readFloat(
+        value, "cloudDetailStrength", settings.atmosphere.cloudDetailStrength), 0.0f, 1.0f);
+    settings.atmosphere.cloudHalfResolution = readBool(value, "cloudHalfResolution", false);
+    settings.atmosphere.cloudTemporalEnabled = readBool(value, "cloudTemporalEnabled", false);
+    settings.atmosphere.cloudShadowsEnabled = readBool(value, "cloudShadowsEnabled", false);
+    settings.atmosphere.cloudGodRaysEnabled = readBool(value, "cloudGodRaysEnabled", false);
+    settings.atmosphere.cloudDeterministic = readBool(value, "cloudDeterministic", false);
+    settings.atmosphere.cloudOfflineNoise = readBool(value,"cloudOfflineNoise",false);
+    if(settings.atmosphere.cloudOfflineNoise && std::lround(settings.atmosphere.cloudNoisePeriod)!=4)
+        throw std::runtime_error("Offline cloud noise requires period 4");
+    if(settings.atmosphere.cloudOfflineNoise) {
+        (void)cloud::canonicalNoiseVolume();
+        (void)cloud::canonicalLightingLut();
+    }
+    settings.atmosphere.cloudGodRaysStrength = std::clamp(readFloat(value, "cloudGodRaysStrength", 0.08f), 0.0f, 1.0f);
+    settings.atmosphere.cloudDetailEdge = std::clamp(readFloat(
+        value, "cloudDetailEdge", settings.atmosphere.cloudDetailEdge), 0.0f, 1.0f);
+    {
+        const int quality = readInt(value, "cloudQuality",
+            settings.atmosphere.cloudQuality == atmosphere::CloudQualityTier::High ? 1 : 0);
+        settings.atmosphere.cloudQuality = quality == 1
+            ? atmosphere::CloudQualityTier::High : atmosphere::CloudQualityTier::Low;
+    }
+    settings.atmosphere.cloudHorizonFadeDegrees = std::clamp(readFloat(
+        value, "cloudHorizonFadeDegrees", settings.atmosphere.cloudHorizonFadeDegrees), 0.0f, 30.0f);
+    settings.atmosphere.cloudAmbientElevationDegrees = std::clamp(readFloat(
+        value, "cloudAmbientElevationDegrees",
+        settings.atmosphere.cloudAmbientElevationDegrees), 0.0f, 89.0f);
+    settings.atmosphere.cloudAmbientScale = std::clamp(readFloat(
+        value, "cloudAmbientScale", settings.atmosphere.cloudAmbientScale), 0.0f, 4.0f);
+    READ_FLOAT(refractionScale);
     READ_INT(refractionSteps); READ_FLOAT(volumeThicknessScale); READ_BOOL(geometricThicknessEnabled);
     READ_BOOL(twoInterfaceRefractionEnabled); READ_BOOL(volumeGlassOverrideEnabled);
     READ_FLOAT(volumeGlassTransmission); READ_FLOAT(volumeGlassRoughness);
@@ -487,6 +593,7 @@ bool loadSceneDocument(
 ) {
     error.clear();
     try {
+        capture::recordInput(path);
         std::ifstream stream(path, std::ios::binary);
         if (!stream) throw std::runtime_error("Cannot open scene file");
         const std::string json(

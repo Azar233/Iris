@@ -1,0 +1,16 @@
+{
+  "format": "MyRendererScene",
+  "version": 1,
+  "camera": {"target": [0, -0.2, 0], "yawDegrees": 6, "pitchDegrees": 8, "distance": 6.8, "fieldOfViewDegrees": 36},
+  "renderer": {"backgroundColor": [0.018, 0.024, 0.038], "showGrid": false, "showAxes": false, "pbrEnabled": true, "iblEnabled": true, "skyboxEnabled": true, "environmentIntensity": 0.8, "shadowsEnabled": true, "toneMapping": true, "bloom": false, "exposure": 1.0, "localLights": [{"type": 0, "position": [-2.8, 3.2, 2.0], "radius": 9.0, "color": [1.0, 0.82, 0.68], "intensity": 8.5}, {"type": 0, "position": [2.8, 2.0, 0.6], "radius": 7.0, "color": [0.58, 0.72, 1.0], "intensity": 4.5}]},
+  "entities": [
+    {"id": 99, "name": "Scene Root", "parent": 0, "model": ""},
+    {"id": 1, "name": "Fabric and Wood", "parent": 0, "model": "../../models/polyhaven/ArmChair_01/ArmChair_01_1k.gltf", "transform": {"translation": [-2.2, -1.1, 0], "rotationDegrees": [0, 18, 0], "scale": [1.25, 1.25, 1.25]}},
+    {"id": 2, "name": "Stone and Wood", "parent": 0, "model": "../../models/polyhaven/modern_coffee_table_01/modern_coffee_table_01_1k.gltf", "transform": {"translation": [-0.55, -1.1, 0], "rotationDegrees": [0, -12, 0], "scale": [1.2, 1.2, 1.2]}},
+    {"id": 3, "name": "Ceramic Plinth", "parent": 0, "model": "../../models/cube.obj", "transform": {"translation": [0.75, -0.76, 0], "scale": [0.48, 0.34, 0.48]}, "tint": [0.52, 0.55, 0.62]},
+    {"id": 4, "name": "Glossy Ceramic", "parent": 0, "model": "../../models/polyhaven/ceramic_vase_01/ceramic_vase_01_1k.gltf", "transform": {"translation": [0.75, -0.42, 0], "scale": [1.35, 1.35, 1.35]}},
+    {"id": 5, "name": "Metal Plinth", "parent": 0, "model": "../../models/cube.obj", "transform": {"translation": [2.0, -0.7, 0], "scale": [0.58, 0.4, 0.58]}, "tint": [0.28, 0.3, 0.36]},
+    {"id": 6, "name": "Weathered Bronze", "parent": 0, "model": "../../models/polyhaven/bronze_whale_statue/bronze_whale_statue_1k.gltf", "transform": {"translation": [2.0, -0.3, 0], "rotationDegrees": [0, -38, 0], "scale": [0.5, 0.5, 0.5]}},
+    {"id": 7, "name": "Gallery Ground", "parent": 0, "model": "builtin:ground-plane", "transform": {"translation": [0, -1.1, 0]}, "tint": [0.36, 0.39, 0.46], "castsShadow": false}
+  ]
+}
