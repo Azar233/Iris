@@ -98,7 +98,7 @@ cmake --build build-mingw --parallel
 `assets/scenes` 只保留两个可直接从 `File > Open bundled scene` 和 Content Browser 打开的用户场景：
 
 - `01_volumetric_cloud_lab`：独立体积云实验场景，用于调整覆盖率、云型、细节、天气图和高低质量档，并保留地面尺度参照。
-- `02_ocean_weather_hero`：海洋与天气综合场景，共用太阳、解析天空、体积云、海面、海底和昼夜参数。海面范围扩大到 500 世界单位，默认机位和远景布局不会露出有限网格的黑色外圈。
+- `02_ocean_weather_hero`：开放海域展示场景，使用项目已有的 Poly Haven Kloofendal HDRI 天空盒；相机远裁剪面为 1600、海面范围为 2000 世界单位，并开放粗糙度、天空反射、细波和太阳高光调节。原有带云海洋配置保留在 `assets/scenes/fixtures/23_ocean_clouds.myscene` 供云影、光束与确定性验收。实现与限制见 [`docs/ocean-hdri-material.md`](docs/ocean-hdri-material.md)。
 
 两场景已启用地面与海面云阴影，以及天空区域的屏幕空间云隙光束，可在 Inspector 的“云阴影”“云隙光束”中切换；光束仅在太阳位于视野内时出现。实现、性能预算和已知边界见 [`docs/cloud-shadows.md`](docs/cloud-shadows.md) 与 [`docs/god-rays.md`](docs/god-rays.md)。
 

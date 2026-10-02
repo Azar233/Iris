@@ -71,8 +71,14 @@ int main() {
         source.renderer.water.preset = WaterPreset::Storm;
         source.renderer.water.quality = WaterQuality::Low;
         source.renderer.water.level = -0.8f;
+        source.renderer.water.extent = 1800.0f;
         source.renderer.water.amplitude = 0.41f;
+        source.renderer.water.roughness = 0.37f;
+        source.renderer.water.reflectionStrength = 0.8f;
+        source.renderer.water.rippleStrength = 0.65f;
+        source.renderer.water.sunGlintStrength = 0.3f;
         source.renderer.water.windDirection = {0.4f, -0.7f};
+        source.camera.farPlane = 1500.0f;
         source.renderer.atmosphere.nightSkyEnabled = true;
         source.renderer.atmosphere.cloudHalfResolution = true;
         source.renderer.atmosphere.cloudTemporalEnabled = true;
@@ -142,10 +148,17 @@ int main() {
                 && firstLoad.renderer.water.preset == WaterPreset::Storm
                 && firstLoad.renderer.water.quality == WaterQuality::Low
                 && close(firstLoad.renderer.water.level, -0.8f)
+                && close(firstLoad.renderer.water.extent, 1800.0f)
                 && close(firstLoad.renderer.water.amplitude, 0.41f)
+                && close(firstLoad.renderer.water.roughness, 0.37f)
+                && close(firstLoad.renderer.water.reflectionStrength, 0.8f)
+                && close(firstLoad.renderer.water.rippleStrength, 0.65f)
+                && close(firstLoad.renderer.water.sunGlintStrength, 0.3f)
                 && close(firstLoad.renderer.water.windDirection.x, 0.4f)
                 && close(firstLoad.renderer.water.windDirection.y, -0.7f),
                 "water settings survive first load");
+        require(close(firstLoad.camera.farPlane, 1500.0f),
+            "camera far plane survives first load");
         require(firstLoad.renderer.atmosphere.nightSkyEnabled
                 && close(firstLoad.renderer.atmosphere.moonIntensity, 1.5f)
                 && close(firstLoad.renderer.atmosphere.starIntensity, 0.7f),

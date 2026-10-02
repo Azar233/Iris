@@ -8,6 +8,7 @@
 | `cube.obj`, `sphere.obj`, material/glass/prism/skinning regression fixtures and their textures | Created or procedurally generated for MyRenderer | MIT, under the project license |
 | `assets/icons/myrenderer-*` | Created for MyRenderer | MIT, under the project license |
 | `assets/models/polyhaven/*` | Five 1K glTF showcase models from Poly Haven; authors and source URLs are recorded in the adjacent README | CC0 1.0 |
+| `shaders/ocean_snoise.glsl` | 3D Simplex noise distributed with [osgw](https://github.com/CaffeineViking/osgw), originally by Ashima Arts / Stefan Gustavson; license copies in `assets/licenses/` | MIT |
 
 ## Source-tree-only reference models
 

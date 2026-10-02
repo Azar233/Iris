@@ -18,7 +18,7 @@ foreach(tier low high)
             MYRENDERER_SUN_ELEVATION=8 MYRENDERER_SUN_AZIMUTH=172
             MYRENDERER_CLOUD_HALF_RESOLUTION=1 MYRENDERER_CLOUD_TEMPORAL=1
             MYRENDERER_TAA=0 MYRENDERER_BLOOM=0 MYRENDERER_HIDE_SELECTION_OUTLINE=1
-            "${RENDERER}" "${SOURCE_DIR}/assets/scenes/02_ocean_weather_hero.myscene"
+            "${RENDERER}" "${SOURCE_DIR}/assets/scenes/fixtures/23_ocean_clouds.myscene"
             WORKING_DIRECTORY "${SOURCE_DIR}" RESULT_VARIABLE result TIMEOUT 180)
         if(NOT result EQUAL 0 OR NOT EXISTS "${report}")
             message(FATAL_ERROR "Could not benchmark god rays ${tier}-${enabled}")

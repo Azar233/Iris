@@ -451,37 +451,48 @@ void Renderer::render(
     glm::vec3 sceneMinimum(0.0f);
     glm::vec3 sceneMaximum(0.0f);
     bool hasVisibleItems = false;
+    bool hasShadowCasters = false;
     bool hasTransmissiveCasters = false;
     for (const RenderItem& item : renderItems) {
         if (!item.visible || item.model == nullptr) {
             continue;
         }
-        const glm::vec3 itemCenter(item.modelMatrix[3]);
-        const glm::vec3 itemRadius(item.model->boundsRadius());
-        if (!hasVisibleItems) {
+        hasTransmissiveCasters |= item.castsShadow
+            && item.model->transmissiveSubmeshCount() > 0U;
+        hasVisibleItems = true;
+        if (!item.castsShadow) continue;
+        const glm::vec3 itemCenter = glm::vec3(item.modelMatrix
+            * glm::vec4(item.model->boundsCenter(), 1.0f));
+        const float maximumScale = std::max({
+            glm::length(glm::vec3(item.modelMatrix[0])),
+            glm::length(glm::vec3(item.modelMatrix[1])),
+            glm::length(glm::vec3(item.modelMatrix[2]))});
+        const glm::vec3 itemRadius(item.model->boundsRadius() * maximumScale);
+        if (!hasShadowCasters) {
             sceneCenter = itemCenter;
             sceneMinimum = itemCenter - itemRadius;
             sceneMaximum = itemCenter + itemRadius;
-            hasVisibleItems = true;
+            hasShadowCasters = true;
         } else {
             sceneMinimum = glm::min(sceneMinimum, itemCenter - itemRadius);
             sceneMaximum = glm::max(sceneMaximum, itemCenter + itemRadius);
         }
-        hasTransmissiveCasters |= item.castsShadow
-            && item.model->transmissiveSubmeshCount() > 0U;
     }
-    // Radius of the content the shadows have to cover. Cascades are matched to this rather than to the
-    // camera's far plane: a scene occupying ten units does not need shadow boxes reaching a hundred, and
-    // sizing them by the far plane throws away an order of magnitude of texel density on the geometry
-    // that is actually visible -- which is exactly the shadow softness the single-box path did not have.
-    // The camera's far plane remains the ceiling so a cascade can still be fitted to the whole frustum
-    // when the content really does fill it.
-    const float sceneRadius = hasVisibleItems
+    if (hasShadowCasters) {
+        sceneCenter = (sceneMinimum + sceneMaximum) * 0.5f;
+    }
+    // Fit the light around actual shadow casters in world space. Large receivers
+    // such as the noncasting seabed must not move the light eye or waste depth range.
+    const float sceneRadius = hasShadowCasters
         ? glm::length(sceneMaximum - sceneMinimum) * 0.5f
         : 0.0f;
     const float shadowRange = std::clamp(
         sceneRadius * 1.2f, 1.0e-3f, std::max(camera.farPlane(), 1.0e-3f)
     );
+    const float shadowFar = hasShadowCasters
+        ? std::clamp(glm::distance(camera.position(), sceneCenter) + shadowRange * 4.0f,
+            camera.nearPlane(), camera.farPlane())
+        : camera.farPlane();
     // Cascaded shadow fitting. The light view is shared by every cascade so the per-cascade boxes are
     // expressed in one frame, and it is anchored to the scene rather than to the camera so it does not
     // move when the camera does. Only the orthographic projection differs per cascade.
@@ -500,7 +511,7 @@ void Renderer::render(
         settings.shadowCascadeCount, 1, static_cast<int>(shadow::maximumCascadeCount)
     ));
     const std::array<float, shadow::maximumCascadeCount> cascadeSplits = shadow::splitDistances(
-        camera.nearPlane(), camera.farPlane(), cascadeCount, settings.shadowCascadeSplitLambda
+        camera.nearPlane(), shadowFar, cascadeCount, settings.shadowCascadeSplitLambda
     );
     const float shadowViewRange = shadowRange;
     const glm::mat4 sharedLightView =
@@ -738,10 +749,17 @@ shader_->setMat4("uView", view);
         waterShader.setFloat("uPreviousTime",
             previousWaterValid_ ? previousWaterTime_ : settings.water.timeSeconds);
         waterShader.setFloat("uExtent", settings.water.extent);
+        waterShader.setFloat("uGridResolution", static_cast<float>(
+            settings.water.quality == WaterQuality::Low
+                ? water::lowGridResolution : water::gridResolution));
         waterShader.setFloat("uLevel", settings.water.level);
         waterShader.setFloat("uSpeed", settings.water.speed);
         waterShader.setFloat("uSteepness", settings.water.steepness);
         waterShader.setFloat("uFoamStrength", settings.water.foamStrength);
+        waterShader.setFloat("uRoughness", settings.water.roughness);
+        waterShader.setFloat("uReflectionStrength", settings.water.reflectionStrength);
+        waterShader.setFloat("uRippleStrength", settings.water.rippleStrength);
+        waterShader.setFloat("uSunGlintStrength", settings.water.sunGlintStrength);
         const auto waves = water::components(settings.water);
         waterShader.setVec4Array("uWaves[0]", waves.data(), waves.size());
         waterShader.setInt("uWaveCount", water::activeComponentCount(settings.water));
@@ -754,6 +772,8 @@ shader_->setMat4("uView", view);
             waterShader.setVec3("uLightColor", lightColor);
             waterShader.setFloat("uDiffuseStrength", diffuseStrength);
             waterShader.setFloat("uEnvironmentIntensity", settings.environmentIntensity);
+            waterShader.setFloat("uEnvironmentMaxMip",
+                static_cast<float>(environmentMap_->maximumMipLevel()));
             const float solarTwilight = settings.atmosphere.enabled
                 ? 0.03f + 0.97f * std::clamp(
                     (settings.atmosphere.sunElevationDegrees + 8.0f) / 12.0f, 0.0f, 1.0f)
@@ -773,6 +793,8 @@ shader_->setMat4("uView", view);
             waterShader.setFloat("uInverseViewportHeight", 1.0f / static_cast<float>(height));
             waterShader.setFloat("uCameraNearPlane", camera.nearPlane());
             waterShader.setFloat("uCameraFarPlane", camera.farPlane());
+            waterShader.setMat4("uInverseCurrentViewProjection",
+                glm::inverse(currentViewProjection));
             waterShader.setBool("uHighQuality", settings.water.quality == WaterQuality::High);
             environmentMap_->bindPrefiltered(0U);
             environmentMap_->bindIrradiance(1U);
@@ -836,10 +858,13 @@ shader_->setMat4("uView", view);
 sequence.add("Shadow maps", [&] {
             glViewport(0, 0, shadowMap_->resolution(), shadowMap_->resolution());
             glEnable(GL_DEPTH_TEST);
+            glDepthMask(GL_TRUE);
+            glDepthFunc(GL_LESS);
             glEnable(GL_CULL_FACE);
-            // Front-face culling keeps back faces out of the depth map, which is what stops a closed
-            // caster from shadowing itself.
-            glCullFace(GL_FRONT);
+            // Use the light-facing surface as the caster depth. Front-face culling
+            // records the far side of a partially submerged solid, which can be
+            // below the water receiver and make its shadow disappear entirely.
+            glCullFace(GL_BACK);
             for (std::size_t cascade = 0U; cascade < cascadeCount; ++cascade) {
                 shadowMap_->bindForWriting(cascade);
                 glClear(GL_DEPTH_BUFFER_BIT);

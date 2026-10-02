@@ -14,6 +14,7 @@ this summary.
 | TinyEXR | 1.0.13 | BSD-3-Clause | <https://github.com/syoyo/tinyexr> |
 | Dear ImGui | 1.92.7-docking | MIT | <https://github.com/ocornut/imgui> |
 | Assimp | 6.0.5 | BSD-3-Clause; bundled components retain their own notices | <https://github.com/assimp/assimp> |
+| osgw water material / Ashima Simplex noise | Copied 3D noise shader in `shaders/ocean_snoise.glsl` | MIT | <https://github.com/CaffeineViking/osgw>, <https://github.com/ashima/webgl-noise> |
 
 Assimp brings the stb image loader, RapidJSON and zlib into this build. Their
 license notices remain in the fetched Assimp source tree and Assimp's canonical
@@ -22,3 +23,4 @@ license file is shipped with packaged binaries.
 Asset provenance and redistribution scope are recorded separately in
 `ASSET_LICENSES.md`. The project's MIT license does not relicense third-party
 assets.
+The copied ocean shader's license texts ship in `assets/licenses/`.

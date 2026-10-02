@@ -9,6 +9,7 @@ struct CameraOrbitState {
     float pitchDegrees{20.0535f};
     float distance{3.2f};
     float fieldOfViewDegrees{45.0f};
+    float farPlane{100.0f};
 };
 
 class Camera {
@@ -40,6 +41,7 @@ public:
 
     float fieldOfView() const { return fieldOfViewDegrees_; }
     void setFieldOfView(float degrees);
+    void setFarPlane(float distance);
 
     // The projection's own depth range. Every consumer that has to agree with what the camera
     // rasterises -- shadow cascade fitting, depth reconstruction, reverse-engineering a view ray --

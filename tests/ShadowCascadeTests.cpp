@@ -191,6 +191,13 @@ int main() {
             require(ndc.z >= -1.001f && ndc.z <= 1.001f,
                     "every sub-frustum corner must fall inside the fitted depth range");
         }
+        const glm::vec3 casterNearLight =
+            glm::vec3(0.0f, 0.0f, -6.0f) + toLight * 29.0f;
+        const glm::vec4 casterClip = fit.lightViewProjection
+            * glm::vec4(casterNearLight, 1.0f);
+        require(casterClip.z / casterClip.w >= -1.001f
+                    && casterClip.z / casterClip.w <= 1.001f,
+                "a caster in front of the camera slice must remain in the light depth band");
 
         // Texel snapping. The snap rounds the box centre to a whole texel, so a sub-texel camera pan
         // can move the grid by up to one texel -- that bounded step is the entire point. Without

@@ -5,7 +5,12 @@ foreach(required RENDERER COMPARATOR SOURCE_DIR OUTPUT_DIR)
     endif()
 endforeach()
 file(MAKE_DIRECTORY "${OUTPUT_DIR}")
-foreach(scene 01_volumetric_cloud_lab 02_ocean_weather_hero)
+foreach(scene 01_volumetric_cloud_lab 23_ocean_clouds)
+    if(scene STREQUAL "23_ocean_clouds")
+        set(scene_path "${SOURCE_DIR}/assets/scenes/fixtures/${scene}.myscene")
+    else()
+        set(scene_path "${SOURCE_DIR}/assets/scenes/${scene}.myscene")
+    endif()
     foreach(tier low high)
         foreach(offline 0 1)
             set(name "${scene}-${tier}-${offline}")
@@ -24,7 +29,7 @@ foreach(scene 01_volumetric_cloud_lab 02_ocean_weather_hero)
                 MYRENDERER_TAA=0 MYRENDERER_BLOOM=0
                 MYRENDERER_ANIMATION_TIME=1.25 MYRENDERER_ANIMATION_FRAME_STEP=0
                 MYRENDERER_HIDE_SELECTION_OUTLINE=1
-                "${RENDERER}" "${SOURCE_DIR}/assets/scenes/${scene}.myscene"
+                "${RENDERER}" "${scene_path}"
                 WORKING_DIRECTORY "${SOURCE_DIR}" RESULT_VARIABLE result
                 OUTPUT_VARIABLE output ERROR_VARIABLE errors TIMEOUT 120)
             file(WRITE "${OUTPUT_DIR}/${name}.log" "${output}\n${errors}")

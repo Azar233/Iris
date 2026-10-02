@@ -48,4 +48,10 @@
 
 新增素材后在本表补一行：文件名、这张图证明什么、怎么重拍。
 
+| `p1a-ocean-hdri-open.png` | 开放海域使用已有 Kloofendal HDRI；1600 远裁剪面与 2000 范围海面在地平线交接，没有原先的宽灰带 | 按 [`../ocean-hdri-material.md`](../ocean-hdri-material.md) 的 1072×559 固定机位命令重拍，复制 `build-ci-msvc/ocean-hdri-open.png` |
+
+| `p1a-ocean-underwater-wide-after.png` | 2000 单位海面范围下，水下网格边长过滤后的剩余画面与限制 | 按 [`../ocean-underwater-boundaries.md`](../ocean-underwater-boundaries.md) 的固定场景命令重拍 |
+
+| `p1a-ocean-cube-shadow-comparison.png` | 同机位 4× MSAA 下，Cube 水面阴影由块状边缘变为连续边缘 | 按 [`../ocean-cube-shadow.md`](../ocean-cube-shadow.md) 的夹具命令重拍右图；左图为旧采样方式的诊断截图 |
+
 | `p1a-cloud-c7-transport-capture.png` | C7 固定海洋捕获与透射率 LUT 误差曲线；不代表达到写实参考 | `cloud-determinism-acceptance` 后运行 `python tools/CloudCaptureIllustration.py`；见 [`../cloud-c7-contract.md`](../cloud-c7-contract.md) |

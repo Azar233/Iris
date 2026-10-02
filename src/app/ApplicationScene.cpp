@@ -434,11 +434,15 @@ void Application::processEditorCommands() {
                 if (water.preset < 0 || water.preset > 3
                     || water.quality < 0 || water.quality > 1
                     || !within(water.level, -10.0f, 10.0f)
-                    || !within(water.extent, 20.0f, 500.0f)
+                    || !within(water.extent, 20.0f, 2000.0f)
                     || !within(water.amplitude, 0.0f, 2.0f)
                     || !within(water.speed, 0.0f, 5.0f)
                     || !within(water.steepness, 0.0f, 0.9f)
                     || !within(water.foamStrength, 0.0f, 1.0f)
+                    || !within(water.roughness, 0.02f, 0.8f)
+                    || !within(water.reflectionStrength, 0.0f, 2.0f)
+                    || !within(water.rippleStrength, 0.0f, 1.0f)
+                    || !within(water.sunGlintStrength, 0.0f, 2.0f)
                     || !within(water.windX, -1.0f, 1.0f)
                     || !within(water.windZ, -1.0f, 1.0f)) {
                     statusMessage_ = "Inspector rejected invalid water settings.";
@@ -453,6 +457,10 @@ void Application::processEditorCommands() {
                 rendererSettings_.water.speed = water.speed;
                 rendererSettings_.water.steepness = water.steepness;
                 rendererSettings_.water.foamStrength = water.foamStrength;
+                rendererSettings_.water.roughness = water.roughness;
+                rendererSettings_.water.reflectionStrength = water.reflectionStrength;
+                rendererSettings_.water.rippleStrength = water.rippleStrength;
+                rendererSettings_.water.sunGlintStrength = water.sunGlintStrength;
                 rendererSettings_.water.windDirection = glm::vec2(water.windX, water.windZ);
                 if (renderer_ != nullptr) renderer_->invalidateTemporalHistory();
                 break;
@@ -633,11 +641,15 @@ void Application::processEditorCommands() {
                 const auto& settings = command.camera;
                 if (!std::isfinite(settings.fieldOfViewDegrees)
                     || settings.fieldOfViewDegrees < 15.0f
-                    || settings.fieldOfViewDegrees > 90.0f) {
+                    || settings.fieldOfViewDegrees > 90.0f
+                    || !std::isfinite(settings.farPlane)
+                    || settings.farPlane < 100.0f
+                    || settings.farPlane > 2000.0f) {
                     statusMessage_ = "Inspector rejected invalid Camera settings.";
                     break;
                 }
                 camera_.setFieldOfView(settings.fieldOfViewDegrees);
+                camera_.setFarPlane(settings.farPlane);
                 cpuPreviewRestartRequested_ = true;
                 if (renderer_ != nullptr) renderer_->invalidateTemporalHistory();
                 break;

@@ -8,21 +8,12 @@
 #include <glm/common.hpp>
 #include <glm/ext/matrix_clip_space.hpp>
 #include <glm/ext/matrix_transform.hpp>
-#include <glm/common.hpp>
 #include <glm/geometric.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/trigonometric.hpp>
 
 namespace shadow {
 namespace {
-
-// Splits a clip-space coordinate back into world space with the perspective divide intact.
-glm::vec3 unproject(const glm::mat4& inverseViewProjection, float ndcX, float ndcY, float ndcZ) {
-    const glm::vec4 homogeneous = inverseViewProjection * glm::vec4(ndcX, ndcY, ndcZ, 1.0f);
-    const float w = homogeneous.w;
-    if (std::abs(w) < 1.0e-8f) return glm::vec3(0.0f);
-    return glm::vec3(homogeneous) / w;
-}
 
 // Rounds a light-space offset to whole texels. Without this the shadow map's texel grid slides
 // under the geometry as the camera moves, and every shadow edge shimmers; rounding in light space
@@ -168,21 +159,19 @@ CascadeFit fitCascade(
 
     // The depth band is anchored to the light view rather than to the slice. `buildLightView` puts the
     // eye `range` back along the light axis looking at the pivot, so in light space the geometry
-    // around the pivot sits at depth `-range` and the eye is at `0`. The band reaches from just in
-    // front of the eye to `range` behind the pivot, so everything within `range` of the pivot is
-    // covered -- and it takes in the slice's own light-space depth whenever the slice reaches past
-    // that, which is what keeps a cascade fitted to the far plane covered as well.
+    // around the pivot sits at depth `-range` and the eye is at `0`. The band
+    // extends almost to that eye and two ranges behind it, covering casters on
+    // either side of the pivot. It expands further for a distant camera slice.
     const float range = std::max(lightViewRange, 1.0e-3f);
-    // Positive distances from the eye along the light's own axis, which is what `glm::ortho`'s near
-    // and far parameters mean for a right-handed `lookAt` view: the view looks down -Z while
-    // `glm::ortho` builds a +Z-looking volume, so the two distances are positive rather than negative.
-    const float sliceNearDistance = -std::max(minimum.z, maximum.z);
+    // Positive distances from the eye along the light's -Z viewing axis are
+    // the near/far parameters for a right-handed orthographic projection.
     const float sliceFarDistance = -std::min(minimum.z, maximum.z);
-    const float bandNear = std::max(
-        std::min(sliceNearDistance, range * 2.0f), 1.0e-3f
-    );
+    // Casters can lie between the light and the camera slice. Clipping the
+    // light volume at the slice's nearest receiver silently drops those
+    // casters (notably a cube above an ocean surface).
+    const float bandNear = 1.0e-3f;
     const float bandFar = std::max(
-        std::max(sliceFarDistance, range * 1.25f), bandNear + 1.0e-3f
+        std::max(sliceFarDistance, range * 2.0f), bandNear + 1.0e-3f
     );
     const glm::mat4 lightProjection = glm::ortho(
         snappedCentre.x - snappedHalfExtent, snappedCentre.x + snappedHalfExtent,

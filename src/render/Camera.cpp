@@ -98,7 +98,8 @@ CameraOrbitState Camera::orbitState() const {
         glm::degrees(yawRadians_),
         glm::degrees(pitchRadians_),
         distance_,
-        fieldOfViewDegrees_
+        fieldOfViewDegrees_,
+        farPlane_
     };
 }
 
@@ -110,8 +111,13 @@ void Camera::setOrbitState(const CameraOrbitState& state) {
         state.distance,
         state.fieldOfViewDegrees
     );
+    setFarPlane(state.farPlane);
 }
 
 void Camera::setFieldOfView(float degrees) {
     fieldOfViewDegrees_ = std::clamp(degrees, 15.0f, 90.0f);
+}
+
+void Camera::setFarPlane(float distance) {
+    farPlane_ = std::clamp(distance, 100.0f, 2000.0f);
 }

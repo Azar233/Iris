@@ -1,0 +1,151 @@
+{
+  "format": "MyRendererScene",
+  "version": 1,
+  "camera": {
+    "target": [
+      0,
+      0,
+      -30
+    ],
+    "yawDegrees": -15,
+    "pitchDegrees": 45,
+    "distance": 14,
+    "fieldOfViewDegrees": 52,
+    "farPlane": 1600
+  },
+  "playback": {
+    "animationEnabled": true,
+    "animationPlaying": true,
+    "animationTimeSeconds": 0,
+    "animationSpeed": 1
+  },
+  "renderer": {
+    "renderPath": 1,
+    "shadingMode": 0,
+    "backgroundColor": [
+      0.025,
+      0.045,
+      0.075
+    ],
+    "showGrid": false,
+    "showAxes": false,
+    "pbrEnabled": true,
+    "iblEnabled": true,
+    "skyboxEnabled": true,
+    "environmentIntensity": 1.0,
+    "shadowsEnabled": true,
+    "shadowCascadeCount": 3,
+    "shadowCascadeSplitLambda": 0.75,
+    "waterEnabled": true,
+    "waterLevel": -0.45,
+    "waterExtent": 2000,
+    "waterAmplitude": 0.14,
+    "waterSpeed": 0.82,
+    "waterSteepness": 0.48,
+    "waterFoamStrength": 0.12,
+    "waterRoughness": 0.52,
+    "waterReflectionStrength": 0.72,
+    "waterRippleStrength": 0.2,
+    "waterSunGlintStrength": 0.12,
+    "waterWindX": 0.92,
+    "waterWindZ": 0.28,
+    "toneMapping": true,
+    "bloom": false,
+    "bloomThreshold": 1.1,
+    "bloomIntensity": 0.07,
+    "exposure": 0.78,
+    "atmosphereEnabled": false,
+    "sunElevationDegrees": 28,
+    "sunAzimuthDegrees": 124,
+    "skyTurbidity": 1.08,
+    "skyIntensity": 3.0,
+    "sunIntensity": 3.15,
+    "groundAlbedo": 0.28,
+    "nightSkyEnabled": true,
+    "moonIntensity": 0.2,
+    "starIntensity": 0.9,
+    "aerialPerspectiveEnabled": false,
+    "aerialPerspectiveStrength": 0.82,
+    "aerialPerspectiveScaleHeight": 140,
+    "cloudsEnabled": false,
+    "cloudBaseHeight": 2300,
+    "cloudTopHeight": 7200,
+    "cloudCoverage": 0.3,
+    "cloudDensity": 0.78,
+    "cloudWindOffsetX": 320,
+    "cloudWindOffsetZ": -140,
+    "cloudFeatureScale": 6000,
+    "cloudNoisePeriod": 4,
+    "cloudWeatherScale": 25000,
+    "cloudCoverageVariation": 0.72,
+    "cloudType": 0.76,
+    "cloudTypeVariation": 0.4,
+    "cloudHeightVariation": 0.25,
+    "cloudDetailStrength": 0.46,
+    "cloudDetailEdge": 0.16,
+    "cloudQuality": 1,
+    "cloudHalfResolution": true,
+    "cloudTemporalEnabled": true,
+    "cloudOfflineNoise": true,
+    "cloudShadowsEnabled": false,
+    "cloudGodRaysEnabled": false,
+    "cloudGodRaysStrength": 0.08,
+    "cloudHorizonFadeDegrees": 5,
+    "cloudAmbientElevationDegrees": 15,
+    "cloudAmbientScale": 0.9,
+    "temporalAaEnabled": false,
+    "localLights": [],
+    "causticsEnabled": false,
+    "ssaoEnabled": false
+  },
+  "entities": [
+    {
+      "id": 3,
+      "name": "Deep Seabed",
+      "parent": 0,
+      "model": "../../models/cube.obj",
+      "transform": {
+        "translation": [
+          0,
+          -55,
+          -80
+        ],
+        "scale": [
+          180,
+          1.0,
+          220
+        ]
+      },
+      "tint": [
+        0.18,
+        0.22,
+        0.18
+      ],
+      "castsShadow": false
+    },
+    {
+      "id": 4,
+      "name": "Shadow Test Cube",
+      "parent": 0,
+      "model": "../../models/cube.obj",
+      "transform": {
+        "translation": [
+          0,
+          0,
+          -30
+        ],
+        "scale": [
+          1.7,
+          1.7,
+          1.7
+        ]
+      },
+      "tint": [
+        0.8,
+        0.8,
+        0.8
+      ],
+      "castsShadow": true
+    }
+  ]
+}

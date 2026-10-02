@@ -1,7 +1,7 @@
 {
   "format": "MyRendererRenderJob",
   "schemaVersion": 3,
-  "scene": "../scenes/02_ocean_weather_hero.myscene",
+  "scene": "../scenes/fixtures/23_ocean_clouds.myscene",
   "renderer": "raster",
   "camera": "scene",
   "resolution": [640, 360],

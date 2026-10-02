@@ -5,7 +5,12 @@ foreach(required RENDERER SOURCE_DIR OUTPUT_DIR)
     endif()
 endforeach()
 file(MAKE_DIRECTORY "${OUTPUT_DIR}")
-foreach(scene 01_volumetric_cloud_lab 02_ocean_weather_hero)
+foreach(scene 01_volumetric_cloud_lab 23_ocean_clouds)
+    if(scene STREQUAL "23_ocean_clouds")
+        set(scene_path "${SOURCE_DIR}/assets/scenes/fixtures/${scene}.myscene")
+    else()
+        set(scene_path "${SOURCE_DIR}/assets/scenes/${scene}.myscene")
+    endif()
     execute_process(
         COMMAND "${CMAKE_COMMAND}" -E env
             MYRENDERER_BENCHMARK_FRAMES=40
@@ -15,7 +20,7 @@ foreach(scene 01_volumetric_cloud_lab 02_ocean_weather_hero)
             MYRENDERER_RENDER_HEIGHT=720
             MYRENDERER_CAMERA_HEIGHT_DEMO_STEP=2
             MYRENDERER_TAA_MOTION_DEMO=1
-            "${RENDERER}" "${SOURCE_DIR}/assets/scenes/${scene}.myscene"
+            "${RENDERER}" "${scene_path}"
         WORKING_DIRECTORY "${SOURCE_DIR}"
         OUTPUT_VARIABLE output ERROR_VARIABLE errors
         RESULT_VARIABLE result TIMEOUT 120

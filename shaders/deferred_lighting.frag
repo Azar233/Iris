@@ -15,7 +15,7 @@ uniform samplerCube uPrefilteredEnvironmentMap;
 uniform sampler2D uBrdfLut;
 // Array sampler, matching the 2D-array depth attachment; see `basic.frag` for why the two must
 // change together.
-uniform sampler2DArray uShadowMap;
+uniform sampler2DArrayShadow uShadowMap;
 uniform sampler2D uTransmissionShadowMap;
 uniform sampler2D uCausticsMap;
 uniform sampler2D uSsao;
@@ -182,8 +182,8 @@ vec3 shadowVisibility(vec3 worldPosition, vec3 normal, vec3 lightDirection, floa
     float visible = 0.0;
     for (int x = -1; x <= 1; ++x) {
         for (int y = -1; y <= 1; ++y) {
-            float sampleDepth = texture(uShadowMap, vec3(projected.xy + vec2(x, y) * texel, float(cascade))).r;
-            visible += projected.z - bias <= sampleDepth ? 1.0 : 0.0;
+            visible += texture(uShadowMap, vec4(
+                projected.xy + vec2(x, y) * texel, float(cascade), projected.z - bias));
         }
     }
     vec3 transmission = uColoredTransmissionShadowsEnabled

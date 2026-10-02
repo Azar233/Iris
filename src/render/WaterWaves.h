@@ -20,6 +20,10 @@ struct WaterSettings {
     float speed{1.0f};
     float steepness{0.65f};
     float foamStrength{0.7f};
+    float roughness{0.25f};
+    float reflectionStrength{1.0f};
+    float rippleStrength{0.0f};
+    float sunGlintStrength{1.0f};
     glm::vec2 windDirection{0.9f, 0.3f};
     float timeSeconds{0.0f};
 };

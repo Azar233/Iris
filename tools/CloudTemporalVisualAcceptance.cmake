@@ -39,7 +39,7 @@ capture(half_raw 01_volumetric_cloud_lab high 1 0)
 capture(low 01_volumetric_cloud_lab low 1 1)
 capture(high 01_volumetric_cloud_lab high 1 1)
 capture(repeat 01_volumetric_cloud_lab high 1 1)
-capture(hero 02_ocean_weather_hero high 1 1)
+capture(hero fixtures/23_ocean_clouds high 1 1)
 execute_process(COMMAND "${COMPARATOR}" "${OUTPUT_DIR}/high.png"
     "${OUTPUT_DIR}/repeat.png" 0 0 RESULT_VARIABLE repeat_result)
 if(NOT repeat_result EQUAL 0)

@@ -90,6 +90,10 @@ void writeRendererSettings(Writer& writer, const RendererSettings& settings) {
     writer.Key("waterSpeed"); writer.Double(settings.water.speed);
     writer.Key("waterSteepness"); writer.Double(settings.water.steepness);
     writer.Key("waterFoamStrength"); writer.Double(settings.water.foamStrength);
+    writer.Key("waterRoughness"); writer.Double(settings.water.roughness);
+    writer.Key("waterReflectionStrength"); writer.Double(settings.water.reflectionStrength);
+    writer.Key("waterRippleStrength"); writer.Double(settings.water.rippleStrength);
+    writer.Key("waterSunGlintStrength"); writer.Double(settings.water.sunGlintStrength);
     writer.Key("waterWindX"); writer.Double(settings.water.windDirection.x);
     writer.Key("waterWindZ"); writer.Double(settings.water.windDirection.y);
     WRITE_BOOL(causticsEnabled);
@@ -323,11 +327,15 @@ void readRendererSettings(const scene_json::Value& value, RendererSettings& sett
     settings.water.quality = static_cast<WaterQuality>(std::clamp(
         readInt(value, "waterQuality", static_cast<int>(settings.water.quality)), 0, 1));
     settings.water.level = std::clamp(readFloat(value, "waterLevel", settings.water.level), -10.0f, 10.0f);
-    settings.water.extent = std::clamp(readFloat(value, "waterExtent", settings.water.extent), 20.0f, 500.0f);
+    settings.water.extent = std::clamp(readFloat(value, "waterExtent", settings.water.extent), 20.0f, 2000.0f);
     settings.water.amplitude = std::clamp(readFloat(value, "waterAmplitude", settings.water.amplitude), 0.0f, 2.0f);
     settings.water.speed = std::clamp(readFloat(value, "waterSpeed", settings.water.speed), 0.0f, 5.0f);
     settings.water.steepness = std::clamp(readFloat(value, "waterSteepness", settings.water.steepness), 0.0f, 0.9f);
     settings.water.foamStrength = std::clamp(readFloat(value, "waterFoamStrength", settings.water.foamStrength), 0.0f, 1.0f);
+    settings.water.roughness = std::clamp(readFloat(value, "waterRoughness", settings.water.roughness), 0.02f, 0.8f);
+    settings.water.reflectionStrength = std::clamp(readFloat(value, "waterReflectionStrength", settings.water.reflectionStrength), 0.0f, 2.0f);
+    settings.water.rippleStrength = std::clamp(readFloat(value, "waterRippleStrength", settings.water.rippleStrength), 0.0f, 1.0f);
+    settings.water.sunGlintStrength = std::clamp(readFloat(value, "waterSunGlintStrength", settings.water.sunGlintStrength), 0.0f, 2.0f);
     settings.water.windDirection.x = std::clamp(
         readFloat(value, "waterWindX", settings.water.windDirection.x), -1.0f, 1.0f);
     settings.water.windDirection.y = std::clamp(
@@ -526,6 +534,9 @@ bool saveSceneDocument(
         writer.Key("pitchDegrees"); writer.Double(document.camera.pitchDegrees);
         writer.Key("distance"); writer.Double(document.camera.distance);
         writer.Key("fieldOfViewDegrees"); writer.Double(document.camera.fieldOfViewDegrees);
+        if (document.camera.farPlane != 100.0f) {
+            writer.Key("farPlane"); writer.Double(document.camera.farPlane);
+        }
         writer.EndObject();
         writer.Key("renderer"); writeRendererSettings(writer, document.renderer);
         writer.Key("playback"); writer.StartObject();
@@ -622,6 +633,8 @@ bool loadSceneDocument(
             loaded.camera.pitchDegrees = readFloat(*camera, "pitchDegrees", loaded.camera.pitchDegrees);
             loaded.camera.distance = readFloat(*camera, "distance", loaded.camera.distance);
             loaded.camera.fieldOfViewDegrees = readFloat(*camera, "fieldOfViewDegrees", loaded.camera.fieldOfViewDegrees);
+            loaded.camera.farPlane = std::clamp(
+                readFloat(*camera, "farPlane", loaded.camera.farPlane), 100.0f, 2000.0f);
         }
         if (const scene_json::Value* renderer = optionalMember(root, "renderer")) {
             readRendererSettings(*renderer, loaded.renderer);

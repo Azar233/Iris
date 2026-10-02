@@ -22,6 +22,7 @@ int main() {
     try {
         Camera camera;
         camera.setOrbitPose(glm::vec3(2.0f, 1.0f, -3.0f), 30.0f, -12.0f, 8.0f, 52.0f);
+        camera.setFarPlane(1600.0f);
         const CameraOrbitState before = camera.orbitState();
         const glm::vec3 beforePosition = camera.position();
         const glm::vec3 forward = camera.forwardDirection();
@@ -39,6 +40,8 @@ int main() {
                 && std::abs(after.distance - before.distance) < 1.0e-5f
                 && std::abs(after.fieldOfViewDegrees - before.fieldOfViewDegrees) < 1.0e-5f,
             "WASD movement must preserve orbit orientation, distance and field of view");
+        require(std::abs(after.farPlane - 1600.0f) < 1.0e-5f,
+            "local movement must preserve the saved far clip distance");
 
         camera.moveLocal(0.0f, 0.0f, 2.0f);
         require(close(camera.orbitState().target,

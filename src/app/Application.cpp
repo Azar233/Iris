@@ -2112,7 +2112,7 @@ void Application::drawInspectorPanel() {
                 changed |= EditorUi::SliderFloat(EditorUi::label("Water level"),
                     &waterSettings.level, -10.0f, 10.0f, "%.2f");
                 changed |= EditorUi::SliderFloat(EditorUi::label("Water extent"),
-                    &waterSettings.extent, 20.0f, 500.0f, "%.0f");
+                    &waterSettings.extent, 20.0f, 2000.0f, "%.0f");
                 parametersChanged |= EditorUi::SliderFloat(EditorUi::label("Wave amplitude"),
                     &waterSettings.amplitude, 0.0f, 2.0f, "%.2f");
                 parametersChanged |= EditorUi::SliderFloat(EditorUi::label("Wave speed"),
@@ -2121,6 +2121,14 @@ void Application::drawInspectorPanel() {
                     &waterSettings.steepness, 0.0f, 0.9f, "%.2f");
                 parametersChanged |= EditorUi::SliderFloat(EditorUi::label("Foam strength"),
                     &waterSettings.foamStrength, 0.0f, 1.0f, "%.2f");
+                changed |= EditorUi::SliderFloat(EditorUi::label("Surface roughness"),
+                    &waterSettings.roughness, 0.02f, 0.8f, "%.2f");
+                changed |= EditorUi::SliderFloat(EditorUi::label("Sky reflection"),
+                    &waterSettings.reflectionStrength, 0.0f, 2.0f, "%.2f");
+                changed |= EditorUi::SliderFloat(EditorUi::label("Fine ripples"),
+                    &waterSettings.rippleStrength, 0.0f, 1.0f, "%.2f");
+                changed |= EditorUi::SliderFloat(EditorUi::label("Sun glint"),
+                    &waterSettings.sunGlintStrength, 0.0f, 2.0f, "%.2f");
                 parametersChanged |= EditorUi::SliderFloat(EditorUi::label("Wind east"),
                     &waterSettings.windX, -1.0f, 1.0f, "%.2f");
                 parametersChanged |= EditorUi::SliderFloat(EditorUi::label("Wind north"),
@@ -2587,9 +2595,15 @@ void Application::drawInspectorPanel() {
             }
 
             if (EditorUi::section("Camera")) {
-                float fieldOfView = camera_.fieldOfView();
-                if (EditorUi::SliderFloat(EditorUi::label("Field of view"), &fieldOfView, 15.0f, 90.0f, "%.0f deg")) {
-                    camera_.setFieldOfView(fieldOfView);
+                auto cameraSettings = EditorDomain::captureCameraSettings(camera_);
+                bool cameraChanged = EditorUi::SliderFloat(EditorUi::label("Field of view"),
+                    &cameraSettings.fieldOfViewDegrees, 15.0f, 90.0f, "%.0f deg");
+                cameraChanged |= EditorUi::SliderFloat(EditorUi::label("Far clip distance"),
+                    &cameraSettings.farPlane, 100.0f, 2000.0f, "%.0f");
+                if (cameraChanged) {
+                    EditorCommand command{EditorCommandType::SetCameraSettings};
+                    command.camera = cameraSettings;
+                    editorSession_.request(std::move(command));
                 }
                 if (ImGui::Button(EditorUi::label("Frame model"), ImVec2(-1.0f, 0.0f))) {
                     camera_.reset(modelPosition_);
@@ -2692,6 +2706,7 @@ std::uint64_t Application::cpuPreviewInputSignature(int width, int height) const
     hashValue(hash, camera.pitchDegrees);
     hashValue(hash, camera.distance);
     hashValue(hash, camera.fieldOfViewDegrees);
+    hashValue(hash, camera.farPlane);
 
     for (const SceneEntity& entity : scene_.entities()) {
         hashValue(hash, entity.id);

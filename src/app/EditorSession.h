@@ -128,6 +128,10 @@ struct EditorWaterSettingsPayload {
     float speed{1.0f};
     float steepness{0.65f};
     float foamStrength{0.7f};
+    float roughness{0.25f};
+    float reflectionStrength{1.0f};
+    float rippleStrength{0.0f};
+    float sunGlintStrength{1.0f};
     float windX{0.9f};
     float windZ{0.3f};
 };
@@ -199,6 +203,7 @@ struct EditorRasterizationSettingsPayload {
 // so this domain restarts the preview as well as dropping temporal history.
 struct EditorCameraSettingsPayload {
     float fieldOfViewDegrees{45.0f};
+    float farPlane{100.0f};
 };
 
 // Window level runtime state that does not participate in either the raster

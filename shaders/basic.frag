@@ -23,7 +23,7 @@ uniform sampler2D uBrdfLut;
 // Array sampler: the depth attachment is a 2D array with one layer per shadow cascade. The sampler
 // type and the attachment type are one contract -- a 2D-array texture bound to a `sampler2D` is
 // undefined sampling, not an error, so a mismatch would only show as drifting baselines.
-uniform sampler2DArray uShadowMap;
+uniform sampler2DArrayShadow uShadowMap;
 // Cascade count and the ascending split distances that select between them.
 uniform int uShadowCascadeCount;
 uniform float uCascadeSplits[MAX_SHADOW_CASCADES];
@@ -218,8 +218,8 @@ vec3 shadowVisibility(vec3 normal, vec3 lightDirection) {
     float visible = 0.0;
     for (int x = -1; x <= 1; ++x) {
         for (int y = -1; y <= 1; ++y) {
-            float depth = texture(uShadowMap, vec3(projected.xy + vec2(x, y) * texel, float(cascade))).r;
-            visible += projected.z - bias <= depth ? 1.0 : 0.0;
+            visible += texture(uShadowMap, vec4(
+                projected.xy + vec2(x, y) * texel, float(cascade), projected.z - bias));
         }
     }
     vec3 transmission = uColoredTransmissionShadowsEnabled

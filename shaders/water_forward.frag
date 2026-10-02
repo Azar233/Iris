@@ -1,5 +1,6 @@
 #version 330 core
 #include "cloud_shadow_sample.glsl"
+#include "ocean_snoise.glsl"
 
 in vec3 vWorldPosition;
 in vec3 vNormal;
@@ -16,13 +17,20 @@ uniform float uDiffuseStrength;
 uniform float uEnvironmentIntensity;
 uniform float uTwilightFactor;
 uniform float uFoamStrength;
+uniform float uTime;
+uniform float uRoughness;
+uniform float uReflectionStrength;
+uniform float uRippleStrength;
+uniform float uSunGlintStrength;
+uniform float uEnvironmentMaxMip;
 uniform bool uShadowsEnabled;
 uniform samplerCube uPrefilteredEnvironmentMap;
 uniform samplerCube uIrradianceMap;
-uniform sampler2DArray uShadowMap;
+uniform sampler2DArrayShadow uShadowMap;
 uniform sampler2D uOpaqueSceneColor;
 uniform sampler2D uOpaqueSceneDepth;
 uniform mat4 uCurrentViewProjection;
+uniform mat4 uInverseCurrentViewProjection;
 uniform float uInverseViewportWidth;
 uniform float uInverseViewportHeight;
 uniform float uCameraNearPlane;
@@ -61,9 +69,8 @@ float shadowVisibility(vec3 normal) {
     float visible = 0.0;
     for (int x = -1; x <= 1; ++x) {
         for (int y = -1; y <= 1; ++y) {
-            float stored = texture(uShadowMap,
-                vec3(projected.xy + vec2(x, y) * texel, cascade)).r;
-            visible += projected.z - bias <= stored ? 1.0 : 0.0;
+            visible += texture(uShadowMap, vec4(
+                projected.xy + vec2(x, y) * texel, float(cascade), projected.z - bias));
         }
     }
     return visible / 9.0;
@@ -71,9 +78,35 @@ float shadowVisibility(vec3 normal) {
 
 void main() {
     vec3 normal = normalize(vNormal);
+    // Filter the two ripple scales by their projected pixel footprint. A fixed
+    // world-space distance cutoff made nearby water busy and distant water flat.
+    // Only shading normals change: Gerstner geometry and TAA motion stay stable.
+    if (uRippleStrength > 0.0) {
+        float pixelFootprint = max(length(dFdx(vWorldPosition.xz)),
+                                   length(dFdy(vWorldPosition.xz)));
+        float broadWeight = 1.0 - smoothstep(0.18, 0.45,
+            pixelFootprint * 0.065);
+        float detailWeight = 1.0 - smoothstep(0.18, 0.45,
+            pixelFootprint * 0.28);
+        vec2 slope = vec2(0.0);
+        if (broadWeight > 0.0) {
+            vec3 broadGradient;
+            snoise3d(vec3(vWorldPosition.xz * 0.065, uTime * 0.09),
+                broadGradient);
+            slope += broadGradient.xy * 0.16 * broadWeight;
+        }
+        if (detailWeight > 0.0) {
+            vec3 detailGradient;
+            snoise3d(vec3(vWorldPosition.xz * 0.28, uTime * 0.19),
+                detailGradient);
+            slope += detailGradient.xy * 0.22 * detailWeight;
+        }
+        slope *= uRippleStrength;
+        normal = normalize(normal + vec3(-slope.x, 0.0, -slope.y));
+    }
     vec3 viewDirection = normalize(uCameraPosition - vWorldPosition);
-    bool viewedFromBelow = dot(normal, viewDirection) < 0.0;
-    if (viewedFromBelow) normal = -normal;
+    bool viewedFromBelow = uCameraPosition.y < vWorldPosition.y;
+    if (dot(normal, viewDirection) < 0.0) normal = -normal;
     float nDotV = max(dot(normal, viewDirection), 0.0);
     float etaIncident = viewedFromBelow ? 1.333 : 1.0;
     float etaTransmit = viewedFromBelow ? 1.0 : 1.333;
@@ -89,7 +122,9 @@ void main() {
         fresnel = 0.5 * (perpendicular * perpendicular + parallel * parallel);
     }
     vec3 reflection = textureLod(uPrefilteredEnvironmentMap,
-        reflect(-viewDirection, normal), 1.5).rgb * uEnvironmentIntensity;
+        reflect(-viewDirection, normal),
+        clamp(uRoughness * uEnvironmentMaxMip, 0.0, uEnvironmentMaxMip)).rgb
+        * uEnvironmentIntensity * uReflectionStrength;
     vec2 screenUv = gl_FragCoord.xy
         * vec2(uInverseViewportWidth, uInverseViewportHeight);
     float waterDepth = viewDepth(gl_FragCoord.z);
@@ -107,7 +142,16 @@ void main() {
         refractedUv = screenUv + clamp(refractedUv - screenUv,
             vec2(-0.035), vec2(0.035));
         sceneDepth = texture(uOpaqueSceneDepth, refractedUv).r;
-        if (sceneDepth < gl_FragCoord.z + 0.0005) {
+        bool invalidRefraction = sceneDepth < 0.99999
+            && viewDepth(sceneDepth) <= waterDepth + 0.05;
+        if (!invalidRefraction && sceneDepth < 0.99999 && !viewedFromBelow) {
+            vec4 candidate = uInverseCurrentViewProjection
+                * vec4(refractedUv * 2.0 - 1.0, sceneDepth * 2.0 - 1.0, 1.0);
+            // A displaced lookup may land on the dry side of a protruding object.
+            // Its color must not be dragged into the water next to the silhouette.
+            invalidRefraction = candidate.y / candidate.w > vWorldPosition.y + 0.05;
+        }
+        if (invalidRefraction) {
             refractedUv = screenUv;
             sceneDepth = initialSceneDepth;
         }
@@ -115,7 +159,9 @@ void main() {
     float thickness = sceneDepth >= 0.99999 ? 18.0
         : max(viewDepth(sceneDepth) - waterDepth, 0.0)
             / max(abs(dot(viewDirection, normalize(uCameraForward))), 0.25);
-    thickness = clamp(thickness, 0.0, 18.0);
+    // Below the surface the camera-to-interface path is fogged in postprocess;
+    // everything behind that interface is air, not another 18 metres of water.
+    thickness = viewedFromBelow ? 0.0 : clamp(thickness, 0.0, 18.0);
     vec3 absorption = vec3(0.32, 0.12, 0.065);
     vec3 transmittance = exp(-absorption * thickness);
     float cloudVisibility = cloudShadowTransmittance(vWorldPosition);
@@ -129,15 +175,21 @@ void main() {
     transmission *= mix(0.55, 1.0, waterShadow);
     vec3 lightDirection = normalize(-uLightDirection);
     vec3 halfDirection = normalize(lightDirection + viewDirection);
-    float sunGlint = pow(max(dot(normal, halfDirection), 0.0), 128.0)
+    float sunGlint = pow(max(dot(normal, halfDirection), 0.0),
+            256.0 * exp2(-uRoughness * 4.0))
         * max(dot(normal, lightDirection), 0.0) * uDiffuseStrength
         * waterShadow * cloudVisibility;
     vec3 color = mix(transmission, reflection, fresnel)
-        + uLightColor * sunGlint * 0.5;
+        + uLightColor * sunGlint * 0.5 * uSunGlintStrength;
     float crestNoise = sin(vWorldPosition.x * 7.1 + vWorldPosition.z * 5.7)
         * sin(vWorldPosition.z * 4.3 - vWorldPosition.x * 3.9);
     float whitecap = smoothstep(0.62, 0.94, vFoam + 0.08 * crestNoise);
-    float shoreline = (1.0 - smoothstep(0.08, 1.1, thickness))
+    // Contact foam follows the unwarped geometry depth, never a displaced
+    // refraction lookup that could jump across an object's silhouette.
+    float contactDepth = initialSceneDepth >= 0.99999 ? 18.0
+        : initialThickness / max(abs(dot(viewDirection, normalize(uCameraForward))), 0.25);
+    float shoreline = viewedFromBelow ? 0.0
+        : (1.0 - smoothstep(0.02, 0.5, contactDepth))
         * (0.65 + 0.35 * crestNoise);
     float foam = clamp(max(whitecap, shoreline) * uFoamStrength, 0.0, 1.0);
     color = mix(color, vec3(0.68, 0.82, 0.86) * uTwilightFactor
