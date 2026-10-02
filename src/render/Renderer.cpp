@@ -749,6 +749,7 @@ shader_->setMat4("uView", view);
         waterShader.setFloat("uPreviousTime",
             previousWaterValid_ ? previousWaterTime_ : settings.water.timeSeconds);
         waterShader.setFloat("uExtent", settings.water.extent);
+        waterShader.setFloat("uNearMeshFocus", settings.water.nearMeshFocus);
         waterShader.setFloat("uGridResolution", static_cast<float>(
             settings.water.quality == WaterQuality::Low
                 ? water::lowGridResolution : water::gridResolution));

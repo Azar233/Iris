@@ -96,6 +96,7 @@ void writeRendererSettings(Writer& writer, const RendererSettings& settings) {
     writer.Key("waterSunGlintStrength"); writer.Double(settings.water.sunGlintStrength);
     writer.Key("waterDeepWaterStrength"); writer.Double(settings.water.deepWaterStrength);
     writer.Key("waterWaveDiversity"); writer.Double(settings.water.waveDiversity);
+    writer.Key("waterNearMeshFocus"); writer.Double(settings.water.nearMeshFocus);
     writer.Key("waterWindX"); writer.Double(settings.water.windDirection.x);
     writer.Key("waterWindZ"); writer.Double(settings.water.windDirection.y);
     WRITE_BOOL(causticsEnabled);
@@ -340,6 +341,7 @@ void readRendererSettings(const scene_json::Value& value, RendererSettings& sett
     settings.water.sunGlintStrength = std::clamp(readFloat(value, "waterSunGlintStrength", settings.water.sunGlintStrength), 0.0f, 2.0f);
     settings.water.deepWaterStrength = std::clamp(readFloat(value, "waterDeepWaterStrength", settings.water.deepWaterStrength), 0.0f, 1.0f);
     settings.water.waveDiversity = std::clamp(readFloat(value, "waterWaveDiversity", settings.water.waveDiversity), 0.0f, 1.0f);
+    settings.water.nearMeshFocus = std::clamp(readFloat(value, "waterNearMeshFocus", settings.water.nearMeshFocus), 0.0f, 1.0f);
     settings.water.windDirection.x = std::clamp(
         readFloat(value, "waterWindX", settings.water.windDirection.x), -1.0f, 1.0f);
     settings.water.windDirection.y = std::clamp(

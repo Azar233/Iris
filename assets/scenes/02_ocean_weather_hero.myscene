@@ -16,6 +16,7 @@
     "waterRippleStrength": 0.32, "waterSunGlintStrength": 0.25,
     "waterDeepWaterStrength": 1.0,
     "waterWaveDiversity": 1.0,
+    "waterNearMeshFocus": 1.0,
     "waterWindX": 0.92, "waterWindZ": 0.28,
     "toneMapping": true, "bloom": false, "bloomThreshold": 1.1,
     "bloomIntensity": 0.07, "exposure": 0.78,

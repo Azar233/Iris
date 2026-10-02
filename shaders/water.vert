@@ -7,6 +7,7 @@ uniform mat4 uPreviousViewProjection;
 uniform vec3 uCameraPosition;
 uniform float uExtent;
 uniform float uGridResolution;
+uniform float uNearMeshFocus;
 uniform float uLevel;
 uniform float uTime;
 uniform float uPreviousTime;
@@ -28,7 +29,11 @@ out float vMotionValid;
 const float PI = 3.14159265358979323846;
 
 float gridCoordinate(float coordinate) {
-    return sign(coordinate) * coordinate * coordinate * uExtent;
+    float radius = abs(coordinate);
+    float quadratic = radius * radius * uExtent;
+    if (uNearMeshFocus <= 0.0) return sign(coordinate) * quadratic;
+    float focused = 0.6 * (exp(log(1.0 + uExtent / 0.6) * radius) - 1.0);
+    return sign(coordinate) * mix(quadratic, focused, uNearMeshFocus);
 }
 
 vec3 surface(vec2 base, float time, float gridSpacing,
@@ -91,9 +96,16 @@ vec3 surface(vec2 base, float time, float gridSpacing,
 
 void main() {
     float logicalStep = 2.0 / uGridResolution;
-    float gridSpacing = uExtent * logicalStep
-        * (2.0 * max(abs(aLogicalPosition.x), abs(aLogicalPosition.y))
-            + logicalStep);
+    float logicalRadius = max(abs(aLogicalPosition.x), abs(aLogicalPosition.y));
+    float quadraticSpacing = uExtent * logicalStep
+        * (2.0 * logicalRadius + logicalStep);
+    float gridSpacing = quadraticSpacing;
+    if (uNearMeshFocus > 0.0) {
+        float focusedScale = log(1.0 + uExtent / 0.6);
+        float focusedRadius = 0.6 * exp(focusedScale * logicalRadius);
+        float focusedSpacing = focusedRadius * (exp(focusedScale * logicalStep) - 1.0);
+        gridSpacing = mix(quadraticSpacing, focusedSpacing, uNearMeshFocus);
+    }
     vec2 offset = vec2(gridCoordinate(aLogicalPosition.x),
                        gridCoordinate(aLogicalPosition.y));
     vec3 normal;

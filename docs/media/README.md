@@ -50,9 +50,11 @@
 
 | `p1a-ocean-hdri-open.png` | 开放海域使用已有 Kloofendal HDRI；1600 远裁剪面与 2000 范围海面在地平线交接，没有原先的宽灰带 | 按 [`../ocean-hdri-material.md`](../ocean-hdri-material.md) 的 1072×559 固定机位命令重拍，复制 `build-ci-msvc/ocean-hdri-open.png` |
 
-| `p1a-ocean-open-deep-water.png` | 删除 Deep Seabed 后，零实体开放海域使用深水底色及过滤的多尺度细波 | 按 [`../ocean-hdri-material.md`](../ocean-hdri-material.md) 的固定机位命令重拍，复制 `build-ci-msvc/ocean-no-seabed-final.png` |
+| `p1a-ocean-open-deep-water.png` | 删除 Deep Seabed 后，零实体开放海域使用深水底色及过滤的多尺度细波 | 按 [`../ocean-hdri-material.md`](../ocean-hdri-material.md) 的固定机位命令，将 `waterWaveDiversity` 和 `waterNearMeshFocus` 设为 `0` 重拍 |
 
-| `p1a-ocean-wave-diversity.png` | 与上一图同机位，Hero 使用八组几何波及世界空间相位弯曲，减轻中景长波条带 | 按 [`../ocean-hdri-material.md`](../ocean-hdri-material.md) 的固定机位命令重拍，复制 `build-ci-msvc/ocean-wave-diversity-final.png` |
+| `p1a-ocean-wave-diversity.png` | 与上一图同机位，Hero 使用八组几何波及世界空间相位弯曲，减轻中景长波条带 | 按 [`../ocean-hdri-material.md`](../ocean-hdri-material.md) 的固定机位命令，将 `waterNearMeshFocus` 设为 `0` 重拍 |
+
+| `p1a-ocean-near-mesh-focus.png` | 与上一图同机位，固定顶点重新分配到近景，使短几何波通过网格边长过滤 | 按 [`../ocean-hdri-material.md`](../ocean-hdri-material.md) 的固定机位命令重拍，复制 `build-ci-msvc/ocean-near-mesh-focus-final.png` |
 
 | `p1a-ocean-underwater-wide-after.png` | 2000 单位海面范围下，水下网格边长过滤后的剩余画面与限制 | 按 [`../ocean-underwater-boundaries.md`](../ocean-underwater-boundaries.md) 的固定场景命令重拍 |
 

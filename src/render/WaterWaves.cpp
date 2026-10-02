@@ -116,10 +116,16 @@ WaterSample evaluate(const WaterSettings& settings, const glm::vec2& position) {
     return sample;
 }
 
-float gridCoordinate(float logicalCoordinate, float extent) {
+float gridCoordinate(float logicalCoordinate, float extent, float nearMeshFocus) {
     const float coordinate = std::clamp(logicalCoordinate, -1.0f, 1.0f);
-    return std::copysign(std::pow(std::abs(coordinate), 2.0f), coordinate)
-        * std::max(extent, 0.0f);
+    const float safeExtent = std::max(extent, 0.0f);
+    const float radius = std::abs(coordinate);
+    const float quadratic = radius * radius * safeExtent;
+    constexpr float nearScale = 0.6f;
+    const float focused = nearScale
+        * std::expm1(std::log1p(safeExtent / nearScale) * radius);
+    const float focus = std::clamp(nearMeshFocus, 0.0f, 1.0f);
+    return std::copysign(quadratic + (focused - quadratic) * focus, coordinate);
 }
 
 } // namespace water

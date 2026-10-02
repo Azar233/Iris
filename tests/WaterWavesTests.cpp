@@ -100,5 +100,22 @@ int main() {
     require(lowNearSpacing > nearSpacing * 3.9f
         && water::gridResolution / water::lowGridResolution == 2,
         "low quality grid must halve per-axis resolution");
+    const float openOceanExtent = 2000.0f;
+    const float nearDistance = 5.0f;
+    const float oldLogical = std::sqrt(nearDistance / openOceanExtent);
+    const float focusedLogical = std::log1p(nearDistance / 0.6f)
+        / std::log1p(openOceanExtent / 0.6f);
+    const float oldCell = water::gridCoordinate(oldLogical + logicalStep, openOceanExtent)
+        - water::gridCoordinate(oldLogical, openOceanExtent);
+    const float focusedCell = water::gridCoordinate(
+        focusedLogical + logicalStep, openOceanExtent, 1.0f)
+        - water::gridCoordinate(focusedLogical, openOceanExtent, 1.0f);
+    require(focusedCell < oldCell * 0.35f && focusedCell < 2.5f / 4.0f,
+        "focused open-ocean grid must resolve near-camera short geometry waves");
+    require(std::abs(water::gridCoordinate(1.0f, openOceanExtent, 1.0f)
+        - openOceanExtent) < 0.001f
+        && std::abs(water::gridCoordinate(-1.0f, openOceanExtent, 1.0f)
+            + openOceanExtent) < 0.001f,
+        "focused grid must remain continuous across the camera and reach the horizon");
     std::cout << "Water wave synthesis and camera grid: PASS\n";
 }

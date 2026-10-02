@@ -1,6 +1,6 @@
 # P1-A 开放海域：现有天空盒与可调海面材质
 
-> 日期：2026-10-02。源码：`c1d0276` 基础上的当前工作区。
+> 日期：2026-10-02。源码：`e1cc2f7` 基础上的当前工作区。
 > 构建：`build-ci-msvc` Release、`build-mingw` Debug。
 > GPU：NVIDIA GeForce RTX 4060 Laptop GPU；OpenGL 3.3.0 NVIDIA 591.44。
 
@@ -32,6 +32,12 @@ Hero 的 `waterWaveDiversity=1` 在 High 档保留原四组波的基础上，加
 
 这一步属于更丰富的 Gerstner 波形合成，没有实现 Tessendorf/FFT 频谱，也没有将法线细波误当作几何起伏。
 
+### 近景网格聚焦
+
+原二次网格映射在 Hero 的 `waterExtent=2000` 下，距相机约 `5 / 20 / 100` 世界单位处的 High 单格边长分别约为 `2.30 / 4.38 / 9.53`。因此 `2.5` 单位短波在近处也被网格边长过滤。新增 `waterNearMeshFocus` 在二次映射与连续的指数映射之间插值；Hero 设为 `1`，旧场景默认 `0`。不增加顶点和 draw call，而是将固定网格更多地分配给近景；相同三个距离的估算单格边长变为 `0.49 / 1.82 / 8.87`。GPU 的短波边长过滤随映射同步计算，Inspector 的 `Near mesh focus` 可实时调节并保存到场景。
+
+指数映射仍保持相机中心、边界和世界空间波形连续。它把远处单格变得更大，因此远景只保留能被网格解析的长波；本次没有引入重叠网格或尚未验证的拼缝处理。
+
 ## 截图
 
 初版 1072×559 开放海域画面中，现有 HDRI 天空盒和延长的海面在地平线连续交接，没有用户截图中 125～175 行的整片纯色灰带；近景反射仍可通过材质滑块调整。下方首图是移除海底前的阶段记录。
@@ -48,6 +54,10 @@ Hero 的 `waterWaveDiversity=1` 在 High 档保留原四组波的基础上，加
 
 与上图关闭该参数的画面对比，`MyRendererImageComparison` 测得 MAE `0.02784`、变化像素 `34.40%`；该指标只证明参数改变了画面，不评价照片真实感。两图均为 `1072×559`，固定时间 `1.25 s`。
 
+保持八组波和相同机位，仅开启近景网格聚焦后，原先被过滤的短几何波可进入近景位移与反射。对照上一图的 MAE 为 `0.02051`、变化像素 `27.86%`；画面没有出现可见的网格拼缝。
+
+![近景网格聚焦后的开放海域](media/p1a-ocean-near-mesh-focus.png)
+
 原截图的 125～175 行中央区域 RGB 标准差为 `0/0/0`；初版图同一区域为 `23.75/14.32/5.99`，仅用于佐证纯色带消失，不作为画质评分。下方复现命令生成当前无海底画面。
 
 ## 验证
@@ -60,10 +70,11 @@ Hero 的 `waterWaveDiversity=1` 在 High 档保留原四组波的基础上，加
 - 新增波形通过 MSVC Release、MinGW Debug 构建，完整 CTest `26/26`，MinGW 聚焦测试 `2/2`，真实 `gpu-smoke` 和 `water-synthesis-acceptance`。`water-wave-synthesis` 用空间差分检查相位弯曲后的解析法线，并用时间差分检查速度；旧场景保持 `waterWaveDiversity=0`。
 - Hero 在 `1280×720`、预热 `4` 帧、测量 `30` 帧的两组开关计时中，透明/折射 pass GPU P50 分别为开启 `2.00 / 2.23 ms`、关闭 `1.99 / 2.38 ms`。运行间波动大于开关差异，因此尚不能给出可靠的增量成本结论。
 - 旧夹具的 `water-synthesis-benchmark` 通过；`1280×720`、`4× MSAA` 下 High 的折射阶段 GPU P95 为 `1.156 ms`，低于该目标的 `2 ms` 预算。该夹具默认关闭新参数，验证旧质量档没有预算回归。
+- 近景网格聚焦通过 MSVC Release 完整 CTest `26/26`、MinGW Debug 聚焦测试 `2/2`、`gpu-smoke`、`water-synthesis-acceptance` 和 `water-synthesis-benchmark`。后者旧 High 夹具在 `1280×720`、`4× MSAA` 下折射阶段 GPU P95 为 `1.157 ms`，低于 `2 ms` 门槛。Hero 开关各测预热 `16` 帧、测量 `60` 帧；折射阶段 P50 为开启 `0.32 ms`、关闭 `0.28 ms`，P95 受运行波动影响较大，不据此估算稳定开销。
 
 ## 限制与取舍
 
-此阶段改善地平线连续性、材质控制和细波的近远过渡，不声称达到照片级海面。对照用户给的参考图，中景长波的重复感虽减弱，近景仍缺少足够的风驱动小尺度几何波形；Hero 的八组 Gerstner 波仍非真实海浪频谱，细波仍只改变法线。后续水下与接物边界排查已增加几何短波边长过滤、折射候选深度检查和未偏移接触泡沫，但仍不能用单张深度图重建遮挡后的物体；证据与分层网格方案见 [`ocean-underwater-boundaries.md`](ocean-underwater-boundaries.md)。没有 FFT 频谱、真实远海多尺度统计、稳定的屏幕空间或平面反射，也没有独立的水线折射 pass。更远的裁剪面降低传统深度缓冲的远处精度，主要供开放海域场景使用。HDRI 光源方向与手动方向光未自动反求一致；用户切换到解析大气后应重新检查定向高光。SSAO 仍不直接作用于透明海面，水面主要依靠深度透射、环境反射和阴影表现接触关系。
+此阶段改善地平线连续性、材质控制和细波的近远过渡，不声称达到照片级海面。对照用户给的参考图，中景长波的重复感虽减弱，近景短几何波已有更多采样，但形态和能量分布仍与风驱动海浪有差距；Hero 的八组 Gerstner 波仍非真实海浪频谱，细波仍只改变法线。后续水下与接物边界排查已增加几何短波边长过滤、折射候选深度检查和未偏移接触泡沫，但仍不能用单张深度图重建遮挡后的物体；证据与分层网格方案见 [`ocean-underwater-boundaries.md`](ocean-underwater-boundaries.md)。没有 FFT 频谱、真实远海多尺度统计、稳定的屏幕空间或平面反射，也没有独立的水线折射 pass。更远的裁剪面降低传统深度缓冲的远处精度，主要供开放海域场景使用。HDRI 光源方向与手动方向光未自动反求一致；用户切换到解析大气后应重新检查定向高光。SSAO 仍不直接作用于透明海面，水面主要依靠深度透射、环境反射和阴影表现接触关系。
 
 ## 复现命令
 
@@ -71,7 +82,7 @@ Hero 的 `waterWaveDiversity=1` 在 High 档保留原四组波的基础上，加
 cmake --build build-ci-msvc --config Release --parallel 6
 ctest --test-dir build-ci-msvc -C Release --output-on-failure
 $env:MYRENDERER_SMOKE_TEST='1'
-$env:MYRENDERER_SCREENSHOT='build-ci-msvc/ocean-wave-diversity-final.png'
+$env:MYRENDERER_SCREENSHOT='build-ci-msvc/ocean-near-mesh-focus-final.png'
 $env:MYRENDERER_RENDER_WIDTH='1072'
 $env:MYRENDERER_RENDER_HEIGHT='559'
 $env:MYRENDERER_ANIMATION_TIME='1.25'
@@ -79,7 +90,7 @@ $env:MYRENDERER_HIDE_SELECTION_OUTLINE='1'
 build-ci-msvc/Release/MyRenderer.exe assets/scenes/02_ocean_weather_hero.myscene
 ```
 
-关闭对照：复制 Hero 场景到 `build-ci-msvc/ocean-diversity-off.myscene`，只将 `waterWaveDiversity` 改为 `0.0`，在相同环境变量下重拍。对照文件仅用于本机构建目录的验证，不进入场景清单。
+旧图对照：复制 Hero 场景到构建目录，只将 `waterNearMeshFocus` 改为 `0.0`，可重拍上方八组波的阶段图；同时将 `waterWaveDiversity` 改为 `0.0`，可重拍无海底初版。两份对照文件仅用于本机构建目录的验证，不进入场景清单。
 
 ## 下一步
 

@@ -2135,6 +2135,9 @@ void Application::drawInspectorPanel() {
                 parametersChanged |= EditorUi::SliderFloat(EditorUi::label("Wave diversity"), &waterSettings.waveDiversity,
                     0.0f, 1.0f, "%.2f");
                 EditorUi::tooltip("Wave diversity");
+                parametersChanged |= EditorUi::SliderFloat(EditorUi::label("Near mesh focus"),
+                    &waterSettings.nearMeshFocus, 0.0f, 1.0f, "%.2f");
+                EditorUi::tooltip("Near mesh focus");
                 parametersChanged |= EditorUi::SliderFloat(EditorUi::label("Wind east"),
                     &waterSettings.windX, -1.0f, 1.0f, "%.2f");
                 parametersChanged |= EditorUi::SliderFloat(EditorUi::label("Wind north"),
