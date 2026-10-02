@@ -39,7 +39,8 @@ void applyPreset(WaterSettings& settings, WaterPreset preset) {
 }
 
 int activeComponentCount(const WaterSettings& settings) {
-    return settings.quality == WaterQuality::Low ? 2 : componentCount;
+    if (settings.quality == WaterQuality::Low) return 2;
+    return settings.waveDiversity > 0.0f ? componentCount : 4;
 }
 
 std::array<glm::vec4, componentCount> components(const WaterSettings& settings) {
@@ -47,11 +48,17 @@ std::array<glm::vec4, componentCount> components(const WaterSettings& settings) 
     if (glm::dot(wind, wind) < 1.0e-6f) wind = glm::vec2(1.0f, 0.0f);
     wind = glm::normalize(wind);
     const glm::vec2 crossWind(-wind.y, wind.x);
+    const float diversity = std::clamp(settings.waveDiversity, 0.0f, 1.0f);
+    const float legacyScale = 1.0f - diversity * 0.35f;
     return {{
-        glm::vec4(wind, settings.amplitude, 15.0f),
-        glm::vec4(glm::normalize(wind * 0.86f + crossWind * 0.51f), settings.amplitude * 0.55f, 7.5f),
-        glm::vec4(glm::normalize(wind * 0.71f - crossWind * 0.70f), settings.amplitude * 0.28f, 3.4f),
-        glm::vec4(glm::normalize(wind * 0.54f + crossWind * 0.84f), settings.amplitude * 0.12f, 1.6f)
+        glm::vec4(wind, settings.amplitude * legacyScale, 15.0f),
+        glm::vec4(glm::normalize(wind * 0.86f + crossWind * 0.51f), settings.amplitude * 0.55f * legacyScale, 7.5f),
+        glm::vec4(glm::normalize(wind * 0.71f - crossWind * 0.70f), settings.amplitude * 0.28f * legacyScale, 3.4f),
+        glm::vec4(glm::normalize(wind * 0.54f + crossWind * 0.84f), settings.amplitude * 0.12f * legacyScale, 1.6f),
+        glm::vec4(glm::normalize(wind * 0.96f - crossWind * 0.28f), settings.amplitude * 0.35f * diversity, 21.7f),
+        glm::vec4(glm::normalize(wind * 0.77f + crossWind * 0.64f), settings.amplitude * 0.28f * diversity, 11.2f),
+        glm::vec4(glm::normalize(wind * 0.88f - crossWind * 0.47f), settings.amplitude * 0.20f * diversity, 5.4f),
+        glm::vec4(glm::normalize(wind * 0.64f + crossWind * 0.77f), settings.amplitude * 0.10f * diversity, 2.5f)
     }};
 }
 
@@ -60,6 +67,20 @@ WaterSample evaluate(const WaterSettings& settings, const glm::vec2& position) {
     sample.position = glm::vec3(position.x, settings.level, position.y);
     glm::vec3 tangentX(1.0f, 0.0f, 0.0f);
     glm::vec3 tangentZ(0.0f, 0.0f, 1.0f);
+    const float diversity = std::clamp(settings.waveDiversity, 0.0f, 1.0f);
+    const float warpA = 0.037f * position.x + 0.071f * position.y;
+    const float warpB = 0.091f * position.x - 0.026f * position.y;
+    const float warpC = -0.055f * position.x + 0.041f * position.y;
+    const float warpD = 0.024f * position.x + 0.087f * position.y;
+    const glm::vec2 warp = diversity * glm::vec2(
+        2.8f * std::sin(warpA) + 1.3f * std::sin(warpB),
+        2.1f * std::sin(warpC) + 1.1f * std::sin(warpD));
+    const glm::vec2 warpDx = diversity * glm::vec2(
+        2.8f * 0.037f * std::cos(warpA) + 1.3f * 0.091f * std::cos(warpB),
+        -2.1f * 0.055f * std::cos(warpC) + 1.1f * 0.024f * std::cos(warpD));
+    const glm::vec2 warpDz = diversity * glm::vec2(
+        2.8f * 0.071f * std::cos(warpA) - 1.3f * 0.026f * std::cos(warpB),
+        2.1f * 0.041f * std::cos(warpC) + 1.1f * 0.087f * std::cos(warpD));
     const auto waves = components(settings);
     for (int index = 0; index < activeComponentCount(settings); ++index) {
         const glm::vec4& wave = waves[static_cast<std::size_t>(index)];
@@ -67,21 +88,24 @@ WaterSample evaluate(const WaterSettings& settings, const glm::vec2& position) {
         const float amplitude = wave.z;
         const float k = 2.0f * pi / wave.w;
         const float phaseSpeed = std::sqrt(9.81f / k) * settings.speed;
-        const float phase = k * (glm::dot(direction, position)
-            - phaseSpeed * settings.timeSeconds);
+        const float phase = k * (glm::dot(direction, position + warp)
+            - phaseSpeed * settings.timeSeconds)
+            + (index >= 4 ? static_cast<float>(index - 3) * 1.731f : 0.0f);
+        const float phaseDx = k * (direction.x + glm::dot(direction, warpDx));
+        const float phaseDz = k * (direction.y + glm::dot(direction, warpDz));
         const float sine = std::sin(phase);
         const float cosine = std::cos(phase);
         const float horizontal = settings.steepness * amplitude
-            / (k * std::max(settings.amplitude, 1.0e-4f) * componentCount);
+            / (k * std::max(waves[0].z, 1.0e-4f) * 4.0f);
         sample.position.x += horizontal * direction.x * cosine;
         sample.position.y += amplitude * sine;
         sample.position.z += horizontal * direction.y * cosine;
-        tangentX += glm::vec3(-horizontal * k * direction.x * direction.x * sine,
-                              amplitude * k * direction.x * cosine,
-                              -horizontal * k * direction.x * direction.y * sine);
-        tangentZ += glm::vec3(-horizontal * k * direction.x * direction.y * sine,
-                              amplitude * k * direction.y * cosine,
-                              -horizontal * k * direction.y * direction.y * sine);
+        tangentX += glm::vec3(-horizontal * direction.x * phaseDx * sine,
+                              amplitude * phaseDx * cosine,
+                              -horizontal * direction.y * phaseDx * sine);
+        tangentZ += glm::vec3(-horizontal * direction.x * phaseDz * sine,
+                              amplitude * phaseDz * cosine,
+                              -horizontal * direction.y * phaseDz * sine);
         sample.velocity += glm::vec3(
             horizontal * direction.x * k * phaseSpeed * sine,
             -amplitude * k * phaseSpeed * cosine,

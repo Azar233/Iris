@@ -78,6 +78,7 @@ int main() {
         source.renderer.water.rippleStrength = 0.65f;
         source.renderer.water.sunGlintStrength = 0.3f;
         source.renderer.water.deepWaterStrength = 0.7f;
+        source.renderer.water.waveDiversity = 0.6f;
         source.renderer.water.windDirection = {0.4f, -0.7f};
         source.camera.farPlane = 1500.0f;
         source.renderer.atmosphere.nightSkyEnabled = true;
@@ -156,6 +157,7 @@ int main() {
                 && close(firstLoad.renderer.water.rippleStrength, 0.65f)
                 && close(firstLoad.renderer.water.sunGlintStrength, 0.3f)
                 && close(firstLoad.renderer.water.deepWaterStrength, 0.7f)
+                && close(firstLoad.renderer.water.waveDiversity, 0.6f)
                 && close(firstLoad.renderer.water.windDirection.x, 0.4f)
                 && close(firstLoad.renderer.water.windDirection.y, -0.7f),
                 "water settings survive first load");
@@ -270,7 +272,8 @@ int main() {
                     "bundled scene must contain entities or a renderable water/skybox environment");
                 if (entry.path().filename() == "02_ocean_weather_hero.myscene") {
                     require(example.entities.empty()
-                        && close(example.renderer.water.deepWaterStrength, 1.0f),
+                        && close(example.renderer.water.deepWaterStrength, 1.0f)
+                        && close(example.renderer.water.waveDiversity, 1.0f),
                         "open-ocean hero must render without a seabed entity");
                 }
                 if (entry.path().filename() == "18_atmosphere_sky.myscene") {

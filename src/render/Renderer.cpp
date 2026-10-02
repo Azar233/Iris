@@ -761,6 +761,7 @@ shader_->setMat4("uView", view);
         waterShader.setFloat("uRippleStrength", settings.water.rippleStrength);
         waterShader.setFloat("uSunGlintStrength", settings.water.sunGlintStrength);
         waterShader.setFloat("uDeepWaterStrength", settings.water.deepWaterStrength);
+        waterShader.setFloat("uWaveDiversity", settings.water.waveDiversity);
         const auto waves = water::components(settings.water);
         waterShader.setVec4Array("uWaves[0]", waves.data(), waves.size());
         waterShader.setInt("uWaveCount", water::activeComponentCount(settings.water));

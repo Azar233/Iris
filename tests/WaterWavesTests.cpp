@@ -59,6 +59,28 @@ int main() {
     require(glm::length(lowSample.position - sample.position) > 1.0e-4f,
         "quality tier must change fine-scale wave synthesis");
 
+    settings.quality = WaterQuality::High;
+    settings.waveDiversity = 1.0f;
+    const WaterSample diverseSample = water::evaluate(settings, point);
+    require(water::activeComponentCount(settings) == 8
+        && glm::length(diverseSample.position - sample.position) > 1.0e-4f,
+        "wave diversity must add distinct geometric components");
+    const glm::vec3 numericalX = (water::evaluate(settings, point + glm::vec2(step, 0.0f)).position
+        - water::evaluate(settings, point - glm::vec2(step, 0.0f)).position) / (2.0f * step);
+    const glm::vec3 numericalZ = (water::evaluate(settings, point + glm::vec2(0.0f, step)).position
+        - water::evaluate(settings, point - glm::vec2(0.0f, step)).position) / (2.0f * step);
+    require(glm::length(glm::normalize(glm::cross(numericalZ, numericalX))
+        - diverseSample.normal) < 0.01f,
+        "warped-wave analytic normal must match spatial differentiation");
+    settings.timeSeconds += step;
+    const WaterSample diverseLater = water::evaluate(settings, point);
+    settings.timeSeconds -= 2.0f * step;
+    const WaterSample diverseEarlier = water::evaluate(settings, point);
+    const glm::vec3 diverseVelocity = (diverseLater.position - diverseEarlier.position)
+        / (2.0f * step);
+    require(glm::length(diverseVelocity - diverseSample.velocity) < 0.003f,
+        "diverse waves must preserve analytic motion velocity");
+
     settings.amplitude = 0.0f;
     const WaterSample flat = water::evaluate(settings, point);
     require(glm::length(flat.position - glm::vec3(point.x, settings.level, point.y)) < 1.0e-6f

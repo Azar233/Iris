@@ -52,6 +52,8 @@
 
 | `p1a-ocean-open-deep-water.png` | 删除 Deep Seabed 后，零实体开放海域使用深水底色及过滤的多尺度细波 | 按 [`../ocean-hdri-material.md`](../ocean-hdri-material.md) 的固定机位命令重拍，复制 `build-ci-msvc/ocean-no-seabed-final.png` |
 
+| `p1a-ocean-wave-diversity.png` | 与上一图同机位，Hero 使用八组几何波及世界空间相位弯曲，减轻中景长波条带 | 按 [`../ocean-hdri-material.md`](../ocean-hdri-material.md) 的固定机位命令重拍，复制 `build-ci-msvc/ocean-wave-diversity-final.png` |
+
 | `p1a-ocean-underwater-wide-after.png` | 2000 单位海面范围下，水下网格边长过滤后的剩余画面与限制 | 按 [`../ocean-underwater-boundaries.md`](../ocean-underwater-boundaries.md) 的固定场景命令重拍 |
 
 | `p1a-ocean-cube-shadow-comparison.png` | 同机位 4× MSAA 下，Cube 水面阴影由块状边缘变为连续边缘 | 按 [`../ocean-cube-shadow.md`](../ocean-cube-shadow.md) 的夹具命令重拍右图；左图为旧采样方式的诊断截图 |

@@ -2132,6 +2132,9 @@ void Application::drawInspectorPanel() {
                     &waterSettings.sunGlintStrength, 0.0f, 2.0f, "%.2f");
                 changed |= EditorUi::SliderFloat("Deep water", &waterSettings.deepWaterStrength,
                     0.0f, 1.0f, "%.2f");
+                parametersChanged |= EditorUi::SliderFloat(EditorUi::label("Wave diversity"), &waterSettings.waveDiversity,
+                    0.0f, 1.0f, "%.2f");
+                EditorUi::tooltip("Wave diversity");
                 parametersChanged |= EditorUi::SliderFloat(EditorUi::label("Wind east"),
                     &waterSettings.windX, -1.0f, 1.0f, "%.2f");
                 parametersChanged |= EditorUi::SliderFloat(EditorUi::label("Wind north"),
