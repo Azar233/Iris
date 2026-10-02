@@ -91,6 +91,7 @@ inline EditorWaterSettingsPayload captureWaterSettings(const RendererSettings& s
     snapshot.reflectionStrength = std::clamp(settings.water.reflectionStrength, 0.0f, 2.0f);
     snapshot.rippleStrength = std::clamp(settings.water.rippleStrength, 0.0f, 1.0f);
     snapshot.sunGlintStrength = std::clamp(settings.water.sunGlintStrength, 0.0f, 2.0f);
+    snapshot.deepWaterStrength = std::clamp(settings.water.deepWaterStrength, 0.0f, 1.0f);
     snapshot.windX = std::clamp(settings.water.windDirection.x, -1.0f, 1.0f);
     snapshot.windZ = std::clamp(settings.water.windDirection.y, -1.0f, 1.0f);
     return snapshot;

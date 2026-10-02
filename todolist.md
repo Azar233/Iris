@@ -374,6 +374,7 @@ P1-0 验收：一个固定 C++ Module 驱动场景与 24 帧参数动画，GUI P
 - [x] 收拢自然场景入口：Content Browser 与 `Open bundled scene` 只显示 `01_volumetric_cloud_lab` 和 `02_ocean_weather_hero`。2026-10-02 将后者改为使用既有 Kloofendal HDRI 的开放海域展示：相机远裁剪面 1600、海面范围 2000，独立材质参数进入 Inspector；原带云配置移至 `assets/scenes/fixtures/23_ocean_clouds.myscene`，继续供云影、光束和确定性验收。证据见 [`docs/ocean-hdri-material.md`](docs/ocean-hdri-material.md)。原 22 个阶段场景仍位于 `assets/scenes/fixtures`。
 - [ ] 海面水下与接触边界后续质量工作：在现有网格边长短波过滤基础上实现近景高密度、远景长波的分层网格；水下雾按相机到水面、物体的实际介质区间积分，并处理相机穿过波峰时的平滑过渡。问题复现、已修正的折射/泡沫边界和剩余限制见 [`docs/ocean-underwater-boundaries.md`](docs/ocean-underwater-boundaries.md)。
 - [x] 复现并修正开放海域 Cube 的块状水面阴影：按实际投影物及其世界空间缩放拟合 CSM，收紧近景级联，改用硬件深度比较的 `3×3` PCF；`25_ocean_cube_shadow.myscene` 固定夹具、4× MSAA 对照和剩余半影限制见 [`docs/ocean-cube-shadow.md`](docs/ocean-cube-shadow.md)。
+- [x] 从开放海域 Hero 删除仅作折射背景的 `Deep Seabed`，为无水下几何的区域加入默认关闭、可在 Inspector 调节的深水底色；增加屏幕像素过滤的多尺度细波与法线方差粗糙度，零实体场景可直接导出截图。固定机位画面与限制见 [`docs/ocean-hdri-material.md`](docs/ocean-hdri-material.md)。
 - [x] 实现四组 Gerstner Waves，输出解析位移、法线、切线与速度；明确标注为 Wave Synthesis，`water-wave-synthesis` 用时间差分验算速度。
 - [x] 复用 Fresnel、IOR、Transmission、Beer-Lambert 与环境反射，增加真实海床水深、白冠/岸线泡沫和水下雾；固定深度与水下夹具及图像对照见 [`docs/water-synthesis.md`](docs/water-synthesis.md)。
 - [x] 水面接入 Shadow、Motion Vector、TAA 与运动调试图，制作 Calm / Windy / Storm 三组海况及 Low/High 档；`water-synthesis-acceptance` 覆盖 On/Off、时间变化、双路径、运动、水深、预设和质量档，`water-synthesis-benchmark` 固定 1280×720 GPU 预算。

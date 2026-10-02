@@ -1091,7 +1091,8 @@ int Application::run(const std::filesystem::path& initialModel) {
         cpuFrameTimeMilliseconds_ = cpuFrameTimeMilliseconds_ > 0.0
             ? cpuFrameTimeMilliseconds_ * 0.9 + measuredCpuTime * 0.1
             : measuredCpuTime;
-        if (benchmarkMode_ && model_ != nullptr && !pendingModelImport_.has_value()) {
+        if (benchmarkMode_ && (model_ != nullptr || rendererSettings_.water.enabled)
+            && !pendingModelImport_.has_value()) {
             ++benchmarkRenderedFrames_;
             if (benchmarkRenderedFrames_ > benchmarkWarmupFrames_) {
                 benchmarkCpuFrameTimes_.push_back(measuredCpuTime);
@@ -2129,6 +2130,8 @@ void Application::drawInspectorPanel() {
                     &waterSettings.rippleStrength, 0.0f, 1.0f, "%.2f");
                 changed |= EditorUi::SliderFloat(EditorUi::label("Sun glint"),
                     &waterSettings.sunGlintStrength, 0.0f, 2.0f, "%.2f");
+                changed |= EditorUi::SliderFloat("Deep water", &waterSettings.deepWaterStrength,
+                    0.0f, 1.0f, "%.2f");
                 parametersChanged |= EditorUi::SliderFloat(EditorUi::label("Wind east"),
                     &waterSettings.windX, -1.0f, 1.0f, "%.2f");
                 parametersChanged |= EditorUi::SliderFloat(EditorUi::label("Wind north"),
@@ -3243,10 +3246,13 @@ void Application::drawViewportPanel() {
         }
     }
 
-    if (!cpuPreviewVisible && !pendingScreenshotPath_.empty() && !scene_.entities().empty() && !pendingModelImport_.has_value()
+    if (!cpuPreviewVisible && !pendingScreenshotPath_.empty()
+        && (!scene_.entities().empty() || rendererSettings_.water.enabled)
+        && !pendingModelImport_.has_value()
         && pendingScreenshotWarmupFrames_ > 0) {
         --pendingScreenshotWarmupFrames_;
-    } else if (!cpuPreviewVisible && !pendingScreenshotPath_.empty() && !scene_.entities().empty()
+    } else if (!cpuPreviewVisible && !pendingScreenshotPath_.empty()
+        && (!scene_.entities().empty() || rendererSettings_.water.enabled)
         && !pendingModelImport_.has_value()) {
         std::string screenshotError;
         if (renderer_->saveScreenshot(pendingScreenshotPath_, screenshotError)) {

@@ -24,6 +24,7 @@ struct WaterSettings {
     float reflectionStrength{1.0f};
     float rippleStrength{0.0f};
     float sunGlintStrength{1.0f};
+    float deepWaterStrength{0.0f};
     glm::vec2 windDirection{0.9f, 0.3f};
     float timeSeconds{0.0f};
 };

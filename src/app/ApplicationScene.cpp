@@ -443,6 +443,7 @@ void Application::processEditorCommands() {
                     || !within(water.reflectionStrength, 0.0f, 2.0f)
                     || !within(water.rippleStrength, 0.0f, 1.0f)
                     || !within(water.sunGlintStrength, 0.0f, 2.0f)
+                    || !within(water.deepWaterStrength, 0.0f, 1.0f)
                     || !within(water.windX, -1.0f, 1.0f)
                     || !within(water.windZ, -1.0f, 1.0f)) {
                     statusMessage_ = "Inspector rejected invalid water settings.";
@@ -461,6 +462,7 @@ void Application::processEditorCommands() {
                 rendererSettings_.water.reflectionStrength = water.reflectionStrength;
                 rendererSettings_.water.rippleStrength = water.rippleStrength;
                 rendererSettings_.water.sunGlintStrength = water.sunGlintStrength;
+                rendererSettings_.water.deepWaterStrength = water.deepWaterStrength;
                 rendererSettings_.water.windDirection = glm::vec2(water.windX, water.windZ);
                 if (renderer_ != nullptr) renderer_->invalidateTemporalHistory();
                 break;
@@ -2785,6 +2787,7 @@ bool Application::editorInteractionRegression() {
         waterSettings.quality = static_cast<int>(WaterQuality::Low);
         waterSettings.level = -0.6f;
         waterSettings.amplitude = 0.4f;
+        waterSettings.deepWaterStrength = 0.7f;
         EditorCommand waterCommand{EditorCommandType::SetWaterSettings};
         waterCommand.water = waterSettings;
         editorSession_.request(std::move(waterCommand));
@@ -2879,7 +2882,8 @@ bool Application::editorInteractionRegression() {
               && rendererSettings_.water.preset == WaterPreset::Storm
               && rendererSettings_.water.quality == WaterQuality::Low
               && std::abs(rendererSettings_.water.level + 0.6f) < 1.0e-6f
-              && std::abs(rendererSettings_.water.amplitude - 0.4f) < 1.0e-6f,
+              && std::abs(rendererSettings_.water.amplitude - 0.4f) < 1.0e-6f
+              && std::abs(rendererSettings_.water.deepWaterStrength - 0.7f) < 1.0e-6f,
               "Water command did not update renderer settings");
         check(rendererSettings_.shadingMode == ShadingMode::Stylized
               && rendererSettings_.renderPath == RenderPath::Deferred

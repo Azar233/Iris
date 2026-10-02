@@ -132,6 +132,7 @@ struct EditorWaterSettingsPayload {
     float reflectionStrength{1.0f};
     float rippleStrength{0.0f};
     float sunGlintStrength{1.0f};
+    float deepWaterStrength{0.0f};
     float windX{0.9f};
     float windZ{0.3f};
 };

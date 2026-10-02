@@ -77,6 +77,7 @@ int main() {
         source.renderer.water.reflectionStrength = 0.8f;
         source.renderer.water.rippleStrength = 0.65f;
         source.renderer.water.sunGlintStrength = 0.3f;
+        source.renderer.water.deepWaterStrength = 0.7f;
         source.renderer.water.windDirection = {0.4f, -0.7f};
         source.camera.farPlane = 1500.0f;
         source.renderer.atmosphere.nightSkyEnabled = true;
@@ -154,6 +155,7 @@ int main() {
                 && close(firstLoad.renderer.water.reflectionStrength, 0.8f)
                 && close(firstLoad.renderer.water.rippleStrength, 0.65f)
                 && close(firstLoad.renderer.water.sunGlintStrength, 0.3f)
+                && close(firstLoad.renderer.water.deepWaterStrength, 0.7f)
                 && close(firstLoad.renderer.water.windDirection.x, 0.4f)
                 && close(firstLoad.renderer.water.windDirection.y, -0.7f),
                 "water settings survive first load");
@@ -263,7 +265,14 @@ int main() {
                     || entry.path().extension() != myRendererSceneExtension) continue;
                 SceneDocument example;
                 require(loadSceneDocument(entry.path(), example, error), error.c_str());
-                require(!example.entities.empty(), "bundled scene must contain entities");
+                require(!example.entities.empty()
+                    || (example.renderer.water.enabled && example.renderer.skyboxEnabled),
+                    "bundled scene must contain entities or a renderable water/skybox environment");
+                if (entry.path().filename() == "02_ocean_weather_hero.myscene") {
+                    require(example.entities.empty()
+                        && close(example.renderer.water.deepWaterStrength, 1.0f),
+                        "open-ocean hero must render without a seabed entity");
+                }
                 if (entry.path().filename() == "18_atmosphere_sky.myscene") {
                     require(!example.renderer.atmosphere.cloudHalfResolution
                         && !example.renderer.atmosphere.cloudTemporalEnabled

@@ -22,6 +22,7 @@ uniform float uRoughness;
 uniform float uReflectionStrength;
 uniform float uRippleStrength;
 uniform float uSunGlintStrength;
+uniform float uDeepWaterStrength;
 uniform float uEnvironmentMaxMip;
 uniform bool uShadowsEnabled;
 uniform samplerCube uPrefilteredEnvironmentMap;
@@ -101,12 +102,37 @@ void main() {
                 detailGradient);
             slope += detailGradient.xy * 0.22 * detailWeight;
         }
+        // Non-periodic microfacets break up the long Gerstner reflection
+        // bands. Fade each octave once its world-space variation approaches
+        // the projected pixel footprint, so distant water remains stable.
+        float microWeight = 1.0 - smoothstep(0.18, 0.45,
+            pixelFootprint * 0.9);
+        if (microWeight > 0.0) {
+            vec3 microGradient;
+            snoise3d(vec3(vWorldPosition.xz * 0.9, uTime * 0.31),
+                microGradient);
+            slope += microGradient.xy * 0.34 * microWeight;
+        }
+        float capillaryWeight = 1.0 - smoothstep(0.18, 0.45,
+            pixelFootprint * 2.1);
+        if (capillaryWeight > 0.0) {
+            vec3 capillaryGradient;
+            snoise3d(vec3(vWorldPosition.xz * 2.1, uTime * 0.52),
+                capillaryGradient);
+            slope += capillaryGradient.xy * 0.12 * capillaryWeight;
+        }
         slope *= uRippleStrength;
         normal = normalize(normal + vec3(-slope.x, 0.0, -slope.y));
     }
     vec3 viewDirection = normalize(uCameraPosition - vWorldPosition);
     bool viewedFromBelow = uCameraPosition.y < vWorldPosition.y;
     if (dot(normal, viewDirection) < 0.0) normal = -normal;
+    // Micro-normal changes finer than a pixel broaden the reflection lobe.
+    // This reduces isolated HDRI sparkles without removing nearby resolved ripples.
+    float normalVariance = max(dot(dFdx(normal), dFdx(normal)),
+        dot(dFdy(normal), dFdy(normal)));
+    float filteredRoughness = clamp(sqrt(uRoughness * uRoughness
+        + 0.35 * normalVariance), 0.02, 0.8);
     float nDotV = max(dot(normal, viewDirection), 0.0);
     float etaIncident = viewedFromBelow ? 1.333 : 1.0;
     float etaTransmit = viewedFromBelow ? 1.0 : 1.333;
@@ -123,7 +149,7 @@ void main() {
     }
     vec3 reflection = textureLod(uPrefilteredEnvironmentMap,
         reflect(-viewDirection, normal),
-        clamp(uRoughness * uEnvironmentMaxMip, 0.0, uEnvironmentMaxMip)).rgb
+        clamp(filteredRoughness * uEnvironmentMaxMip, 0.0, uEnvironmentMaxMip)).rgb
         * uEnvironmentIntensity * uReflectionStrength;
     vec2 screenUv = gl_FragCoord.xy
         * vec2(uInverseViewportWidth, uInverseViewportHeight);
@@ -171,12 +197,20 @@ void main() {
     subsurface *= uTwilightFactor;
     vec3 transmission = texture(uOpaqueSceneColor, refractedUv).rgb
         * transmittance + subsurface * (vec3(1.0) - transmittance);
+    // A depth value of one means there is no refractive receiver below the
+    // surface. Use an open-water radiance instead of refracting the skybox
+    // through an arbitrary 18-metre layer. Existing scenes keep this off.
+    if (sceneDepth >= 0.99999 && !viewedFromBelow) {
+        vec3 deepWater = vec3(0.004, 0.025, 0.065) * uTwilightFactor
+            + texture(uIrradianceMap, normal).rgb * 0.012 * uEnvironmentIntensity;
+        transmission = mix(transmission, deepWater, uDeepWaterStrength);
+    }
     float waterShadow = shadowVisibility(normal);
     transmission *= mix(0.55, 1.0, waterShadow);
     vec3 lightDirection = normalize(-uLightDirection);
     vec3 halfDirection = normalize(lightDirection + viewDirection);
     float sunGlint = pow(max(dot(normal, halfDirection), 0.0),
-            256.0 * exp2(-uRoughness * 4.0))
+            256.0 * exp2(-filteredRoughness * 4.0))
         * max(dot(normal, lightDirection), 0.0) * uDiffuseStrength
         * waterShadow * cloudVisibility;
     vec3 color = mix(transmission, reflection, fresnel)

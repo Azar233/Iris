@@ -12,8 +12,9 @@
     "waterEnabled": true, "waterLevel": -0.45, "waterExtent": 2000,
     "waterAmplitude": 0.14, "waterSpeed": 0.82,
     "waterSteepness": 0.48, "waterFoamStrength": 0.12,
-    "waterRoughness": 0.52, "waterReflectionStrength": 0.72,
-    "waterRippleStrength": 0.20, "waterSunGlintStrength": 0.12,
+    "waterRoughness": 0.39, "waterReflectionStrength": 0.76,
+    "waterRippleStrength": 0.32, "waterSunGlintStrength": 0.25,
+    "waterDeepWaterStrength": 1.0,
     "waterWindX": 0.92, "waterWindZ": 0.28,
     "toneMapping": true, "bloom": false, "bloomThreshold": 1.1,
     "bloomIntensity": 0.07, "exposure": 0.78,
@@ -39,7 +40,5 @@
     "cloudAmbientScale": 0.9, "temporalAaEnabled": true,
     "localLights": []
   },
-  "entities": [
-    {"id": 3, "name": "Deep Seabed", "parent": 0, "model": "../models/cube.obj", "transform": {"translation": [0, -55, -80], "scale": [180, 1.0, 220]}, "tint": [0.18, 0.22, 0.18], "castsShadow": false}
-  ]
+  "entities": []
 }
