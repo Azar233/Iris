@@ -282,6 +282,13 @@ int main() {
                         && close(example.renderer.water.nearMeshFocus, 1.0f),
                         "open-ocean hero must render without a seabed entity");
                 }
+                if (entry.path().filename() == "03_enscape_ocean_study.myscene") {
+                    require(example.entities.size() == 7U
+                        && example.renderer.water.enabled
+                        && example.renderer.skyboxEnabled
+                        && !example.renderer.atmosphere.enabled,
+                        "ocean study must retain seven cubes and the HDRI-backed water scene");
+                }
                 if (entry.path().filename() == "18_atmosphere_sky.myscene") {
                     require(!example.renderer.atmosphere.cloudHalfResolution
                         && !example.renderer.atmosphere.cloudTemporalEnabled
@@ -310,8 +317,8 @@ int main() {
         };
         verifySceneDirectory(examples, visibleSceneCount);
         verifySceneDirectory(fixtures, fixtureCount);
-        require(visibleSceneCount == 2U,
-            "only the cloud lab and ocean weather hero should be user-visible scenes");
+        require(visibleSceneCount == 3U,
+            "the cloud lab and two ocean scenes should be user-visible");
         require(fixtureCount >= 22U, "all major feature scenes should remain as fixtures");
         require(foundPathTracingPbr && foundPathTracingLights && foundPathTracingVolume,
             "dedicated path-tracing scene fixtures should be bundled");

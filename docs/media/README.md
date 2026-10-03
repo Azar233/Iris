@@ -62,6 +62,8 @@
 
 | `p1a-ocean-clear-environment.png` | 同一 Hero 仅将天空预设切到 Kloofendal 43d Clear，验证晴天蓝天与海面反射响应 | 将 Hero 场景复制到构建目录，仅把 `environmentPreset` 改为 `2`，用同一固定机位命令输出 `docs/media/p1a-ocean-clear-environment.png` |
 
+| `p1a-enscape-ocean-study.png` | 独立七方块海洋场景的固定机位画面，用于与 Enscape Cube 构图对照；不代表源码逐像素移植 | 按 [`../enscape-ocean-study.md`](../enscape-ocean-study.md) 的 `920×517`、`1.25 s` 命令重拍 |
+
 | `p1a-ocean-underwater-wide-after.png` | 2000 单位海面范围下，水下网格边长过滤后的剩余画面与限制 | 按 [`../ocean-underwater-boundaries.md`](../ocean-underwater-boundaries.md) 的固定场景命令重拍 |
 
 | `p1a-ocean-cube-shadow-comparison.png` | 同机位 4× MSAA 下，Cube 水面阴影由块状边缘变为连续边缘 | 按 [`../ocean-cube-shadow.md`](../ocean-cube-shadow.md) 的夹具命令重拍右图；左图为旧采样方式的诊断截图 |

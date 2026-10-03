@@ -1,0 +1,308 @@
+{
+  "format": "MyRendererScene",
+  "version": 1,
+  "camera": {
+    "target": [
+      0.0,
+      3.8,
+      -30.0
+    ],
+    "yawDegrees": -4.0,
+    "pitchDegrees": 2.0,
+    "distance": 16.0,
+    "fieldOfViewDegrees": 46.0,
+    "farPlane": 1600.0
+  },
+  "playback": {
+    "animationEnabled": true,
+    "animationPlaying": true,
+    "animationTimeSeconds": 1.25,
+    "animationSpeed": 1
+  },
+  "renderer": {
+    "renderPath": 1,
+    "shadingMode": 0,
+    "backgroundColor": [
+      0.025,
+      0.045,
+      0.075
+    ],
+    "showGrid": false,
+    "showAxes": false,
+    "pbrEnabled": true,
+    "iblEnabled": true,
+    "skyboxEnabled": true,
+    "environmentPreset": 0,
+    "environmentIntensity": 1.05,
+    "shadowsEnabled": true,
+    "shadowCascadeCount": 3,
+    "shadowCascadeSplitLambda": 0.75,
+    "waterEnabled": true,
+    "waterLevel": 0.0,
+    "waterExtent": 2000,
+    "waterAmplitude": 0.32,
+    "waterSpeed": 0.72,
+    "waterSteepness": 0.62,
+    "waterFoamStrength": 0.26,
+    "waterRoughness": 0.54,
+    "waterReflectionStrength": 0.43,
+    "waterRippleStrength": 1.0,
+    "waterSunGlintStrength": 0.65,
+    "waterDeepWaterStrength": 1.0,
+    "waterWaveDiversity": 1.0,
+    "waterNearMeshFocus": 1.0,
+    "waterWindX": 0.8,
+    "waterWindZ": 0.6,
+    "toneMapping": true,
+    "bloom": true,
+    "bloomThreshold": 1.1,
+    "bloomIntensity": 0.1,
+    "exposure": 0.85,
+    "atmosphereEnabled": false,
+    "sunElevationDegrees": 28.0,
+    "sunAzimuthDegrees": 124.0,
+    "skyTurbidity": 1.08,
+    "skyIntensity": 3.0,
+    "sunIntensity": 3.15,
+    "groundAlbedo": 0.28,
+    "nightSkyEnabled": true,
+    "moonIntensity": 0.2,
+    "starIntensity": 0.9,
+    "aerialPerspectiveEnabled": false,
+    "aerialPerspectiveStrength": 0.82,
+    "aerialPerspectiveScaleHeight": 140,
+    "cloudsEnabled": false,
+    "cloudBaseHeight": 2300,
+    "cloudTopHeight": 7200,
+    "cloudCoverage": 0.3,
+    "cloudDensity": 0.78,
+    "cloudWindOffsetX": 320,
+    "cloudWindOffsetZ": -140,
+    "cloudFeatureScale": 6000,
+    "cloudNoisePeriod": 4,
+    "cloudWeatherScale": 25000,
+    "cloudCoverageVariation": 0.72,
+    "cloudType": 0.76,
+    "cloudTypeVariation": 0.4,
+    "cloudHeightVariation": 0.25,
+    "cloudDetailStrength": 0.46,
+    "cloudDetailEdge": 0.16,
+    "cloudQuality": 1,
+    "cloudHalfResolution": true,
+    "cloudTemporalEnabled": true,
+    "cloudOfflineNoise": true,
+    "cloudShadowsEnabled": false,
+    "cloudGodRaysEnabled": false,
+    "cloudGodRaysStrength": 0.08,
+    "cloudHorizonFadeDegrees": 5,
+    "cloudAmbientElevationDegrees": 15,
+    "cloudAmbientScale": 0.9,
+    "temporalAaEnabled": true,
+    "localLights": []
+  },
+  "entities": [
+    {
+      "id": 100,
+      "name": "Enscape float block 01",
+      "parent": 0,
+      "model": "../models/cube.obj",
+      "transform": {
+        "translation": [
+          2.4,
+          0.08,
+          -26.0
+        ],
+        "rotationDegrees": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          0.6,
+          0.6,
+          0.6
+        ]
+      },
+      "tint": [
+        1.0,
+        0.55,
+        0.025
+      ],
+      "castsShadow": true
+    },
+    {
+      "id": 101,
+      "name": "Enscape float block 02",
+      "parent": 0,
+      "model": "../models/cube.obj",
+      "transform": {
+        "translation": [
+          3.6199999999999997,
+          0.08,
+          -26.0
+        ],
+        "rotationDegrees": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          0.6,
+          0.6,
+          0.6
+        ]
+      },
+      "tint": [
+        1.0,
+        0.55,
+        0.025
+      ],
+      "castsShadow": true
+    },
+    {
+      "id": 102,
+      "name": "Enscape float block 03",
+      "parent": 0,
+      "model": "../models/cube.obj",
+      "transform": {
+        "translation": [
+          2.4,
+          0.08,
+          -27.22
+        ],
+        "rotationDegrees": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          0.6,
+          0.6,
+          0.6
+        ]
+      },
+      "tint": [
+        1.0,
+        0.55,
+        0.025
+      ],
+      "castsShadow": true
+    },
+    {
+      "id": 103,
+      "name": "Enscape float block 04",
+      "parent": 0,
+      "model": "../models/cube.obj",
+      "transform": {
+        "translation": [
+          3.6199999999999997,
+          0.08,
+          -27.22
+        ],
+        "rotationDegrees": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          0.6,
+          0.6,
+          0.6
+        ]
+      },
+      "tint": [
+        1.0,
+        0.55,
+        0.025
+      ],
+      "castsShadow": true
+    },
+    {
+      "id": 104,
+      "name": "Enscape float block 05",
+      "parent": 0,
+      "model": "../models/cube.obj",
+      "transform": {
+        "translation": [
+          2.4,
+          1.3,
+          -26.0
+        ],
+        "rotationDegrees": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          0.6,
+          0.6,
+          0.6
+        ]
+      },
+      "tint": [
+        1.0,
+        0.72,
+        0.035
+      ],
+      "castsShadow": true
+    },
+    {
+      "id": 105,
+      "name": "Enscape float block 06",
+      "parent": 0,
+      "model": "../models/cube.obj",
+      "transform": {
+        "translation": [
+          3.6199999999999997,
+          1.3,
+          -26.0
+        ],
+        "rotationDegrees": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          0.6,
+          0.6,
+          0.6
+        ]
+      },
+      "tint": [
+        1.0,
+        0.64,
+        0.025
+      ],
+      "castsShadow": true
+    },
+    {
+      "id": 106,
+      "name": "Enscape float block 07",
+      "parent": 0,
+      "model": "../models/cube.obj",
+      "transform": {
+        "translation": [
+          2.4,
+          1.3,
+          -27.22
+        ],
+        "rotationDegrees": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          0.6,
+          0.6,
+          0.6
+        ]
+      },
+      "tint": [
+        1.0,
+        0.72,
+        0.035
+      ],
+      "castsShadow": true
+    }
+  ]
+}
