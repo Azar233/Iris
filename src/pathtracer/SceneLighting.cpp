@@ -100,7 +100,9 @@ SceneSnapshotLighting captureSceneLighting(const RendererSettings& settings, flo
     if (settings.iblEnabled && !settings.atmosphere.enabled) {
         lighting.environment.sourcePath = std::filesystem::path(MYRENDERER_SOURCE_DIR)
             / "assets" / "environments"
-            / "kloofendal_48d_partly_cloudy_puresky_4k.exr";
+            / (settings.environmentPreset == 1
+                ? "overcast_soil_puresky_2k.exr"
+                : "kloofendal_48d_partly_cloudy_puresky_4k.exr");
     }
 #endif
     // The analytic sky *is* the environment while it is enabled, exactly as it is on the raster

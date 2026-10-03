@@ -110,6 +110,7 @@ struct EditorPbrEnvironmentSettingsPayload {
     bool pbrEnabled{true};
     bool iblEnabled{true};
     bool skyboxEnabled{true};
+    int environmentPreset{0};
     bool shadowsEnabled{true};
     int shadowCascadeCount{3};
     float shadowCascadeSplitLambda{0.75f};

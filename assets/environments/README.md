@@ -11,3 +11,15 @@
 
 The HDRI is redistributed unchanged. Poly Haven does not require attribution
 for CC0 assets; the source is retained here for provenance and reproducibility.
+
+## `overcast_soil_puresky_2k.exr`
+
+- Asset: [Overcast Soil (Pure Sky)](https://polyhaven.com/a/overcast_soil_puresky)
+- Authors: Sergej Majboroda (original), Jarod Guest (sky edit)
+- Source: Poly Haven, 2K OpenEXR download
+- License: [CC0 1.0](https://polyhaven.com/license)
+- Source MD5: `e3889939fbd1f73f125647219667b9e8`
+- Size: `18,347,191` bytes
+
+This optional sky-only HDRI is used by the open-ocean Hero. The partly-cloudy
+asset remains the default for scenes that do not specify `environmentPreset`.

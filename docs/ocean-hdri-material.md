@@ -12,7 +12,7 @@
 
 ### 场景与资源
 
-原相机远裁剪面为 `100` 世界单位；`waterExtent=500` 并不能让被裁掉的海面继续显示。`02_ocean_weather_hero.myscene` 现在显式保存 `farPlane=1600` 与 `waterExtent=2000`，并关闭解析大气和云，沿用现有 `EnvironmentMap` 加载的 Kloofendal 4K OpenEXR。该 HDRI 的来源、作者、校验值和 CC0 许可见 [`assets/environments/README.md`](../assets/environments/README.md)。镜面反射和背景取同一份环境贴图。开放海域不再放置 `Deep Seabed`；带礁石、体积云和海底的旧配置保存在 `assets/scenes/fixtures/23_ocean_clouds.myscene`，既有云影、光束和确定性作业改用该夹具。
+原相机远裁剪面为 `100` 世界单位；`waterExtent=500` 并不能让被裁掉的海面继续显示。`02_ocean_weather_hero.myscene` 现在显式保存 `farPlane=1600` 与 `waterExtent=2000`，并关闭解析大气和云。原有 Kloofendal 4K OpenEXR 仍是旧场景的默认天空；Hero 选择新增的 Overcast Soil 2K 纯天空 OpenEXR，以获得更多阴天云层细节。两份资源的来源、作者、校验值和 CC0 许可见 [`assets/environments/README.md`](../assets/environments/README.md)。镜面反射和背景取同一份环境贴图。开放海域不再放置 `Deep Seabed`；带礁石、体积云和海底的旧配置保存在 `assets/scenes/fixtures/23_ocean_clouds.myscene`，既有云影、光束和确定性作业改用该夹具。
 
 调研了 [osgw](https://github.com/CaffeineViking/osgw) 的 MIT 许可 OpenGL Gerstner 海面实现。其整个渲染器依赖 OpenGL 4.1 Tessellation，不适合直接替换本项目的 OpenGL 3.3 管线；本次复用其中水面材质使用的 3D Simplex noise 源码作为多尺度细波法线，保留已有 Gerstner 几何、透射、阴影、TAA 与 Forward/Deferred 合成。源码与原作者许可分别在 `shaders/ocean_snoise.glsl`、`assets/licenses/osgw-MIT.txt` 和 `assets/licenses/ashima-webgl-noise-MIT.txt`。水体颜色与泡沫仍由现有程序化材质生成，不另引入一张固定颜色贴图。
 
@@ -21,6 +21,8 @@
 细波只改变着色法线，不改变几何与运动矢量。此前两层细波在距相机 15～100 单位间同时淡出，使近景偏密、远景偏平。现在两层改为较宽的 `0.065` 与较细的 `0.28` 世界空间频率，分别根据片元的世界空间像素足迹（`fwidth`）逐级过滤：当某层波纹已无法由屏幕像素稳定分辨时才减弱，而较宽的波纹可继续延伸到中远景。这是屏幕空间抗锯齿近似，不会凭空增加远处几何细节。环境贴图的预滤波 mip 由 `waterRoughness` 控制；`waterReflectionStrength`、`waterRippleStrength`、`waterSunGlintStrength` 分别控制天空反射、细波扰动和定向光高光。四项均进入 `.myscene`、`EditorDomain`、`SetWaterSettings` 校验、Renderer uniform 与 Inspector 的 `Water surface` 分组；旧场景使用保持原有外观的默认值。`Camera` 分组提供 100～2000 的远裁剪距离，场景文件可逐项往返；旧场景未声明时仍为 100。原有 `Post processing` 分组已有 SSAO 开关、半径、偏移和强度，仍适用于 Deferred 的不透明物；它不作为海水材质自身的 AO 参数。
 
 ### 无海底开放海域
+
+Inspector 的 `Lighting & environment → Sky environment` 可在局部多云和阴天 HDRI 间切换；该选择进入 `.myscene`、Forward/Deferred 环境贴图和 CPU 路径追踪，并使 CPU 预览失效后重新采样。旧场景缺少该字段时选局部多云。切换 HDRI 或从解析大气返回 HDRI 时重建现有环境立方体贴图；重建复用 GL 纹理对象，避免每次切换额外分配纹理。Hero 初值使用阴天预设、`environmentIntensity=0.55`、`exposure=0.68` 和 `waterReflectionStrength=0.52`。这些值用于偏暗的阴天展示，不改变旧夹具的默认值。
 
 删除深海床后，旧折射路径会把天空盒当成水下背景，使海水明显变亮、偏青。在没有不透明物深度的区域，新增 `waterDeepWaterStrength` 将该天空折射逐步替换为深水辐亮度；旧场景默认 `0`，Hero 设为 `1`。Inspector 的 `Deep water` 滑块可实时调节，场景文件保存该值。仍有水下物体时保留原有深度折射和吸收。
 
@@ -64,6 +66,10 @@ Hero 的 `waterWaveDiversity=1` 在 High 档保留原四组波的基础上，加
 
 ![稳定深水环境光后的开放海域](media/p1a-ocean-stable-deep-ambient.png)
 
+同机位替换为 Overcast Soil 阴天 HDRI 并调整 Hero 初值后，天空具有连续的云层纹理，海面与地平线的色调更一致。海面的大面积条带状高光仍然可见；天空素材不能代替后续的波谱和微法线改进。
+
+![阴天 HDRI 与开放海域](media/p1a-ocean-overcast-environment.png)
+
 原截图的 125～175 行中央区域 RGB 标准差为 `0/0/0`；初版图同一区域为 `23.75/14.32/5.99`，仅用于佐证纯色带消失，不作为画质评分。下方复现命令生成当前无海底画面。
 
 ## 验证
@@ -78,6 +84,7 @@ Hero 的 `waterWaveDiversity=1` 在 High 档保留原四组波的基础上，加
 - 旧夹具的 `water-synthesis-benchmark` 通过；`1280×720`、`4× MSAA` 下 High 的折射阶段 GPU P95 为 `1.156 ms`，低于该目标的 `2 ms` 预算。该夹具默认关闭新参数，验证旧质量档没有预算回归。
 - 近景网格聚焦通过 MSVC Release 完整 CTest `26/26`、MinGW Debug 聚焦测试 `2/2`、`gpu-smoke`、`water-synthesis-acceptance` 和 `water-synthesis-benchmark`。后者旧 High 夹具在 `1280×720`、`4× MSAA` 下折射阶段 GPU P95 为 `1.157 ms`，低于 `2 ms` 门槛。Hero 开关各测预热 `16` 帧、测量 `60` 帧；折射阶段 P50 为开启 `0.32 ms`、关闭 `0.28 ms`，P95 受运行波动影响较大，不据此估算稳定开销。
 - 稳定深水环境光修复通过 MSVC Release 完整 CTest `26/26`、MinGW Debug 构建、`gpu-smoke`、`water-synthesis-acceptance` 与 `shadow-cascade-acceptance`。后两项覆盖旧海况/水下与有投影物体的级联阴影；另以 `25_ocean_cube_shadow.myscene` 截图确认方块仍在海面形成阴影。固定 Hero 的天空前 `250` 行逐像素不变，海面近白斑点计数从 `79` 变为 `0`。
+- 阴天 HDRI 预设通过 MSVC Release、MinGW Debug 构建、CTest `26/26`、`gpu-smoke` 和 `water-synthesis-acceptance`；`scene-document-repeat-load` 验证旧场景默认值和 Hero 预设往返。固定机位 `1072×559`、`4× MSAA` 截图检查阴天云层与海面交界。该图是视觉对照，不代表完成海面写实质量验收。
 
 ## 限制与取舍
 
@@ -89,7 +96,7 @@ Hero 的 `waterWaveDiversity=1` 在 High 档保留原四组波的基础上，加
 cmake --build build-ci-msvc --config Release --parallel 6
 ctest --test-dir build-ci-msvc -C Release --output-on-failure
 $env:MYRENDERER_SMOKE_TEST='1'
-$env:MYRENDERER_SCREENSHOT='build-ci-msvc/ocean-deep-ambient-up.png'
+$env:MYRENDERER_SCREENSHOT='docs/media/p1a-ocean-overcast-environment.png'
 $env:MYRENDERER_RENDER_WIDTH='1072'
 $env:MYRENDERER_RENDER_HEIGHT='559'
 $env:MYRENDERER_ANIMATION_TIME='1.25'

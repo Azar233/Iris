@@ -58,6 +58,8 @@
 
 | `p1a-ocean-stable-deep-ambient.png` | 无海底 Hero 的深水环境光改为朝上稳定采样，孤立的近白色斑点消失；天空未改变 | 按 [`../ocean-hdri-material.md`](../ocean-hdri-material.md) 的固定机位命令重拍，复制 `build-ci-msvc/ocean-deep-ambient-up.png` |
 
+| `p1a-ocean-overcast-environment.png` | Hero 切换到 Overcast Soil 阴天天空，云层细节和海平线色调变化；海面大块高光仍待改进 | 按 [`../ocean-hdri-material.md`](../ocean-hdri-material.md) 的固定机位命令重拍，设置 `MYRENDERER_SCREENSHOT=docs/media/p1a-ocean-overcast-environment.png` |
+
 | `p1a-ocean-underwater-wide-after.png` | 2000 单位海面范围下，水下网格边长过滤后的剩余画面与限制 | 按 [`../ocean-underwater-boundaries.md`](../ocean-underwater-boundaries.md) 的固定场景命令重拍 |
 
 | `p1a-ocean-cube-shadow-comparison.png` | 同机位 4× MSAA 下，Cube 水面阴影由块状边缘变为连续边缘 | 按 [`../ocean-cube-shadow.md`](../ocean-cube-shadow.md) 的夹具命令重拍右图；左图为旧采样方式的诊断截图 |

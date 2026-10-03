@@ -196,6 +196,7 @@ struct RendererSettings {
     float causticsReceiverPlaneY{-0.72f};
     bool transmissionEnabled{true};
     bool skyboxEnabled{true};
+    int environmentPreset{0}; // 0: partly cloudy, 1: overcast
     bool toneMapping{true};
     bool bloom{true};
     bool showPrismIncidentBeam{false};
@@ -328,6 +329,7 @@ private:
     bool atmosphereKeyMatches(const atmosphere::AtmosphereParameters& parameters) const;
     atmosphere::AtmosphereParameters builtAtmosphere_;
     bool atmosphereActive_{false};
+    int builtEnvironmentPreset_{0};
     std::unique_ptr<Shader> shader_;
     std::unique_ptr<CausticsMap> causticsMap_;
     std::unique_ptr<CloudLayerRenderer> cloudLayer_;

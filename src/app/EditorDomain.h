@@ -63,6 +63,7 @@ inline EditorPbrEnvironmentSettingsPayload capturePbrEnvironmentSettings(
     snapshot.pbrEnabled = settings.pbrEnabled;
     snapshot.iblEnabled = settings.iblEnabled;
     snapshot.skyboxEnabled = settings.skyboxEnabled;
+    snapshot.environmentPreset = std::clamp(settings.environmentPreset, 0, 1);
     snapshot.shadowsEnabled = settings.shadowsEnabled;
     // Cascades are normalised at the capture layer so a hand-edited `.myscene` cannot lock the whole
     // PBR/environment domain out with an out-of-range cascade count.

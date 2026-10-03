@@ -104,7 +104,8 @@ void writeRendererSettings(Writer& writer, const RendererSettings& settings) {
     WRITE_FLOAT(causticsStrength); WRITE_FLOAT(causticsScale); WRITE_VEC3(causticsDirection);
     WRITE_FLOAT(causticsSharpness); WRITE_BOOL(causticsAnimated);
     WRITE_FLOAT(causticsReceiverPlaneY); WRITE_BOOL(transmissionEnabled);
-    WRITE_BOOL(skyboxEnabled); WRITE_BOOL(toneMapping); WRITE_BOOL(bloom);
+    WRITE_BOOL(skyboxEnabled); writer.Key("environmentPreset"); writer.Int(settings.environmentPreset);
+    WRITE_BOOL(toneMapping); WRITE_BOOL(bloom);
     WRITE_BOOL(showPrismIncidentBeam); WRITE_FLOAT(environmentIntensity);
     // Sun-driven analytic sky. Off by default, so a scene written before these fields existed
     // keeps its HDR environment.
@@ -350,7 +351,9 @@ void readRendererSettings(const scene_json::Value& value, RendererSettings& sett
     settings.causticsMode = static_cast<CausticsMode>(readInt(value, "causticsMode", static_cast<int>(settings.causticsMode)));
     READ_FLOAT(causticsStrength); READ_FLOAT(causticsScale); READ_VEC3(causticsDirection);
     READ_FLOAT(causticsSharpness); READ_BOOL(causticsAnimated); READ_FLOAT(causticsReceiverPlaneY);
-    READ_BOOL(transmissionEnabled); READ_BOOL(skyboxEnabled); READ_BOOL(toneMapping); READ_BOOL(bloom);
+    READ_BOOL(transmissionEnabled); READ_BOOL(skyboxEnabled);
+    settings.environmentPreset = std::clamp(readInt(value, "environmentPreset", settings.environmentPreset), 0, 1);
+    READ_BOOL(toneMapping); READ_BOOL(bloom);
     READ_BOOL(showPrismIncidentBeam); READ_FLOAT(environmentIntensity);
     settings.atmosphere.enabled = readBool(
         value, "atmosphereEnabled", settings.atmosphere.enabled

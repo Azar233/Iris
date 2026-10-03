@@ -175,8 +175,10 @@ bool Renderer::atmosphereKeyMatches(const atmosphere::AtmosphereParameters& para
 void Renderer::updateAtmosphereEnvironment(const RendererSettings& settings) {
     if (environmentMap_ == nullptr) return;
     if (!settings.atmosphere.enabled) {
-        if (!atmosphereActive_) return;
-        environmentMap_->useHdrSource();
+        const int preset = std::clamp(settings.environmentPreset, 0, 1);
+        if (!atmosphereActive_ && builtEnvironmentPreset_ == preset) return;
+        environmentMap_->useHdrSource(preset);
+        builtEnvironmentPreset_ = preset;
         atmosphereActive_ = false;
         builtAtmosphere_ = atmosphere::AtmosphereParameters{};
         return;

@@ -2025,7 +2025,12 @@ void Application::drawInspectorPanel() {
             EditorUi::Checkbox(EditorUi::label("Shadow mapping"), &rendererSettings_.shadowsEnabled);
             {
                 auto cascades = EditorDomain::capturePbrEnvironmentSettings(rendererSettings_);
-                bool changed = EditorUi::SliderInt(EditorUi::label("Shadow cascades"),
+                const char* skyEnvironments[] = {
+                    "Partly cloudy (Kloofendal)", "Overcast (Soil)"};
+                bool changed = EditorUi::Combo(EditorUi::label("Sky environment"),
+                    &cascades.environmentPreset, skyEnvironments, 2);
+                EditorUi::tooltip("Sky environment");
+                changed |= EditorUi::SliderInt(EditorUi::label("Shadow cascades"),
                     &cascades.shadowCascadeCount, 1, 4);
                 changed |= EditorUi::SliderFloat(EditorUi::label("Cascade split blend"),
                     &cascades.shadowCascadeSplitLambda, 0.0f, 1.0f, "%.2f");
@@ -2751,6 +2756,7 @@ std::uint64_t Application::cpuPreviewInputSignature(int width, int height) const
     hashValue(hash, rendererSettings_.environmentIntensity);
     hashValue(hash, rendererSettings_.iblEnabled);
     hashValue(hash, rendererSettings_.skyboxEnabled);
+    hashValue(hash, rendererSettings_.environmentPreset);
     for (const LocalLight& light : rendererSettings_.localLights) {
         hashValue(hash, light.type);
         hashValue(hash, light.position.x);

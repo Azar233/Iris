@@ -54,7 +54,7 @@ public:
     // stays cloudless by design (see `atmosphere::environmentRadiance`).
     void useAtmosphere(const atmosphere::AtmosphereParameters& parameters);
     // Returns to the bundled HDR environment after an atmosphere preview.
-    void useHdrSource();
+    void useHdrSource(int preset = 0);
     // Wall time of the last cubemap rebuild, for the honest cost readout in the UI.
     double lastBuildMilliseconds() const { return lastBuildMilliseconds_; }
 
@@ -74,6 +74,7 @@ private:
     );
     // Kept so the HDR environment can be restored after a sun-driven sky was previewed.
     EquirectangularHdr source_;
+    EquirectangularHdr overcastSource_;
 
     std::unique_ptr<Shader> shader_;
     unsigned int texture_{0};

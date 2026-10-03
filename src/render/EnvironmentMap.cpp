@@ -255,6 +255,14 @@ EnvironmentMap::EnvironmentMap(
         source.width = 0;
         source.height = 0;
     }
+    const std::filesystem::path overcastPath = vertexShaderPath.parent_path().parent_path()
+        / "assets" / "environments" / "overcast_soil_puresky_2k.exr";
+    if (loadRadianceImage(overcastPath, overcastSource_)) {
+        const bool finiteRadiance = std::all_of(
+            overcastSource_.pixels.begin(), overcastSource_.pixels.end(),
+            [](float value) { return std::isfinite(value) && value >= 0.0f; });
+        if (!finiteRadiance) overcastSource_ = EquirectangularHdr{};
+    }
 
     // The bundled HDR environment is the default source; a scene that enables the
     // analytic sky replaces it wholesale through useAtmosphere().
@@ -304,10 +312,12 @@ void EnvironmentMap::useAtmosphere(const atmosphere::AtmosphereParameters& param
     ).count();
 }
 
-void EnvironmentMap::useHdrSource() {
+void EnvironmentMap::useHdrSource(int preset) {
     const auto start = std::chrono::steady_clock::now();
+    const EquirectangularHdr& source = preset == 1 && overcastSource_.valid()
+        ? overcastSource_ : source_;
     build(
-        [this](const glm::vec3& direction) { return sampleEquirectangular(source_, direction); },
+        [&source](const glm::vec3& direction) { return sampleEquirectangular(source, direction); },
         false
     );
     lastBuildMilliseconds_ = std::chrono::duration<double, std::milli>(
@@ -324,7 +334,7 @@ void EnvironmentMap::build(
         diffuseRadiance ? diffuseRadiance : radiance;
     const int size = radianceFaceSize_;
     maximumMipLevel_ = static_cast<int>(std::log2(prefilteredFaceSize_));
-    glGenTextures(1, &texture_);
+    if (texture_ == 0U) glGenTextures(1, &texture_);
     glBindTexture(GL_TEXTURE_CUBE_MAP, texture_);
     std::vector<float> pixels(static_cast<std::size_t>(size * size * 3));
     for (int face = 0; face < 6; ++face) {
@@ -362,7 +372,7 @@ void EnvironmentMap::build(
 
     constexpr int irradianceSize = 16;
     constexpr std::uint32_t irradianceSamples = 128U;
-    glGenTextures(1, &irradianceTexture_);
+    if (irradianceTexture_ == 0U) glGenTextures(1, &irradianceTexture_);
     glBindTexture(GL_TEXTURE_CUBE_MAP, irradianceTexture_);
     std::vector<float> irradiancePixels(
         static_cast<std::size_t>(irradianceSize * irradianceSize * 3)
@@ -406,7 +416,7 @@ void EnvironmentMap::build(
     glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE);
 
     constexpr std::uint32_t prefilterSamples = 96U;
-    glGenTextures(1, &prefilteredTexture_);
+    if (prefilteredTexture_ == 0U) glGenTextures(1, &prefilteredTexture_);
     glBindTexture(GL_TEXTURE_CUBE_MAP, prefilteredTexture_);
     for (int mip = 0; mip <= maximumMipLevel_; ++mip) {
         const int mipSize = std::max(prefilteredFaceSize_ >> mip, 1);

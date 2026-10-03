@@ -68,6 +68,7 @@ int main() {
         source.renderer.shadowCascadeSplitLambda = 0.35f;
         source.renderer.shadowCascadeDebugView = true;
         source.renderer.water.enabled = true;
+        source.renderer.environmentPreset = 1;
         source.renderer.water.preset = WaterPreset::Storm;
         source.renderer.water.quality = WaterQuality::Low;
         source.renderer.water.level = -0.8f;
@@ -148,6 +149,7 @@ int main() {
                 && firstLoad.renderer.shadowCascadeDebugView,
                 "cascade settings survive first load");
         require(firstLoad.renderer.water.enabled
+                && firstLoad.renderer.environmentPreset == 1
                 && firstLoad.renderer.water.preset == WaterPreset::Storm
                 && firstLoad.renderer.water.quality == WaterQuality::Low
                 && close(firstLoad.renderer.water.level, -0.8f)
@@ -274,6 +276,7 @@ int main() {
                     "bundled scene must contain entities or a renderable water/skybox environment");
                 if (entry.path().filename() == "02_ocean_weather_hero.myscene") {
                     require(example.entities.empty()
+                        && example.renderer.environmentPreset == 1
                         && close(example.renderer.water.deepWaterStrength, 1.0f)
                         && close(example.renderer.water.waveDiversity, 1.0f)
                         && close(example.renderer.water.nearMeshFocus, 1.0f),
