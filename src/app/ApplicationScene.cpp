@@ -402,7 +402,7 @@ void Application::processEditorCommands() {
                 const auto& environment = command.pbrEnvironment;
                 if (!std::isfinite(environment.environmentIntensity)
                     || environment.environmentPreset < 0
-                    || environment.environmentPreset > 1
+                    || environment.environmentPreset > 2
                     || environment.environmentIntensity < 0.0f
                     || environment.environmentIntensity > 2.0f
                     || environment.shadowCascadeCount < 1
@@ -2780,7 +2780,7 @@ bool Application::editorInteractionRegression() {
         EditorPbrEnvironmentSettingsPayload pbr = originalPbr;
         pbr.pbrEnabled = !pbr.pbrEnabled;
         pbr.skyboxEnabled = !pbr.skyboxEnabled;
-        pbr.environmentPreset = 1;
+        pbr.environmentPreset = 2;
         pbr.environmentIntensity = 1.35f;
         pbr.shadowCascadeCount = 4;
         pbr.shadowCascadeSplitLambda = 0.35f;
@@ -2883,7 +2883,7 @@ bool Application::editorInteractionRegression() {
         processEditorCommands();
         check(rendererSettings_.pbrEnabled == pbr.pbrEnabled
               && rendererSettings_.skyboxEnabled == pbr.skyboxEnabled
-              && rendererSettings_.environmentPreset == 1
+              && rendererSettings_.environmentPreset == 2
               && std::abs(rendererSettings_.environmentIntensity - 1.35f) < 1.0e-6f
               && rendererSettings_.shadowCascadeCount == 4
               && std::abs(rendererSettings_.shadowCascadeSplitLambda - 0.35f) < 1.0e-6f

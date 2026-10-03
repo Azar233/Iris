@@ -22,7 +22,7 @@
 
 ### 无海底开放海域
 
-Inspector 的 `Lighting & environment → Sky environment` 可在局部多云和阴天 HDRI 间切换；该选择进入 `.myscene`、Forward/Deferred 环境贴图和 CPU 路径追踪，并使 CPU 预览失效后重新采样。旧场景缺少该字段时选局部多云。切换 HDRI 或从解析大气返回 HDRI 时重建现有环境立方体贴图；重建复用 GL 纹理对象，避免每次切换额外分配纹理。Hero 初值使用阴天预设、`environmentIntensity=0.55`、`exposure=0.68` 和 `waterReflectionStrength=0.52`。这些值用于偏暗的阴天展示，不改变旧夹具的默认值。
+Inspector 的 `Lighting & environment → Sky environment` 可在局部多云、阴天和晴天 HDRI 间切换；该选择进入 `.myscene`、Forward/Deferred 环境贴图和 CPU 路径追踪，并使 CPU 预览失效后重新采样。晴天使用 Kloofendal 43d Clear 的纯天空 HDRI。旧场景缺少该字段时选局部多云。切换 HDRI 或从解析大气返回 HDRI 时重建现有环境立方体贴图；重建复用 GL 纹理对象，避免每次切换额外分配纹理。Hero 初值使用阴天预设、`environmentIntensity=0.55`、`exposure=0.68` 和 `waterReflectionStrength=0.52`。这些值用于偏暗的阴天展示，不改变旧夹具的默认值；切换晴天后仍可通过已有环境强度和曝光控件调节亮度。
 
 删除深海床后，旧折射路径会把天空盒当成水下背景，使海水明显变亮、偏青。在没有不透明物深度的区域，新增 `waterDeepWaterStrength` 将该天空折射逐步替换为深水辐亮度；旧场景默认 `0`，Hero 设为 `1`。Inspector 的 `Deep water` 滑块可实时调节，场景文件保存该值。仍有水下物体时保留原有深度折射和吸收。
 
@@ -70,6 +70,10 @@ Hero 的 `waterWaveDiversity=1` 在 High 档保留原四组波的基础上，加
 
 ![阴天 HDRI 与开放海域](media/p1a-ocean-overcast-environment.png)
 
+同场景仅将 `environmentPreset` 从 `1` 改为 `2` 的晴天对照如下。背景、环境反射和 CPU 路径追踪均选择晴天资源；波浪和其它海面参数保持相同。
+
+![晴天 HDRI 与开放海域](media/p1a-ocean-clear-environment.png)
+
 原截图的 125～175 行中央区域 RGB 标准差为 `0/0/0`；初版图同一区域为 `23.75/14.32/5.99`，仅用于佐证纯色带消失，不作为画质评分。下方复现命令生成当前无海底画面。
 
 ## 验证
@@ -85,6 +89,7 @@ Hero 的 `waterWaveDiversity=1` 在 High 档保留原四组波的基础上，加
 - 近景网格聚焦通过 MSVC Release 完整 CTest `26/26`、MinGW Debug 聚焦测试 `2/2`、`gpu-smoke`、`water-synthesis-acceptance` 和 `water-synthesis-benchmark`。后者旧 High 夹具在 `1280×720`、`4× MSAA` 下折射阶段 GPU P95 为 `1.157 ms`，低于 `2 ms` 门槛。Hero 开关各测预热 `16` 帧、测量 `60` 帧；折射阶段 P50 为开启 `0.32 ms`、关闭 `0.28 ms`，P95 受运行波动影响较大，不据此估算稳定开销。
 - 稳定深水环境光修复通过 MSVC Release 完整 CTest `26/26`、MinGW Debug 构建、`gpu-smoke`、`water-synthesis-acceptance` 与 `shadow-cascade-acceptance`。后两项覆盖旧海况/水下与有投影物体的级联阴影；另以 `25_ocean_cube_shadow.myscene` 截图确认方块仍在海面形成阴影。固定 Hero 的天空前 `250` 行逐像素不变，海面近白斑点计数从 `79` 变为 `0`。
 - 阴天 HDRI 预设通过 MSVC Release、MinGW Debug 构建、CTest `26/26`、`gpu-smoke` 和 `water-synthesis-acceptance`；`scene-document-repeat-load` 验证旧场景默认值和 Hero 预设往返。固定机位 `1072×559`、`4× MSAA` 截图检查阴天云层与海面交界。该图是视觉对照，不代表完成海面写实质量验收。
+- 晴天预设通过 MSVC Release、MinGW Debug 构建及 CTest `26/26`；编辑器交互回归验证切换到预设 `2`，场景文档测试验证保存/加载预设 `2`。真实 OpenGL 截图在同一 Hero 相机、海浪参数下显示不同的晴天天空与反射。晴天沿用 Hero 的阴天曝光和环境强度，用户可通过原有滑块进一步调整亮度。
 
 ## 限制与取舍
 

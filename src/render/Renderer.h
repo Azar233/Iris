@@ -196,7 +196,7 @@ struct RendererSettings {
     float causticsReceiverPlaneY{-0.72f};
     bool transmissionEnabled{true};
     bool skyboxEnabled{true};
-    int environmentPreset{0}; // 0: partly cloudy, 1: overcast
+    int environmentPreset{0}; // 0: partly cloudy, 1: overcast, 2: clear
     bool toneMapping{true};
     bool bloom{true};
     bool showPrismIncidentBeam{false};

@@ -23,3 +23,15 @@ for CC0 assets; the source is retained here for provenance and reproducibility.
 
 This optional sky-only HDRI is used by the open-ocean Hero. The partly-cloudy
 asset remains the default for scenes that do not specify `environmentPreset`.
+
+## `kloofendal_43d_clear_puresky_2k.exr`
+
+- Asset: [Kloofendal 43d Clear (Pure Sky)](https://polyhaven.com/a/kloofendal_43d_clear_puresky)
+- Author: Greg Zaal
+- Source: Poly Haven, 2K OpenEXR download
+- License: [CC0 1.0](https://polyhaven.com/license)
+- Source MD5: `b3ef8fd516ada04254d9927cee7032da`
+- Size: `18,420,718` bytes
+
+The clear midday sky is `environmentPreset=2`; the Inspector can switch between
+clear, overcast, and partly-cloudy skies without changing the scene's wave settings.

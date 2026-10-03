@@ -212,7 +212,7 @@ inline void tooltip(const char* key) {
     {"Bloom intensity", "控制泛光叠加到最终画面的强度。"},
     {"Field of view", "透视相机视野角度，越大可看到越宽的范围。"},
     {"Far clip distance", "决定远处海面何时被裁掉；开放海域可提高到 1600，但会降低远处深度精度。"},
-    {"Sky environment", "选择已有的局部多云或阴天 HDRI；天空盒与物体/海面反射使用同一环境。解析大气开启时暂不显示该 HDRI。"},
+    {"Sky environment", "切换局部多云、阴天或晴天 HDRI；天空盒与物体/海面反射使用同一环境。解析大气开启时暂不显示该 HDRI。"},
     {"Surface roughness", "控制环境反射的模糊程度。"},
     {"Sky reflection", "控制 HDRI 天空盒在海面上的反射强度。"},
     {"Fine ripples", "控制两层细波法线强度；只改变反射，不改变波浪几何。"},

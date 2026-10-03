@@ -102,7 +102,9 @@ SceneSnapshotLighting captureSceneLighting(const RendererSettings& settings, flo
             / "assets" / "environments"
             / (settings.environmentPreset == 1
                 ? "overcast_soil_puresky_2k.exr"
-                : "kloofendal_48d_partly_cloudy_puresky_4k.exr");
+                : settings.environmentPreset == 2
+                    ? "kloofendal_43d_clear_puresky_2k.exr"
+                    : "kloofendal_48d_partly_cloudy_puresky_4k.exr");
     }
 #endif
     // The analytic sky *is* the environment while it is enabled, exactly as it is on the raster

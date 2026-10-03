@@ -263,6 +263,14 @@ EnvironmentMap::EnvironmentMap(
             [](float value) { return std::isfinite(value) && value >= 0.0f; });
         if (!finiteRadiance) overcastSource_ = EquirectangularHdr{};
     }
+    const std::filesystem::path clearPath = vertexShaderPath.parent_path().parent_path()
+        / "assets" / "environments" / "kloofendal_43d_clear_puresky_2k.exr";
+    if (loadRadianceImage(clearPath, clearSource_)) {
+        const bool finiteRadiance = std::all_of(
+            clearSource_.pixels.begin(), clearSource_.pixels.end(),
+            [](float value) { return std::isfinite(value) && value >= 0.0f; });
+        if (!finiteRadiance) clearSource_ = EquirectangularHdr{};
+    }
 
     // The bundled HDR environment is the default source; a scene that enables the
     // analytic sky replaces it wholesale through useAtmosphere().
@@ -315,7 +323,8 @@ void EnvironmentMap::useAtmosphere(const atmosphere::AtmosphereParameters& param
 void EnvironmentMap::useHdrSource(int preset) {
     const auto start = std::chrono::steady_clock::now();
     const EquirectangularHdr& source = preset == 1 && overcastSource_.valid()
-        ? overcastSource_ : source_;
+        ? overcastSource_ : preset == 2 && clearSource_.valid()
+            ? clearSource_ : source_;
     build(
         [&source](const glm::vec3& direction) { return sampleEquirectangular(source, direction); },
         false

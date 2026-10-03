@@ -2026,9 +2026,11 @@ void Application::drawInspectorPanel() {
             {
                 auto cascades = EditorDomain::capturePbrEnvironmentSettings(rendererSettings_);
                 const char* skyEnvironments[] = {
-                    "Partly cloudy (Kloofendal)", "Overcast (Soil)"};
+                    EditorUi::chinese ? "局部多云" : "Partly cloudy",
+                    EditorUi::chinese ? "阴天" : "Overcast",
+                    EditorUi::chinese ? "晴天" : "Clear sky"};
                 bool changed = EditorUi::Combo(EditorUi::label("Sky environment"),
-                    &cascades.environmentPreset, skyEnvironments, 2);
+                    &cascades.environmentPreset, skyEnvironments, 3);
                 EditorUi::tooltip("Sky environment");
                 changed |= EditorUi::SliderInt(EditorUi::label("Shadow cascades"),
                     &cascades.shadowCascadeCount, 1, 4);

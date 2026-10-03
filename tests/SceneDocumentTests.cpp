@@ -68,7 +68,7 @@ int main() {
         source.renderer.shadowCascadeSplitLambda = 0.35f;
         source.renderer.shadowCascadeDebugView = true;
         source.renderer.water.enabled = true;
-        source.renderer.environmentPreset = 1;
+        source.renderer.environmentPreset = 2;
         source.renderer.water.preset = WaterPreset::Storm;
         source.renderer.water.quality = WaterQuality::Low;
         source.renderer.water.level = -0.8f;
@@ -149,7 +149,7 @@ int main() {
                 && firstLoad.renderer.shadowCascadeDebugView,
                 "cascade settings survive first load");
         require(firstLoad.renderer.water.enabled
-                && firstLoad.renderer.environmentPreset == 1
+                && firstLoad.renderer.environmentPreset == 2
                 && firstLoad.renderer.water.preset == WaterPreset::Storm
                 && firstLoad.renderer.water.quality == WaterQuality::Low
                 && close(firstLoad.renderer.water.level, -0.8f)

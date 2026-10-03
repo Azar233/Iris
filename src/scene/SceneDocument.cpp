@@ -352,7 +352,7 @@ void readRendererSettings(const scene_json::Value& value, RendererSettings& sett
     READ_FLOAT(causticsStrength); READ_FLOAT(causticsScale); READ_VEC3(causticsDirection);
     READ_FLOAT(causticsSharpness); READ_BOOL(causticsAnimated); READ_FLOAT(causticsReceiverPlaneY);
     READ_BOOL(transmissionEnabled); READ_BOOL(skyboxEnabled);
-    settings.environmentPreset = std::clamp(readInt(value, "environmentPreset", settings.environmentPreset), 0, 1);
+    settings.environmentPreset = std::clamp(readInt(value, "environmentPreset", settings.environmentPreset), 0, 2);
     READ_BOOL(toneMapping); READ_BOOL(bloom);
     READ_BOOL(showPrismIncidentBeam); READ_FLOAT(environmentIntensity);
     settings.atmosphere.enabled = readBool(

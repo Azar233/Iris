@@ -75,6 +75,7 @@ private:
     // Kept so the HDR environment can be restored after a sun-driven sky was previewed.
     EquirectangularHdr source_;
     EquirectangularHdr overcastSource_;
+    EquirectangularHdr clearSource_;
 
     std::unique_ptr<Shader> shader_;
     unsigned int texture_{0};
