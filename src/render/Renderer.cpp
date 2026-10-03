@@ -481,6 +481,9 @@ void Renderer::render(
     if (hasShadowCasters) {
         sceneCenter = (sceneMinimum + sceneMaximum) * 0.5f;
     }
+    // Empty scenes and noncasting receivers have no object occlusion to query.
+    // Skip cascade rendering and sampling until a visible caster is present.
+    const bool objectShadowsActive = settings.shadowsEnabled && hasShadowCasters;
     // Fit the light around actual shadow casters in world space. Large receivers
     // such as the noncasting seabed must not move the light eye or waste depth range.
     const float sceneRadius = hasShadowCasters
@@ -676,7 +679,7 @@ shader_->setMat4("uView", view);
         shader_->setBool("uPbrEnabled", settings.pbrEnabled);
         bindStylizedSettings(*shader_);
         shader_->setBool("uIblEnabled", settings.iblEnabled);
-        shader_->setBool("uShadowsEnabled", settings.shadowsEnabled);
+        shader_->setBool("uShadowsEnabled", objectShadowsActive);
         shader_->setBool(
             "uColoredTransmissionShadowsEnabled",
             settings.coloredTransmissionShadowsEnabled
@@ -784,7 +787,7 @@ shader_->setMat4("uView", view);
             const float twilight = std::max(solarTwilight,
                 atmosphere::moonKeyStrength(settings.atmosphere));
             waterShader.setFloat("uTwilightFactor", twilight);
-            waterShader.setBool("uShadowsEnabled", settings.shadowsEnabled);
+            waterShader.setBool("uShadowsEnabled", objectShadowsActive);
             bindCascadeSettings(waterShader);
             cloudShadow_->bind(waterShader, 5U, cloudShadowEnabled);
             waterShader.setInt("uPrefilteredEnvironmentMap", 0);
@@ -857,7 +860,7 @@ shader_->setMat4("uView", view);
             if (cloudShadow_->active()) ++drawCallCount_;
         });
     }
-    if (settings.shadowsEnabled) {
+    if (objectShadowsActive) {
 sequence.add("Shadow maps", [&] {
             glViewport(0, 0, shadowMap_->resolution(), shadowMap_->resolution());
             glEnable(GL_DEPTH_TEST);
@@ -888,7 +891,7 @@ sequence.add("Shadow maps", [&] {
             glDisable(GL_CULL_FACE);
         });
     }
-    if (settings.shadowsEnabled && settings.coloredTransmissionShadowsEnabled) {
+    if (objectShadowsActive && settings.coloredTransmissionShadowsEnabled) {
         sequence.add("Colored transmission shadow", [&] {
             shadowMap_->bindTransmissionForWriting();
             glViewport(0, 0, shadowMap_->resolution(), shadowMap_->resolution());
@@ -1214,7 +1217,7 @@ deferredLightingShader_->setVec3("uCameraPosition", camera.position());
             deferredLightingShader_->setBool("uPbrEnabled", settings.pbrEnabled);
             bindStylizedSettings(*deferredLightingShader_);
             deferredLightingShader_->setBool("uIblEnabled", settings.iblEnabled);
-            deferredLightingShader_->setBool("uShadowsEnabled", settings.shadowsEnabled);
+            deferredLightingShader_->setBool("uShadowsEnabled", objectShadowsActive);
             deferredLightingShader_->setBool(
                 "uColoredTransmissionShadowsEnabled",
                 settings.coloredTransmissionShadowsEnabled

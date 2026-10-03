@@ -202,7 +202,8 @@ void main() {
     // through an arbitrary 18-metre layer. Existing scenes keep this off.
     if (sceneDepth >= 0.99999 && !viewedFromBelow) {
         vec3 deepWater = vec3(0.004, 0.025, 0.065) * uTwilightFactor
-            + texture(uIrradianceMap, normal).rgb * 0.012 * uEnvironmentIntensity;
+            + texture(uIrradianceMap, vec3(0.0, 1.0, 0.0)).rgb
+                * 0.012 * uEnvironmentIntensity;
         transmission = mix(transmission, deepWater, uDeepWaterStrength);
     }
     float waterShadow = shadowVisibility(normal);

@@ -54,7 +54,9 @@
 
 | `p1a-ocean-wave-diversity.png` | 与上一图同机位，Hero 使用八组几何波及世界空间相位弯曲，减轻中景长波条带 | 按 [`../ocean-hdri-material.md`](../ocean-hdri-material.md) 的固定机位命令，将 `waterNearMeshFocus` 设为 `0` 重拍 |
 
-| `p1a-ocean-near-mesh-focus.png` | 与上一图同机位，固定顶点重新分配到近景，使短几何波通过网格边长过滤 | 按 [`../ocean-hdri-material.md`](../ocean-hdri-material.md) 的固定机位命令重拍，复制 `build-ci-msvc/ocean-near-mesh-focus-final.png` |
+| `p1a-ocean-near-mesh-focus.png` | 与上一图同机位，固定顶点重新分配到近景，使短几何波通过网格边长过滤 | 按 [`../ocean-hdri-material.md`](../ocean-hdri-material.md) 的固定机位命令重拍；该历史图保留修正前的深水环境光表现 |
+
+| `p1a-ocean-stable-deep-ambient.png` | 无海底 Hero 的深水环境光改为朝上稳定采样，孤立的近白色斑点消失；天空未改变 | 按 [`../ocean-hdri-material.md`](../ocean-hdri-material.md) 的固定机位命令重拍，复制 `build-ci-msvc/ocean-deep-ambient-up.png` |
 
 | `p1a-ocean-underwater-wide-after.png` | 2000 单位海面范围下，水下网格边长过滤后的剩余画面与限制 | 按 [`../ocean-underwater-boundaries.md`](../ocean-underwater-boundaries.md) 的固定场景命令重拍 |
 

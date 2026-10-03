@@ -1,6 +1,6 @@
 # P1-A 开放海域：现有天空盒与可调海面材质
 
-> 日期：2026-10-02。源码：`e1cc2f7` 基础上的当前工作区。
+> 日期：2026-10-03。源码：`ac9193b` 基础上的当前工作区。
 > 构建：`build-ci-msvc` Release、`build-mingw` Debug。
 > GPU：NVIDIA GeForce RTX 4060 Laptop GPU；OpenGL 3.3.0 NVIDIA 591.44。
 
@@ -25,6 +25,8 @@
 删除深海床后，旧折射路径会把天空盒当成水下背景，使海水明显变亮、偏青。在没有不透明物深度的区域，新增 `waterDeepWaterStrength` 将该天空折射逐步替换为深水辐亮度；旧场景默认 `0`，Hero 设为 `1`。Inspector 的 `Deep water` 滑块可实时调节，场景文件保存该值。仍有水下物体时保留原有深度折射和吸收。
 
 近景反射由两层噪声法线扩展为四层世界空间尺度，新增高频层只在投影像素能解析时启用，并按法线像素方差增加反射粗糙度，减轻细波高光的孤立闪点。Hero 的粗糙度、反射和细波值随固定机位截图重新调整；这只是现有 Gerstner 海面的一轮材质改进，不等同于参考图中的频谱海面或真实半影。
+
+进一步诊断 Hero 海面的零散近白色斑点时，分别关闭泡沫、太阳高光、环境反射，并显示水面使用的环境漫反射探针，最终定位到开放深水底色的 `uIrradianceMap` 按逐像素波面法线采样。该低分辨率漫反射探针中的极亮值随法线形成孤立斑块；它们不是物体投影，也不是抗锯齿造成的。没有不透明折射接收物时，深水底色现在以朝上的方向采样环境漫反射，保留波面法线驱动的天空反射；有水下物体的深度透射路径不变。没有可见投影物体时，Renderer 同时跳过无意义的物体阴影图绘制与采样；添加方块后仍按原路径生成阴影。
 
 ### 多方向几何波
 
@@ -58,6 +60,10 @@ Hero 的 `waterWaveDiversity=1` 在 High 档保留原四组波的基础上，加
 
 ![近景网格聚焦后的开放海域](media/p1a-ocean-near-mesh-focus.png)
 
+同一 `1072×559` 机位、`1.25 s` 动画时间与 `4× MSAA` 下，稳定深水环境光移除了原先散落的近白色斑点，天空像素保持一致。以海面区域 RGB 三通道均大于 `245` 为计数条件，修正前 `79` 个像素，修正后 `0` 个；这是该类斑点的定点检查，不代表已达到参考照片的整体材质质量。
+
+![稳定深水环境光后的开放海域](media/p1a-ocean-stable-deep-ambient.png)
+
 原截图的 125～175 行中央区域 RGB 标准差为 `0/0/0`；初版图同一区域为 `23.75/14.32/5.99`，仅用于佐证纯色带消失，不作为画质评分。下方复现命令生成当前无海底画面。
 
 ## 验证
@@ -71,6 +77,7 @@ Hero 的 `waterWaveDiversity=1` 在 High 档保留原四组波的基础上，加
 - Hero 在 `1280×720`、预热 `4` 帧、测量 `30` 帧的两组开关计时中，透明/折射 pass GPU P50 分别为开启 `2.00 / 2.23 ms`、关闭 `1.99 / 2.38 ms`。运行间波动大于开关差异，因此尚不能给出可靠的增量成本结论。
 - 旧夹具的 `water-synthesis-benchmark` 通过；`1280×720`、`4× MSAA` 下 High 的折射阶段 GPU P95 为 `1.156 ms`，低于该目标的 `2 ms` 预算。该夹具默认关闭新参数，验证旧质量档没有预算回归。
 - 近景网格聚焦通过 MSVC Release 完整 CTest `26/26`、MinGW Debug 聚焦测试 `2/2`、`gpu-smoke`、`water-synthesis-acceptance` 和 `water-synthesis-benchmark`。后者旧 High 夹具在 `1280×720`、`4× MSAA` 下折射阶段 GPU P95 为 `1.157 ms`，低于 `2 ms` 门槛。Hero 开关各测预热 `16` 帧、测量 `60` 帧；折射阶段 P50 为开启 `0.32 ms`、关闭 `0.28 ms`，P95 受运行波动影响较大，不据此估算稳定开销。
+- 稳定深水环境光修复通过 MSVC Release 完整 CTest `26/26`、MinGW Debug 构建、`gpu-smoke`、`water-synthesis-acceptance` 与 `shadow-cascade-acceptance`。后两项覆盖旧海况/水下与有投影物体的级联阴影；另以 `25_ocean_cube_shadow.myscene` 截图确认方块仍在海面形成阴影。固定 Hero 的天空前 `250` 行逐像素不变，海面近白斑点计数从 `79` 变为 `0`。
 
 ## 限制与取舍
 
@@ -82,7 +89,7 @@ Hero 的 `waterWaveDiversity=1` 在 High 档保留原四组波的基础上，加
 cmake --build build-ci-msvc --config Release --parallel 6
 ctest --test-dir build-ci-msvc -C Release --output-on-failure
 $env:MYRENDERER_SMOKE_TEST='1'
-$env:MYRENDERER_SCREENSHOT='build-ci-msvc/ocean-near-mesh-focus-final.png'
+$env:MYRENDERER_SCREENSHOT='build-ci-msvc/ocean-deep-ambient-up.png'
 $env:MYRENDERER_RENDER_WIDTH='1072'
 $env:MYRENDERER_RENDER_HEIGHT='559'
 $env:MYRENDERER_ANIMATION_TIME='1.25'
