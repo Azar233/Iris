@@ -94,8 +94,7 @@ bool iconButton(unsigned int texture, const char* id, EditorIcon icon,
 
 void drawAssetIcon(unsigned int texture, EditorIcon icon, ImVec2 top, ImVec2 bottom) {
     ImDrawList* draw = ImGui::GetWindowDrawList();
-    draw->AddRectFilled(top, bottom, IM_COL32(37, 49, 65, 255), 3.0f);
-    const float size = std::min(bottom.x - top.x, bottom.y - top.y) * 0.62f;
+    const float size = std::min(bottom.x - top.x, bottom.y - top.y) * 0.72f;
     const ImVec2 center((top.x + bottom.x) * 0.5f, (top.y + bottom.y) * 0.5f);
     draw->AddImage(static_cast<ImTextureID>(static_cast<std::uintptr_t>(texture)),
         ImVec2(center.x - size * 0.5f, center.y - size * 0.5f),
@@ -1834,7 +1833,8 @@ void Application::drawAssetsPanel() {
                     ImGui::TextDisabled("No matching %s assets.",
                         workspaceAssetCategoryName(activeCategory));
                 } else if (contentGridView_) {
-                    const float cardWidth = 155.0f;
+                    const float cardWidth = 100.0f;
+                    const ImVec2 iconSize(64.0f, 64.0f);
                     const int columns = std::max(1,
                         static_cast<int>(ImGui::GetContentRegionAvail().x / cardWidth));
                     if (ImGui::BeginTable("AssetGrid", columns,
@@ -1844,17 +1844,21 @@ void Application::drawAssetsPanel() {
                             ImGui::PushID(asset->relativePath.generic_u8string().c_str());
                             const bool selected = selectedWorkspaceAsset_ == asset->path;
                             const auto thumbnail = uploadedThumbnails_.find(asset->path);
+                            const float columnLeft = ImGui::GetCursorPosX();
+                            const float labelWidth = ImGui::GetContentRegionAvail().x;
+                            ImGui::SetCursorPosX(columnLeft + std::max(0.0f,
+                                (labelWidth - iconSize.x) * 0.5f));
                             if (asset->category == WorkspaceAssetCategory::Scenes
                                 && editorIconTexture_ != 0U) {
-                                ImGui::InvisibleButton("##SceneFileIcon", ImVec2(128.0f, 80.0f));
+                                ImGui::InvisibleButton("##SceneFileIcon", iconSize);
                                 drawAssetIcon(editorIconTexture_, EditorIcon::Scene,
                                     ImGui::GetItemRectMin(), ImGui::GetItemRectMax());
                             } else if (thumbnail != uploadedThumbnails_.end()
                                 && thumbnail->second.texture != 0U) {
                                 ImGui::Image(static_cast<ImTextureID>(static_cast<std::uintptr_t>(
-                                    thumbnail->second.texture)), ImVec2(128.0f, 80.0f));
+                                    thumbnail->second.texture)), iconSize);
                             } else {
-                                ImGui::InvisibleButton("##ThumbnailPlaceholder", ImVec2(128.0f, 80.0f));
+                                ImGui::InvisibleButton("##ThumbnailPlaceholder", iconSize);
                                 const ImVec2 top = ImGui::GetItemRectMin();
                                 const ImVec2 bottom = ImGui::GetItemRectMax();
                                 if (editorIconTexture_ != 0U) {
@@ -1864,10 +1868,8 @@ void Application::drawAssetsPanel() {
                                         ? EditorIcon::Image : EditorIcon::Scene;
                                     drawAssetIcon(editorIconTexture_, icon, top, bottom);
                                 } else {
-                                    ImGui::GetWindowDrawList()->AddRectFilled(top, bottom,
-                                        IM_COL32(40, 49, 62, 255));
                                     ImGui::GetWindowDrawList()->AddText(
-                                        ImVec2(top.x + 9.0f, top.y + 31.0f), IM_COL32(196, 207, 221, 255),
+                                        ImVec2(top.x + 9.0f, top.y + 23.0f), IM_COL32(196, 207, 221, 255),
                                         workspaceAssetCategoryBadge(asset->category));
                                 }
                                 if (thumbnail != uploadedThumbnails_.end()
@@ -1877,22 +1879,46 @@ void Application::drawAssetsPanel() {
                             }
                             if (selected) ImGui::GetWindowDrawList()->AddRect(
                                 ImGui::GetItemRectMin(), ImGui::GetItemRectMax(),
-                                IM_COL32(113, 183, 255, 255), 0.0f, 0, 2.0f);
+                                IM_COL32(191, 216, 244, 255), 6.0f, 0, 2.0f);
                             if (ImGui::IsItemClicked()) {
                                 selectedWorkspaceAsset_ = asset->path;
                                 if (ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) queueAssetAction(*asset);
                             }
-                            const std::string cardLabel = asset->displayName + "##Card";
-                            if (ImGui::Selectable(cardLabel.c_str(), selected)) {
+                            if (ImGui::IsItemHovered()) {
+                                ImGui::SetTooltip("%s", asset->relativePath.generic_u8string().c_str());
+                            }
+                            ImGui::SetCursorPosX(columnLeft);
+                            std::string cardLabel = asset->displayName;
+                            if (ImGui::CalcTextSize(cardLabel.c_str()).x > labelWidth) {
+                                while (!cardLabel.empty()
+                                    && ImGui::CalcTextSize((cardLabel + "...").c_str()).x > labelWidth) {
+                                    // Remove one complete UTF-8 character, never a partial byte sequence.
+                                    std::size_t end = cardLabel.size() - 1U;
+                                    while (end > 0U
+                                        && (static_cast<unsigned char>(cardLabel[end]) & 0xC0U) == 0x80U) --end;
+                                    cardLabel.resize(end);
+                                }
+                                cardLabel += "...";
+                            }
+                            if (ImGui::InvisibleButton("##CardLabel",
+                                    ImVec2(labelWidth, ImGui::GetTextLineHeight()))) {
                                 selectedWorkspaceAsset_ = asset->path;
                                 if (ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) {
                                     queueAssetAction(*asset);
                                 }
                             }
+                            const ImVec2 labelTop = ImGui::GetItemRectMin();
+                            ImGui::GetWindowDrawList()->AddText(
+                                ImVec2(labelTop.x + std::max(0.0f,
+                                    (labelWidth - ImGui::CalcTextSize(cardLabel.c_str()).x) * 0.5f), labelTop.y),
+                                ImGui::GetColorU32(ImGuiCol_Text), cardLabel.c_str());
                             if (ImGui::IsItemHovered()) {
                                 ImGui::SetTooltip("%s", asset->relativePath.generic_u8string().c_str());
                             }
-                            ImGui::TextDisabled("%s", formatAssetSize(asset->sizeBytes).c_str());
+                            const std::string sizeLabel = formatAssetSize(asset->sizeBytes);
+                            ImGui::SetCursorPosX(columnLeft + std::max(0.0f,
+                                (labelWidth - ImGui::CalcTextSize(sizeLabel.c_str()).x) * 0.5f));
+                            ImGui::TextDisabled("%s", sizeLabel.c_str());
                             ImGui::PopID();
                         }
                         ImGui::EndTable();
