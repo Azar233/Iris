@@ -1754,8 +1754,8 @@ void Application::drawAssetsPanel() {
                     }
                     ImGui::EndTable();
                 }
-                ImGui::EndChild();
             }
+            ImGui::EndChild();
 
             ImGui::SeparatorText(EditorUi::label("Asset details"));
             const WorkspaceAssetRecord* selectedAsset = workspaceAssets_.find(selectedWorkspaceAsset_);
