@@ -182,6 +182,7 @@ private:
     std::string contentExtensionFilter_;
     int contentSortMode_{0};
     bool contentGridView_{true};
+    bool contentFoldersExpanded_{true};
     std::filesystem::path selectedWorkspaceAsset_;
     WorkspaceAssetCatalog workspaceAssets_;
     std::uint64_t thumbnailCacheGeneration_{0U};

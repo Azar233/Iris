@@ -934,6 +934,9 @@ int Application::run(const std::filesystem::path& initialModel) {
         if (const char* scroll = std::getenv("MYRENDERER_EDITOR_SCREENSHOT_SCROLL")) {
             pendingEditorScreenshotScroll_ = std::max(std::strtof(scroll, nullptr), 0.0f);
         }
+        if (const char* folders = std::getenv("MYRENDERER_EDITOR_SCREENSHOT_FOLDERS")) {
+            contentFoldersExpanded_ = std::strcmp(folders, "collapsed") != 0;
+        }
     }
     const char* recoveryModelValue = std::getenv("MYRENDERER_RECOVERY_TEST");
     const std::filesystem::path recoveryModel = recoveryModelValue == nullptr

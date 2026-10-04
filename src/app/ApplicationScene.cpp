@@ -1707,6 +1707,15 @@ void Application::drawAssetsPanel() {
                     || category == WorkspaceAssetCategory::RenderJobs;
             };
 
+            if (ImGui::ArrowButton("##ToggleAssetFolders",
+                    contentFoldersExpanded_ ? ImGuiDir_Left : ImGuiDir_Right)) {
+                contentFoldersExpanded_ = !contentFoldersExpanded_;
+            }
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip("%s", contentFoldersExpanded_
+                    ? "Collapse project folders" : "Expand project folders");
+            }
+            ImGui::SameLine();
             ImGui::SetNextItemWidth(std::min(300.0f, ImGui::GetContentRegionAvail().x * 0.45f));
             ImGui::InputTextWithHint("##ContentSearch", "Search assets...",
                                      contentSearch_.data(), contentSearch_.size());
@@ -1718,7 +1727,8 @@ void Application::drawAssetsPanel() {
             ImGui::TextDisabled("%zu assets | cache #%llu", workspaceAssets_.records().size(),
                 static_cast<unsigned long long>(thumbnailCacheGeneration_));
 
-            const bool showFolderSidebar = ImGui::GetContentRegionAvail().x >= 600.0f;
+            const bool showFolderSidebar = contentFoldersExpanded_
+                && ImGui::GetContentRegionAvail().x >= 600.0f;
             if (showFolderSidebar) {
                 const float sidebarWidth = std::clamp(
                     ImGui::GetContentRegionAvail().x * 0.20f, 145.0f, 185.0f);
@@ -1759,6 +1769,22 @@ void Application::drawAssetsPanel() {
                 ImGui::EndChild();
                 ImGui::SameLine();
                 ImGui::BeginGroup();
+            } else if (!contentFoldersExpanded_) {
+                const auto category = static_cast<WorkspaceAssetCategory>(contentCategory_);
+                ImGui::SetNextItemWidth(std::min(220.0f, ImGui::GetContentRegionAvail().x));
+                if (ImGui::BeginCombo("##CollapsedAssetCategory", workspaceAssetCategoryName(category))) {
+                    for (int index = 0; index < static_cast<int>(WorkspaceAssetCategory::Count); ++index) {
+                        const auto entry = static_cast<WorkspaceAssetCategory>(index);
+                        const std::string label = std::string(workspaceAssetCategoryName(entry))
+                            + " (" + std::to_string(workspaceAssets_.count(entry)) + ")";
+                        if (ImGui::Selectable(label.c_str(), contentCategory_ == index)) {
+                            if (contentCategory_ != index) contentExtensionFilter_.clear();
+                            contentCategory_ = index;
+                        }
+                        if (contentCategory_ == index) ImGui::SetItemDefaultFocus();
+                    }
+                    ImGui::EndCombo();
+                }
             } else if (ImGui::BeginTabBar("ContentCategories", ImGuiTabBarFlags_FittingPolicyScroll)) {
                 for (int index = 0; index < static_cast<int>(WorkspaceAssetCategory::Count); ++index) {
                     const auto category = static_cast<WorkspaceAssetCategory>(index);
