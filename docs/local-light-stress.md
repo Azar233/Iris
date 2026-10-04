@@ -149,7 +149,7 @@ $env:MYRENDERER_LIGHT_STRESS='1'
 | `gp_p1b_forward_lights64` | 0 | 2 |
 | `gp_p1b_deferred_lights64` | 1 | 2 |
 
-手动重拍单张图时可以只设这一组环境变量，再运行 MSVC 树的 `build-ci-msvc/Release/MyRenderer.exe`（`README.md` 记录的路径；`build-release` 是本仓库的 GCC Release 树）；例如 64 灯 Deferred 一侧：
+手动重拍单张图时可以只设这一组环境变量，再运行 MSVC 树的 `build-ci-msvc/Release/Iris.exe`（`README.md` 记录的路径；`build-release` 是本仓库的 GCC Release 树）；例如 64 灯 Deferred 一侧：
 
 ```powershell
 $env:MYRENDERER_SMOKE_TEST='1'
@@ -159,7 +159,7 @@ $env:MYRENDERER_LIGHT_STRESS='1'; $env:MYRENDERER_LOCAL_LIGHT_TIER='2'
 $env:MYRENDERER_RENDER_PATH='1'
 $env:MYRENDERER_HIDE_SELECTION_OUTLINE='1'
 $env:MYRENDERER_SCREENSHOT='build-ci-msvc/p1b-deferred-lights64.png'
-build-ci-msvc/Release/MyRenderer.exe assets/models/cube.obj
+build-ci-msvc/Release/Iris.exe assets/models/cube.obj
 ```
 
 本文「1080p 实测」表的来源是 `local-lights-benchmark`：同一夹具与同一组开关（含 `MYRENDERER_RENDER_PATH` 与 `MYRENDERER_LOCAL_LIGHT_TIER`），预热 30 帧、采样 90 帧，把 6 份 JSON 写进 `build-release/local-lights-benchmarks/`；它按 Forward / Deferred × 8 / 32 / 64 逐档运行，任一档失败都会让该 target 失败。

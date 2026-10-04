@@ -85,11 +85,11 @@ $env:MYRENDERER_SMOKE_TEST='1'; $env:MYRENDERER_RENDER_WIDTH='1280'; $env:MYREND
 
 $env:MYRENDERER_SHADOW_CASCADES='1'
 $env:MYRENDERER_SCREENSHOT='build-ci-msvc/coast-csm1.png'
-build-ci-msvc/Release/MyRenderer.exe assets/scenes/fixtures/19_coastal_cascades.myscene
+build-ci-msvc/Release/Iris.exe assets/scenes/fixtures/19_coastal_cascades.myscene
 
 $env:MYRENDERER_SHADOW_CASCADES='3'
 $env:MYRENDERER_SCREENSHOT='build-ci-msvc/coast-csm3.png'
-build-ci-msvc/Release/MyRenderer.exe assets/scenes/fixtures/19_coastal_cascades.myscene
+build-ci-msvc/Release/Iris.exe assets/scenes/fixtures/19_coastal_cascades.myscene
 ```
 
 `gpu-smoke` 在这个夹具上跑级联 1 / 3 / 4 三条分支（第三条同时覆盖 Deferred 与 `lambda = 0.5`），因此三条 uniform 路径都在真实上下文里编译链接过。
@@ -114,7 +114,7 @@ build-ci-msvc/Release/MyRenderer.exe assets/scenes/fixtures/19_coastal_cascades.
 
 ## 验证
 
-MSVC Release 全量 CTest `19/19` 通过，其中 `shadow-cascade-fitting`、`scene-document-repeat-load` 和 `editor-session` 覆盖矩阵计算、字段往返与命令载荷；MinGW 的 `MyRenderer` 目标也构建成功。`tools/TestEditorScene.ps1` 的真实 GPU 编辑器交互回归通过，含级联数、`lambda` 与调试开关的命令应用。`gpu-smoke` 和完整 `renderer-regression-suite` 均以退出码 `0` 通过，原有固定图无需调整。
+MSVC Release 全量 CTest `19/19` 通过，其中 `shadow-cascade-fitting`、`scene-document-repeat-load` 和 `editor-session` 覆盖矩阵计算、字段往返与命令载荷；MinGW 的 `Iris` 目标也构建成功。`tools/TestEditorScene.ps1` 的真实 GPU 编辑器交互回归通过，含级联数、`lambda` 与调试开关的命令应用。`gpu-smoke` 和完整 `renderer-regression-suite` 均以退出码 `0` 通过，原有固定图无需调整。
 
 `shadow-cascade-acceptance` 也以退出码 `0` 通过。除上述四组「正常/调试」「单级/三级」差异外，它要求 Forward 与 Deferred 的单级和三级区域分别满足 MAE ≤ `0.002` 且变化像素比例 ≤ `1%`；实测单级为 MAE `0.000256` / `0.203%`，三级为 MAE `0.000375` / `0.356%`。该阈值只用于核对调试区域，允许两条渲染路径在物体边缘有少量覆盖差异。
 

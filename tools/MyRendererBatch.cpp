@@ -19,11 +19,11 @@ void handleInterrupt(int) {
 
 void usage() {
     std::cerr << "Usage:\n"
-              << "  MyRendererBatch validate <job.renderjob>\n"
-              << "  MyRendererBatch render-frame <job.renderjob> [frame] [--output <stem>]\n"
-              << "  MyRendererBatch render-sequence <job.renderjob> [--output <pattern>]\n"
-              << "  MyRendererBatch simulate <job.renderjob>\n"
-              << "  MyRendererBatch bake <job.renderjob>\n";
+              << "  IrisBatch validate <job.renderjob>\n"
+              << "  IrisBatch render-frame <job.renderjob> [frame] [--output <stem>]\n"
+              << "  IrisBatch render-sequence <job.renderjob> [--output <pattern>]\n"
+              << "  IrisBatch simulate <job.renderjob>\n"
+              << "  IrisBatch bake <job.renderjob>\n";
 }
 
 int parseFrame(const char* text) {

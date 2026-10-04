@@ -62,24 +62,24 @@ $env:MYRENDERER_HIDE_SELECTION_OUTLINE='1'; $env:MYRENDERER_MSAA='4'
 # Hero Shot
 $env:MYRENDERER_PRISM_PRESET='3'
 $env:MYRENDERER_SCREENSHOT='build-ci-msvc/prism5_hero_exaggerated.png'
-build-ci-msvc/Release/MyRenderer.exe
+build-ci-msvc/Release/Iris.exe
 
 # 色散 Off
 $env:MYRENDERER_PRISM_DISPERSION='0'
 $env:MYRENDERER_SCREENSHOT='build-ci-msvc/prism5_prism_no_dispersion.png'
-build-ci-msvc/Release/MyRenderer.exe
+build-ci-msvc/Release/Iris.exe
 
 # 高 IOR TIR 调试
 $env:MYRENDERER_PRISM_PRESET='2'; $env:MYRENDERER_PRISM_DEBUG='1'
 $env:MYRENDERER_SCREENSHOT='build-ci-msvc/prism5_tir_debug.png'
-build-ci-msvc/Release/MyRenderer.exe
+build-ci-msvc/Release/Iris.exe
 
 # 1x / 4x MSAA 对照
 $env:MYRENDERER_PRISM_DEBUG='0'
 $env:MYRENDERER_MSAA='1'; $env:MYRENDERER_SCREENSHOT='build-ci-msvc/prism5_msaa1.png'
-build-ci-msvc/Release/MyRenderer.exe
+build-ci-msvc/Release/Iris.exe
 $env:MYRENDERER_MSAA='4'; $env:MYRENDERER_SCREENSHOT='build-ci-msvc/prism5_msaa4.png'
-build-ci-msvc/Release/MyRenderer.exe
+build-ci-msvc/Release/Iris.exe
 ```
 
 ### 作品集展示序列与 demo reel

@@ -51,7 +51,7 @@ Overlay 不只使用颜色表达状态，会明确显示 Rendering、Paused、Re
 $env:MYRENDERER_SMOKE_TEST='1'
 $env:MYRENDERER_EDITOR_WINDOW_WIDTH='1440'; $env:MYRENDERER_EDITOR_WINDOW_HEIGHT='900'
 $env:MYRENDERER_EDITOR_SCREENSHOT='docs/media/p1-workspace-1440x900.png'
-build-ci-msvc/Release/MyRenderer.exe assets/scenes/fixtures/18_atmosphere_sky.myscene
+build-ci-msvc/Release/Iris.exe assets/scenes/fixtures/18_atmosphere_sky.myscene
 ```
 
 同一工作区在 1100×680 应用下限下 Viewport、Inspector 与底部标签仍可达，说明预览所需的控件不依赖 1440×900 的宽窗口。
@@ -62,7 +62,7 @@ build-ci-msvc/Release/MyRenderer.exe assets/scenes/fixtures/18_atmosphere_sky.my
 $env:MYRENDERER_SMOKE_TEST='1'
 $env:MYRENDERER_EDITOR_WINDOW_WIDTH='1100'; $env:MYRENDERER_EDITOR_WINDOW_HEIGHT='680'
 $env:MYRENDERER_EDITOR_SCREENSHOT='docs/media/p1-workspace-1100x680.png'
-build-ci-msvc/Release/MyRenderer.exe assets/scenes/fixtures/18_atmosphere_sky.myscene
+build-ci-msvc/Release/Iris.exe assets/scenes/fixtures/18_atmosphere_sky.myscene
 ```
 
 Log / Profile 标签页是 CPU 预览的对照面：`Render tasks` 分组在没有提交任务时给出显式空状态 `No Render Job has been submitted.`，`Runtime profile` 把 CPU/GPU 帧时间、Draw Call、三角形与活动 Pass 放在一起。图中 `CPU frame: 649.02 ms` 与 `GPU frame: 512.376 ms` 是该次采集的瞬时读数，不是基准结论。
@@ -74,7 +74,7 @@ $env:MYRENDERER_SMOKE_TEST='1'
 $env:MYRENDERER_EDITOR_WINDOW_WIDTH='1440'; $env:MYRENDERER_EDITOR_WINDOW_HEIGHT='900'
 $env:MYRENDERER_EDITOR_SCREENSHOT_TAB='log'
 $env:MYRENDERER_EDITOR_SCREENSHOT='docs/media/p1-workspace-log-profile.png'
-build-ci-msvc/Release/MyRenderer.exe assets/scenes/fixtures/18_atmosphere_sky.myscene
+build-ci-msvc/Release/Iris.exe assets/scenes/fixtures/18_atmosphere_sky.myscene
 ```
 
 上面三张工作区截图是在 `Raster | Edit` 状态下采集的，因此它们证明的是布局、标签页与最小窗口下的可达性，而不是 CPU Path Traced 的运行状态；CPU 状态本身由下一张导出图与 Overlay 文案证明。
@@ -90,7 +90,7 @@ $env:MYRENDERER_CPU_PREVIEW_SPP='64'
 $env:MYRENDERER_CPU_PREVIEW_DEPTH='6'
 $env:MYRENDERER_CPU_PREVIEW_SEED='1'
 $env:MYRENDERER_CPU_PREVIEW_EXPORT='build-ci-msvc/p1a-cpu-preview-vs-raster'
-build-ci-msvc/Release/MyRenderer.exe assets/scenes/fixtures/18_atmosphere_sky.myscene
+build-ci-msvc/Release/Iris.exe assets/scenes/fixtures/18_atmosphere_sky.myscene
 ```
 
 > **待复核**：记录下来的那次导出没有留下 SPP / Depth / Seed / Preview resolution，因此上面的命令给的是可执行的同类复现（导出分辨率随 Viewport 尺寸与档位变化），不保证与仓库里这张 846×525 PNG 逐像素一致。
@@ -136,14 +136,14 @@ $env:MYRENDERER_CPU_PREVIEW_SPP='64'
 $env:MYRENDERER_CPU_PREVIEW_DEPTH='6'
 $env:MYRENDERER_CPU_PREVIEW_SEED='1'
 $env:MYRENDERER_CPU_PREVIEW_EXPORT='build-ci-msvc/p1a-cpu-preview-vs-raster'
-build-ci-msvc/Release/MyRenderer.exe assets/scenes/fixtures/18_atmosphere_sky.myscene
+build-ci-msvc/Release/Iris.exe assets/scenes/fixtures/18_atmosphere_sky.myscene
 
 # 工作区与 Log / Profile 插图重拍
 $env:MYRENDERER_SMOKE_TEST='1'
 $env:MYRENDERER_EDITOR_WINDOW_WIDTH='1440'; $env:MYRENDERER_EDITOR_WINDOW_HEIGHT='900'
 $env:MYRENDERER_EDITOR_SCREENSHOT_TAB='log'
 $env:MYRENDERER_EDITOR_SCREENSHOT='docs/media/p1-workspace-log-profile.png'
-build-ci-msvc/Release/MyRenderer.exe assets/scenes/fixtures/18_atmosphere_sky.myscene
+build-ci-msvc/Release/Iris.exe assets/scenes/fixtures/18_atmosphere_sky.myscene
 ```
 
 其他可用的预览覆盖项见 `src/app/Application.cpp` 的 `MYRENDERER_CPU_PREVIEW*` 读取段（`_AOV`、`_POWER_LIGHTS`、`_VNDF`、`_DENOISE`）；常规编辑器操作仍走 Viewport 顶部的 Render Mode、`CPU Settings` 与 `Pause` / `Resume` / `Restart` / `Export`。

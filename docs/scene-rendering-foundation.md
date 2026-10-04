@@ -130,7 +130,7 @@ $env:MYRENDERER_PBR='1'; $env:MYRENDERER_IBL='1'; $env:MYRENDERER_SHADOWS='0'
 $env:MYRENDERER_BLOOM='0'; $env:MYRENDERER_GRID='0'; $env:MYRENDERER_AXES='0'
 $env:MYRENDERER_SCENE_FOUNDATION_DEMO='1'; $env:MYRENDERER_GROUND='1'
 $env:MYRENDERER_SCREENSHOT='build-release/sr_p0_scene_entities.png'
-build-release/Release/MyRenderer.exe assets/models/cube.obj
+build-release/Release/Iris.exe assets/models/cube.obj
 ```
 
 ## 下一步

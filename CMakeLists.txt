@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.20)
 
-project(MyRenderer VERSION 0.1.0 LANGUAGES C CXX)
+project(Iris VERSION 0.1.0 LANGUAGES C CXX)
 
 include(CTest)
 
@@ -306,7 +306,7 @@ add_executable(MyRenderer
 
 if(WIN32)
     enable_language(RC)
-    set(MYRENDERER_ICON_PATH "${CMAKE_CURRENT_SOURCE_DIR}/assets/icons/myrenderer.ico")
+    set(MYRENDERER_ICON_PATH "${CMAKE_CURRENT_SOURCE_DIR}/assets/icons/iris.ico")
     configure_file(
         resources/MyRenderer.rc.in
         "${CMAKE_CURRENT_BINARY_DIR}/MyRenderer.rc"
@@ -1489,8 +1489,12 @@ add_custom_target(gpu-smoke
             ${CMAKE_CURRENT_SOURCE_DIR}/assets/models/cube.obj
     DEPENDS MyRenderer
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
-    COMMENT "Running MyRenderer with a real OpenGL context"
+    COMMENT "Running Iris with a real OpenGL context"
 )
+
+# Keep internal target names stable for existing build scripts.
+set_target_properties(MyRenderer PROPERTIES OUTPUT_NAME Iris)
+set_target_properties(MyRendererBatch PROPERTIES OUTPUT_NAME IrisBatch)
 
 install(TARGETS MyRenderer MyRendererBatch RUNTIME DESTINATION . COMPONENT Runtime)
 install(DIRECTORY shaders/ DESTINATION shaders COMPONENT Runtime)
@@ -1515,15 +1519,15 @@ install(FILES ${imgui_SOURCE_DIR}/LICENSE.txt DESTINATION licenses RENAME IMGUI-
 install(FILES ${assimp_SOURCE_DIR}/LICENSE DESTINATION licenses RENAME ASSIMP-LICENSE.txt COMPONENT Runtime)
 
 set(CPACK_GENERATOR "ZIP")
-set(CPACK_PACKAGE_NAME "MyRenderer")
-set(CPACK_PACKAGE_VENDOR "MyRenderer contributors")
+set(CPACK_PACKAGE_NAME "Iris")
+set(CPACK_PACKAGE_VENDOR "Iris contributors")
 set(CPACK_PACKAGE_VERSION ${PROJECT_VERSION})
 if(CMAKE_SIZEOF_VOID_P EQUAL 8)
     set(MYRENDERER_PACKAGE_ARCH "x64")
 else()
     set(MYRENDERER_PACKAGE_ARCH "x86")
 endif()
-set(CPACK_PACKAGE_FILE_NAME "MyRenderer-${PROJECT_VERSION}-${CMAKE_SYSTEM_NAME}-${MYRENDERER_PACKAGE_ARCH}")
+set(CPACK_PACKAGE_FILE_NAME "Iris-${PROJECT_VERSION}-${CMAKE_SYSTEM_NAME}-${MYRENDERER_PACKAGE_ARCH}")
 set(CPACK_INCLUDE_TOPLEVEL_DIRECTORY ON)
 set(CPACK_COMPONENTS_ALL Runtime)
 set(CPACK_ARCHIVE_COMPONENT_INSTALL ON)

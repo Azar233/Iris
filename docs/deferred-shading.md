@@ -8,7 +8,7 @@
 
 ## 目标与范围
 
-本阶段为 MyRenderer 增加一条可在运行时切换的 Deferred Shading（延迟着色）路径，同时保留原有 Forward（前向着色）路径作为同机、同场景、同镜头的画质与性能对照。实现采用 **Hybrid Deferred（混合延迟着色）**：不透明物体进入 G-Buffer（几何缓冲）和全屏 Lighting Pass（光照阶段）；需要排序、折射和体积吸收的透明/玻璃材质继续进入现有 Forward Transparent Pass（前向透明阶段）。
+本阶段为 Iris 增加一条可在运行时切换的 Deferred Shading（延迟着色）路径，同时保留原有 Forward（前向着色）路径作为同机、同场景、同镜头的画质与性能对照。实现采用 **Hybrid Deferred（混合延迟着色）**：不透明物体进入 G-Buffer（几何缓冲）和全屏 Lighting Pass（光照阶段）；需要排序、折射和体积吸收的透明/玻璃材质继续进入现有 Forward Transparent Pass（前向透明阶段）。
 
 这样切分的原因是透明材质不能按普通不透明 G-Buffer 的方式合成，所以路径才叫 Hybrid 而不是纯 Deferred；两条路径后续共用透明折射与后处理，因此 Glass-4 的双界面折射、色散和焦散能力得以保留。Forward 模式不分解 Geometry/Lighting，仍由原来的 `Forward opaque HDR scene` 一次完成不透明着色。
 
@@ -190,7 +190,7 @@ $env:MYRENDERER_BLOOM='1'; $env:MYRENDERER_GRID='0'; $env:MYRENDERER_AXES='0'
 $env:MYRENDERER_GROUND='1'
 $env:MYRENDERER_RENDER_PATH='1'; $env:MYRENDERER_GBUFFER_DEBUG='0'
 $env:MYRENDERER_SCREENSHOT='build-release/p1a-deferred-final.png'
-build-release/Release/MyRenderer.exe assets/models/pbr_material_test.gltf
+build-release/Release/Iris.exe assets/models/pbr_material_test.gltf
 ```
 
 本文性能表的来源是 `deferred-benchmark`：同一夹具、四组路径与 MSAA 组合，预热 30 帧、测量 90 帧，JSON 写进 `build-release/deferred-benchmarks/`。环境变量覆盖项是 `MYRENDERER_BENCHMARK_WARMUP`、`MYRENDERER_BENCHMARK_FRAMES`、`MYRENDERER_BENCHMARK_OUTPUT`、`MYRENDERER_RENDER_WIDTH`、`MYRENDERER_RENDER_HEIGHT`、`MYRENDERER_MSAA`、`MYRENDERER_RENDER_PATH`、`MYRENDERER_GBUFFER_DEBUG`，以及上面那组 PBR / IBL / Shadows / Bloom / GRID / AXES / GROUND 开关。这些覆盖在场景加载后应用，因此只影响本次运行，不改写 `.myscene`。

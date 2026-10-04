@@ -78,10 +78,10 @@ cmake --build build-ci-msvc --config Release --target cloud-determinism-acceptan
 ctest --test-dir build-ci-msvc -C Release --output-on-failure
 # 程序化对照，保留其他作者参数。
 $env:MYRENDERER_CLOUD_OFFLINE_NOISE='0'
-build-mingw/MyRenderer.exe assets/scenes/02_ocean_weather_hero.myscene
+build-mingw/Iris.exe assets/scenes/02_ocean_weather_hero.myscene
 Remove-Item Env:MYRENDERER_CLOUD_OFFLINE_NOISE
 # 离线来源是两个展示场景的默认值。
-build-mingw/MyRenderer.exe assets/scenes/02_ocean_weather_hero.myscene
+build-mingw/Iris.exe assets/scenes/02_ocean_weather_hero.myscene
 ```
 
 输出位于对应构建目录的 `cloud-offline-production-acceptance/`，包括八组 PNG、帧/分 pass JSON、比较结果及离线云影证据。

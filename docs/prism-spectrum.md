@@ -122,7 +122,7 @@ Prism-1 只用中心波长求解，因此这张图上是一条而不是一片：
 $env:MYRENDERER_SMOKE_TEST = "1"
 $env:MYRENDERER_PRISM_DEMO = "1"
 $env:MYRENDERER_SCREENSHOT = ".\prism0_baseline.png"
-.\build-mingw\MyRenderer.exe
+.\build-mingw\Iris.exe
 Remove-Item Env:MYRENDERER_SMOKE_TEST, Env:MYRENDERER_PRISM_DEMO, Env:MYRENDERER_SCREENSHOT
 ```
 
@@ -188,7 +188,7 @@ Prism 演示的交互运行与截图覆盖（`MYRENDERER_PRISM_DEMO=1` 加载 Pr
 ```powershell
 $env:MYRENDERER_PRISM_DEMO = "1"
 $env:MYRENDERER_PRISM_SAMPLES = "21"
-.\build-mingw\MyRenderer.exe
+.\build-mingw\Iris.exe
 ```
 
 切换七色模式：

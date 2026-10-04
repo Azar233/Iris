@@ -9,7 +9,7 @@ int main(int argc, char** argv) {
     try {
         if (argc >= 2 && std::string(argv[1]) == "raster-sequence") {
             if (argc != 3 && (argc != 5 || std::string(argv[3]) != "--output")) {
-                std::cerr << "Usage: MyRenderer raster-sequence <job.renderjob> "
+                std::cerr << "Usage: Iris raster-sequence <job.renderjob> "
                              "[--output <frame-pattern>]\n";
                 return 64;
             }

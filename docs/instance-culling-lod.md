@@ -118,7 +118,7 @@ $env:MYRENDERER_INSTANCE_STRESS='1'
 | `gp_p1c_baseline` | 0 | 0 | 0 |
 | `gp_p1c_optimized` | 1 | 1 | 1 |
 
-手动重拍单张图时可以只设这一组环境变量，再运行 MSVC 树的 `build-ci-msvc/Release/MyRenderer.exe`（`README.md` 记录的路径；`build-release` 是本仓库的 GCC Release 树）；例如完整优化路径：
+手动重拍单张图时可以只设这一组环境变量，再运行 MSVC 树的 `build-ci-msvc/Release/Iris.exe`（`README.md` 记录的路径；`build-release` 是本仓库的 GCC Release 树）；例如完整优化路径：
 
 ```powershell
 $env:MYRENDERER_SMOKE_TEST='1'
@@ -129,7 +129,7 @@ $env:MYRENDERER_INSTANCE_OPTIMIZATION='1'
 $env:MYRENDERER_FRUSTUM_CULLING='1'; $env:MYRENDERER_LOD='1'
 $env:MYRENDERER_HIDE_SELECTION_OUTLINE='1'
 $env:MYRENDERER_SCREENSHOT='build-ci-msvc/p1c-optimized.png'
-build-ci-msvc/Release/MyRenderer.exe assets/models/sphere.obj
+build-ci-msvc/Release/Iris.exe assets/models/sphere.obj
 ```
 
 可用的自动化变量是 `MYRENDERER_INSTANCE_STRESS=1`、`MYRENDERER_INSTANCE_OPTIMIZATION=0|1`、`MYRENDERER_FRUSTUM_CULLING=0|1` 与 `MYRENDERER_LOD=0|1`；它们和压力预设一起在启动时生效，因此可以和上面的手动重拍命令任意组合。Benchmark 的 JSON 写进 `build-release/instance-stress-benchmarks/`，不会覆盖 `docs/performance/` 下的任何版本化文件（该目录当前只有 Prism-5 的参考 JSON）。

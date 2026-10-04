@@ -25,7 +25,7 @@ $env:MYRENDERER_RENDER_HEIGHT='517'
 $env:MYRENDERER_ANIMATION_TIME='1.25'
 $env:MYRENDERER_SCREENSHOT='docs/media/p1a-enscape-ocean-study.png'
 $env:MYRENDERER_SCREENSHOT_WARMUP='4'
-build-ci-msvc/Release/MyRenderer.exe assets/scenes/03_enscape_ocean_study.myscene
+build-ci-msvc/Release/Iris.exe assets/scenes/03_enscape_ocean_study.myscene
 ```
 
 Buffer A 逐像素执行云层积分与海面高度场追踪，实时成本明显高于原网格海面路径；本阶段以视觉与交互验证为先。

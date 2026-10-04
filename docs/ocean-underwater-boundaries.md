@@ -35,7 +35,7 @@ $env:MYRENDERER_ANIMATION_TIME='1.25'
 $env:MYRENDERER_TAA='0'
 $env:MYRENDERER_BLOOM='0'
 $env:MYRENDERER_HIDE_SELECTION_OUTLINE='1'
-build-ci-msvc/Release/MyRenderer.exe assets/scenes/fixtures/24_ocean_underwater_wide.myscene
+build-ci-msvc/Release/Iris.exe assets/scenes/fixtures/24_ocean_underwater_wide.myscene
 ```
 
 ## 验证

@@ -1,4 +1,4 @@
-# 实时体积云渲染研究简报（MyRenderer / OpenGL 3.3 Core）
+# 实时体积云渲染研究简报（Iris / OpenGL 3.3 Core）
 
 > 文档性质：调研输入（research brief），**不是**阶段实施记录，因此不含截图与实测数字；其中的成本、参数与收益均为公开资料的量级估计，落地时必须在本机重新标定。基准证据请见各阶段文档与 `docs/reference-path-tracer.md`。
 

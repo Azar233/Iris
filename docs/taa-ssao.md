@@ -161,7 +161,7 @@ $env:MYRENDERER_GROUND='1'; $env:MYRENDERER_SCENE_DEMO='1'
 | `gp_p1d_motion_vectors` | 0 | 1 | 0 | 1 | 1 |
 | `gp_p1d_history_weight` | 0 | 1 | 0 | 2 | 1 |
 
-手动重拍单张图时可以只设这一组环境变量，再运行 `build-release/Release/MyRenderer.exe assets/models/pbr_material_test.gltf`；例如 History Weight 诊断图：
+手动重拍单张图时可以只设这一组环境变量，再运行 `build-release/Release/Iris.exe assets/models/pbr_material_test.gltf`；例如 History Weight 诊断图：
 
 ```powershell
 $env:MYRENDERER_SMOKE_TEST='1'
@@ -170,7 +170,7 @@ $env:MYRENDERER_MSAA='1'; $env:MYRENDERER_RENDER_PATH='1'
 $env:MYRENDERER_TAA='1'; $env:MYRENDERER_TAA_DEBUG='2'
 $env:MYRENDERER_TAA_MOTION_DEMO='1'; $env:MYRENDERER_BLOOM='0'
 $env:MYRENDERER_SCREENSHOT='build-release/p1d-history-weight.png'
-build-release/Release/MyRenderer.exe assets/models/pbr_material_test.gltf
+build-release/Release/Iris.exe assets/models/pbr_material_test.gltf
 ```
 
 本文「1080p 实测」表的来源是 `screen-space-benchmark`：同一夹具与同一组开关，预热 30 帧、采样 90 帧，把 JSON 写进 `build-release/screen-space-benchmarks/`，文件名是 `gp_p1d_baseline`、`gp_p1d_ssao`、`gp_p1d_taa_static`、`gp_p1d_taa_motion` 与 `gp_p1d_ssao_taa`。这两项效果也能用环境变量在场景加载后覆盖：`MYRENDERER_SSAO`、`MYRENDERER_SSAO_RADIUS`、`MYRENDERER_SSAO_BIAS`、`MYRENDERER_SSAO_STRENGTH`、`MYRENDERER_TAA`、`MYRENDERER_TAA_HISTORY_WEIGHT`（钳制到 0.0～0.98）、`MYRENDERER_TAA_DEBUG`、`MYRENDERER_TAA_MOTION_DEMO`。

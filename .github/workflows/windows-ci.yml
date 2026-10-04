@@ -40,6 +40,6 @@ jobs:
       - name: Upload release ZIP
         uses: actions/upload-artifact@v4
         with:
-          name: MyRenderer-Windows-x64
-          path: build/MyRenderer-*.zip
+          name: Iris-Windows-x64
+          path: build/Iris-*.zip
           if-no-files-found: error

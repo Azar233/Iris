@@ -1250,7 +1250,7 @@ void Application::initializeWindow() {
         initialWindowHeight = std::clamp(std::atoi(height), 680, 4320);
     }
     window_ = glfwCreateWindow(initialWindowWidth, initialWindowHeight,
-                               "MyRenderer - OpenGL Rasterizer", nullptr, nullptr);
+                               "Iris", nullptr, nullptr);
     if (window_ == nullptr) {
         glfwTerminate();
         throw std::runtime_error("Failed to create an OpenGL 3.3 window");
@@ -1579,7 +1579,7 @@ void Application::drawMainMenu() {
     }
     if (ImGui::BeginMenu(EditorUi::label("Help"))) {
         ImGui::MenuItem("Dear ImGui demo", nullptr, &showImGuiDemo_);
-        if (ImGui::MenuItem(EditorUi::label("About MyRenderer"))) {
+        if (ImGui::MenuItem(EditorUi::label("About Iris"))) {
             showAbout_ = true;
         }
         ImGui::EndMenu();
@@ -3644,16 +3644,16 @@ void Application::drawDiagnostics() {
 
 void Application::drawAboutPopup() {
     if (showAbout_) {
-        ImGui::OpenPopup(EditorUi::label("About MyRenderer"));
+        ImGui::OpenPopup(EditorUi::label("About Iris"));
         showAbout_ = false;
     }
     const ImGuiViewport* viewport = ImGui::GetMainViewport();
     ImGui::SetNextWindowPos(viewport->GetCenter(), ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
-    if (ImGui::BeginPopupModal(EditorUi::label("About MyRenderer"), nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
-        ImGui::Text("MyRenderer 0.1.0");
+    if (ImGui::BeginPopupModal(EditorUi::label("About Iris"), nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+        ImGui::Text("Iris 0.1.0");
         ImGui::Separator();
-        ImGui::Text("C++17 / OpenGL 3.3 / GPU rasterization");
-        ImGui::TextWrapped("A compact GPU renderer with a format-independent model pipeline.");
+        ImGui::Text("A C++17 real-time and offline rendering playground.");
+        ImGui::TextWrapped("An independent graphics and rendering project that grew from my experience with the XJTU Graphics course framework, Dandelion.");
         if (ImGui::Button(EditorUi::label("Close"), ImVec2(120.0f, 0.0f))) {
             ImGui::CloseCurrentPopup();
         }

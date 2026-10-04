@@ -711,7 +711,7 @@ bool runRenderJobFrame(const RenderJob& job, int frame, BatchFrameResult& result
     result = BatchFrameResult{};
     result.frame = frame;
     if (job.renderer != "cpu-path-traced") {
-        error = "Raster Render Jobs run with MyRenderer raster-sequence <job.renderjob>";
+        error = "Raster Render Jobs run with Iris raster-sequence <job.renderjob>";
         result.status = BatchFrameStatus::Failed;
         return false;
     }

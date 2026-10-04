@@ -164,7 +164,7 @@ cmake --build build-ci-msvc --config Release --target renderer-regression-suite
 基线更新用的等价单支命令（以 Prism-5 为例，其余九支脚本同理；`tools/*VisualRegression.cmake` 读取 `UPDATE_BASELINES`，脚本内部用 `file(COPY_FILE ... ONLY_IF_DIFFERENT)` 写回 `docs/images/`，所以内容未变的采集不会被改写）：
 
 ```powershell
-cmake -DRENDERER=build-ci-msvc/Release/MyRenderer.exe `
+cmake -DRENDERER=build-ci-msvc/Release/Iris.exe `
       -DCOMPARATOR=build-ci-msvc/Release/MyRendererImageComparison.exe `
       -DSOURCE_DIR=. `
       -DOUTPUT_DIR=build-ci-msvc/prism5-visual-current `

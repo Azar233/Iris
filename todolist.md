@@ -1,4 +1,4 @@
-# MyRenderer 路线图
+# Iris 路线图
 
 > 重排日期：2026-09-16
 >
@@ -56,7 +56,7 @@
 | Inspector | Transform、Material、Lighting、Volume、Simulation 与 C++ 模块公开参数；不显示 Gameplay 组件 |
 | 底部工作区 | Assets、Timeline、Modules、Render Queue、Log/Profile，多标签共享空间 |
 
-Content Browser 只保留与渲染和模拟有关的分类：Scenes、Models、Materials、Textures、HDRI、Modules、Simulations、Caches、RenderJobs、Presets。C++ 源码使用 Visual Studio 等外部 IDE；MyRenderer 负责模块发现、参数显示、构建日志和运行控制，不自建代码编辑器。
+Content Browser 只保留与渲染和模拟有关的分类：Scenes、Models、Materials、Textures、HDRI、Modules、Simulations、Caches、RenderJobs、Presets。C++ 源码使用 Visual Studio 等外部 IDE；Iris 负责模块发现、参数显示、构建日志和运行控制，不自建代码编辑器。
 
 运行状态只有 `Edit / Preview / Bake / Render`：Preview 使用可丢弃的运行态副本，Bake 写确定性缓存，Render 从固定场景或缓存输出；顶部三角按钮不定义为 Play Game。
 
@@ -471,11 +471,11 @@ P1-0 验收：一个固定 C++ Module 驱动场景与 24 帧参数动画，GUI P
 
 ### P2-D：动态 C++ Plugin 与 DCC 协作
 
-- [ ] 在 P1-0 稳定后提供轻量 Blender Helper：导出选中资产为 glTF、生成/更新 `.myscene`、提交 Render Job 并打开结果目录；不在 MyRenderer 内复制建模工具。
+- [ ] 在 P1-0 稳定后提供轻量 Blender Helper：导出选中资产为 glTF、生成/更新 `.myscene`、提交 Render Job 并打开结果目录；不在 Iris 内复制建模工具。
 - [ ] 当静态模块的重启成本成为明确瓶颈后，将稳定 Module API 编译为独立 DLL；插件入口使用版本化接口，Core 继续拥有内存、线程和 GPU 资源。
 - [ ] 安全 Reload 流程必须先暂停 Timeline/Job、销毁实例、卸载旧 DLL、加载带 Build ID 的新 DLL、恢复参数，再重启 Preview；不实现 UE 式二进制 Live Coding/Object Reinstancing。
 - [ ] DLL 边界避免传递 STL 容器所有权和 OpenGL/Vulkan 对象；为 API Version、编译器/配置不匹配、加载失败和旧缓存建立明确诊断。
-- [ ] Python 只保留为可选的外部批处理、实验汇总或 Blender Helper 实现语言，不成为 MyRenderer Runtime、Scene Module 或可复现 Render Job 的依赖。
+- [ ] Python 只保留为可选的外部批处理、实验汇总或 Blender Helper 实现语言，不成为 Iris Runtime、Scene Module 或可复现 Render Job 的依赖。
 - [ ] 若需要更复杂后期，只增加可测试的固定 Compositor Pass/Module 参数，不实现通用合成节点图。
 
 进入条件：静态 C++ Module + Batch 已稳定；只有重复编译/重启显著阻碍模块迭代时才承担 DLL ABI 与安全卸载成本。
@@ -493,7 +493,7 @@ P1-0 验收：一个固定 C++ Module 驱动场景与 24 帧参数动画，GUI P
 | Animation Blending / State Machine / IK / Root Motion / Morph / FBX Animation | 后移且默认不做 | 保留 glTF Skin 最小兼容；自然场景不需要角色系统 |
 | 完整 TA Asset Audit 工具 | 后移 | 只有求职主方向切换为 TA Pipeline 时恢复；轻量 Blender Export/Launch Helper 保留在 P2-D |
 | Python 作为 Runtime/Scene Module 主接口 | 舍弃 | 核心扩展统一使用 C++；Python 只允许作为可选外部工具，不进入正式渲染复现合同 |
-| 内置代码 IDE/调试器 | 舍弃 | 使用 Visual Studio 等外部 IDE；MyRenderer 只负责构建、运行、日志和参数面板 |
+| 内置代码 IDE/调试器 | 舍弃 | 使用 Visual Studio 等外部 IDE；Iris 只负责构建、运行、日志和参数面板 |
 | UE 级反射/UHT、Object Reinstancing 与二进制 Live Coding | 舍弃 | 第一版使用显式 Registry/Parameter Metadata；动态 DLL Reload 只有在 P2-D 有真实需求时实现 |
 | Blender 式建模、雕刻、UV、复杂绑定工具 | 舍弃 | 继续使用 Blender 等 DCC 制作资产，通过 glTF 与 Helper 协作 |
 | PCSS | 可选 | 稳定 CSM 完成后再评估画质/成本，不阻塞室外场景 |

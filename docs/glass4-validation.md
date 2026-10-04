@@ -84,12 +84,12 @@ $env:MYRENDERER_GLASS_PRESET='1'; $env:MYRENDERER_IOR='1.5'
 $env:MYRENDERER_DISPERSION_ENABLED='0'; $env:MYRENDERER_DISPERSION='0'
 $env:MYRENDERER_CAUSTICS='0'; $env:MYRENDERER_GLASS_DEBUG='0'
 $env:MYRENDERER_SCREENSHOT='build-release/glass4_volume_final.png'
-build-release/Release/MyRenderer.exe assets/models/glass_volume_sphere.gltf
+build-release/Release/Iris.exe assets/models/glass_volume_sphere.gltf
 
 # 单张重拍：1x MSAA 一侧，其余参数完全相同
 $env:MYRENDERER_MSAA='1'
 $env:MYRENDERER_SCREENSHOT='build-release/glass4_volume_msaa1.png'
-build-release/Release/MyRenderer.exe assets/models/glass_volume_sphere.gltf
+build-release/Release/Iris.exe assets/models/glass_volume_sphere.gltf
 ```
 
 ### 焦散 Hero：Light-space RGB 焦散与彩色透射阴影
@@ -109,7 +109,7 @@ $env:MYRENDERER_GLASS_PRESET='3'; $env:MYRENDERER_IOR='1.5'
 $env:MYRENDERER_DISPERSION_ENABLED='1'; $env:MYRENDERER_DISPERSION='2.0'
 $env:MYRENDERER_CAUSTICS='1'; $env:MYRENDERER_CAUSTICS_MODE='1'
 $env:MYRENDERER_SCREENSHOT='build-release/glass4_caustics_final.png'
-build-release/Release/MyRenderer.exe
+build-release/Release/Iris.exe
 ```
 
 ### 其余十个调试视图

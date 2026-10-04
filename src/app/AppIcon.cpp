@@ -23,7 +23,7 @@
 
 namespace {
 
-constexpr const char* kIconRelativePath = "assets/icons/myrenderer-icon.png";
+constexpr const char* kIconRelativePath = "assets/icons/iris-icon.png";
 
 std::filesystem::path executableDirectory() {
 #ifdef _WIN32
@@ -105,7 +105,7 @@ void initializeMyRendererApplicationIdentity() {
         static_assert(sizeof(setAppId) == sizeof(procedure));
         std::memcpy(&setAppId, &procedure, sizeof(setAppId));
         if (setAppId != nullptr) {
-            setAppId(L"MyRenderer.Desktop");
+            setAppId(L"Azar233.Iris");
         }
         if (releaseLibrary) {
             FreeLibrary(shell);

@@ -126,7 +126,7 @@ $env:MYRENDERER_TAA='0'; $env:MYRENDERER_BLOOM='0'
 | `gp_p1e_joint_debug` | 1 | 1.0 | 1 |
 | `gp_p1e_weight_debug` | 1 | 1.0 | 2 |
 
-手动重拍单张图时可以只设这一组环境变量，再运行 `build-ci-msvc/Release/MyRenderer.exe`（不传模型路径；该可执行文件路径与 [`../README.md`](../README.md) 一致，`build-release` 是本仓库的 GCC Release 树）；例如 Dominant Weight 诊断图：
+手动重拍单张图时可以只设这一组环境变量，再运行 `build-ci-msvc/Release/Iris.exe`（不传模型路径；该可执行文件路径与 [`../README.md`](../README.md) 一致，`build-release` 是本仓库的 GCC Release 树）；例如 Dominant Weight 诊断图：
 
 ```powershell
 $env:MYRENDERER_SMOKE_TEST='1'
@@ -137,7 +137,7 @@ $env:MYRENDERER_MSAA='4'; $env:MYRENDERER_RENDER_PATH='1'
 $env:MYRENDERER_TAA='0'; $env:MYRENDERER_BLOOM='0'
 $env:MYRENDERER_HIDE_SELECTION_OUTLINE='1'
 $env:MYRENDERER_SCREENSHOT='build-ci-msvc/p1e-weight-debug.png'
-build-ci-msvc/Release/MyRenderer.exe
+build-ci-msvc/Release/Iris.exe
 ```
 
 本文「1080p 实测」表的来源是 `skinning-benchmark`：同一夹具与同一组开关（含 `MYRENDERER_ANIMATION`、`MYRENDERER_ANIMATION_TIME`、`MYRENDERER_SKIN_DEBUG`），预热 30 帧、采样 90 帧，把 JSON 写进 `build-release/skinning-benchmarks/`。

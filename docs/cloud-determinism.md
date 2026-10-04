@@ -84,7 +84,7 @@ ctest --test-dir build-mingw --output-on-failure -R 'raster-capture-contract|ren
 cmake --build build-mingw --target cloud-determinism-acceptance --parallel 1
 ```
 
-仓库提供 `assets/renderjobs/05_cloud_determinism.renderjob`。可用 `MyRenderer raster-sequence <job> --output <全新输出路径>/frame_{frame:04}` 运行；输出目录已有文件时会拒绝覆盖。验收生成的文件位于构建目录 `cloud-determinism-acceptance/`。
+仓库提供 `assets/renderjobs/05_cloud_determinism.renderjob`。可用 `Iris raster-sequence <job> --output <全新输出路径>/frame_{frame:04}` 运行；输出目录已有文件时会拒绝覆盖。验收生成的文件位于构建目录 `cloud-determinism-acceptance/`。
 
 ## 下一步
 

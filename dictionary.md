@@ -1,6 +1,6 @@
-# MyRenderer 技术术语字典
+# Iris 技术术语字典
 
-本文档记录 MyRenderer 已使用、正在实现和路线图中即将使用的图形学与工程术语。解释优先服务于理解本项目，不追求替代完整教材。
+本文档记录 Iris 已使用、正在实现和路线图中即将使用的图形学与工程术语。解释优先服务于理解本项目，不追求替代完整教材。
 
 最后更新：2026-09-14
 
@@ -18,7 +18,7 @@
 
 ## 1. 渲染器与程序结构
 
-| 术语 | 通俗解释 | 在 MyRenderer 中的作用 | 状态 |
+| 术语 | 通俗解释 | 在 Iris 中的作用 | 状态 |
 | --- | --- | --- | --- |
 | Renderer（渲染器） | 接收场景、相机和材质数据，并组织 GPU 把它们画成图像的系统。 | `src/render/Renderer.*` 负责状态设置、Pass 顺序、Shader 参数和离屏绘制。 | 已实现 |
 | Rendering Pipeline（渲染管线） | 数据从模型进入 GPU，经过顶点处理、光栅化、像素着色，最终变成屏幕图像的完整流程。 | 当前主流程为 Shadow、Opaque HDR、Forward Transparent/Refractive、Bloom/Tone Map。 | 已实现 |
@@ -37,7 +37,7 @@
 
 ## 2. GPU 光栅化基础
 
-| 术语 | 通俗解释 | 在 MyRenderer 中的作用 | 状态 |
+| 术语 | 通俗解释 | 在 Iris 中的作用 | 状态 |
 | --- | --- | --- | --- |
 | Rasterization（光栅化） | 把三角形覆盖的区域转换成一个个待着色的像素/片元。 | OpenGL GPU 实时主渲染方式；CPU Reference Path Tracer 作为独立对照路径。 | 已实现 |
 | Vertex Shader（顶点着色器） | GPU 对每个顶点执行的程序，主要完成坐标变换并输出插值数据。 | `basic.vert` 计算世界位置、法线、切线、MVP 和阴影坐标。 | 已实现 |
@@ -61,7 +61,7 @@
 
 ## 3. Framebuffer、RenderTarget 与颜色缓冲
 
-| 术语 | 通俗解释 | 在 MyRenderer 中的作用 | 状态 |
+| 术语 | 通俗解释 | 在 Iris 中的作用 | 状态 |
 | --- | --- | --- | --- |
 | Framebuffer / FBO | GPU 渲染的目标集合，可以包含颜色、深度、模板等附件。 | 主场景、阴影、Bloom、最终 LDR 都使用离屏 FBO。 | 已实现 |
 | RenderTarget（渲染目标） | 对 Framebuffer 和附件纹理的工程封装。 | `RenderTarget` 管理 Opaque HDR、最终 HDR、Depth/Stencil 和最终 LDR。 | 已实现 |
@@ -79,7 +79,7 @@
 
 ## 4. 模型、网格与资产导入
 
-| 术语 | 通俗解释 | 在 MyRenderer 中的作用 | 状态 |
+| 术语 | 通俗解释 | 在 Iris 中的作用 | 状态 |
 | --- | --- | --- | --- |
 | Mesh（网格） | 由顶点和三角形组成的几何对象。 | `MeshData` 保存 CPU 数据，`Mesh` 保存 VAO/VBO/EBO。 | 已实现 |
 | Submesh（子网格） | 同一 Mesh 中使用不同材质或索引区间的一部分。 | 每个 Submesh 对应材质编号和一个 Draw Call。 | 已实现 |
@@ -107,7 +107,7 @@
 
 ## 5. 纹理与颜色空间
 
-| 术语 | 通俗解释 | 在 MyRenderer 中的作用 | 状态 |
+| 术语 | 通俗解释 | 在 Iris 中的作用 | 状态 |
 | --- | --- | --- | --- |
 | Texture Sampling（纹理采样） | Shader 根据 UV 从纹理读取颜色或数据。 | 基础色、法线、金属度/粗糙度、阴影等都通过采样获得。 | 已实现 |
 | CPU Texture Cache | 在离线路径追踪开始前把快照中的纹理解码为线性可查询 texel，避免每条光线路径重复读文件或解码。 | `SceneTextures` 按 Asset 保存 Base Color、Metallic-Roughness、Normal 与 Thickness 的只读 CPU 副本。 | 已实现 |
@@ -123,7 +123,7 @@
 
 ## 6. 光照、BRDF 与 PBR
 
-| 术语 | 通俗解释 | 在 MyRenderer 中的作用 | 状态 |
+| 术语 | 通俗解释 | 在 Iris 中的作用 | 状态 |
 | --- | --- | --- | --- |
 | Blinn-Phong | 经典经验光照模型，用漫反射和高光近似表面明暗。 | 可作为非 PBR 对照路径。 | 已实现 |
 | PBR（Physically Based Rendering） | 使用接近物理规律、参数可跨环境复用的材质与光照方法。 | 当前采用 glTF Metallic-Roughness 工作流。 | 已实现 |
@@ -151,7 +151,7 @@
 
 ## 7. 阴影与光空间
 
-| 术语 | 通俗解释 | 在 MyRenderer 中的作用 | 状态 |
+| 术语 | 通俗解释 | 在 Iris 中的作用 | 状态 |
 | --- | --- | --- | --- |
 | Shadow Map（阴影贴图） | 从光源视角记录最近深度，再判断相机看到的点是否被遮挡。 | 当前为方向光生成 2048² 深度纹理。 | 已实现 |
 | Light Space（光源空间） | 以光源作为“相机”的坐标空间。 | 顶点转换到 Light View-Projection 后查询 Shadow Map。 | 已实现 |
@@ -166,7 +166,7 @@
 
 ## 8. 后处理与显示
 
-| 术语 | 通俗解释 | 在 MyRenderer 中的作用 | 状态 |
+| 术语 | 通俗解释 | 在 Iris 中的作用 | 状态 |
 | --- | --- | --- | --- |
 | Post-processing（后处理） | 场景渲染完成后，对整张图像执行的效果。 | Bloom、Tone Mapping 和 sRGB 输出由 `PostProcessor` 完成。 | 已实现 |
 | Tone Mapping（色调映射） | 把 HDR 亮度压缩到普通显示器可显示范围。 | 支持 ACES 近似和关闭对照。 | 已实现 |
@@ -179,7 +179,7 @@
 
 ## 9. 玻璃、折射与焦散
 
-| 术语 | 通俗解释 | 在 MyRenderer 中的作用 | 状态 |
+| 术语 | 通俗解释 | 在 Iris 中的作用 | 状态 |
 | --- | --- | --- | --- |
 | Opaque（不透明） | 光不能穿过，通常输出颜色并写入深度。 | glTF `OPAQUE` 与 `MASK` 材质进入不透明队列。 | 已实现 |
 | Alpha Blending（透明混合） | 根据 Alpha 把前景颜色与已画背景做比例混合。 | 已支持 glTF `BLEND` 的标准 Over 合成；它本身不会产生折射。 | 已实现 |
@@ -239,7 +239,7 @@
 
 ## 10. 调试、性能与测试
 
-| 术语 | 通俗解释 | 在 MyRenderer 中的作用 | 状态 |
+| 术语 | 通俗解释 | 在 Iris 中的作用 | 状态 |
 | --- | --- | --- | --- |
 | KHR_debug | OpenGL 驱动提供的调试消息与对象标记扩展。 | Debug 构建可接收 API 错误和性能提示。 | 已实现 |
 | GPU Timer Query | 让 GPU 测量一段命令实际执行时间，避免只看 CPU 提交时间。 | 整帧使用四槽 `GL_TIME_ELAPSED` Query 环；Prism-5 用成对 Timestamp Query 单独测 Beam Pass。 | 已实现 |
@@ -271,7 +271,7 @@
 
 ## 11. 路线图中的现代渲染术语
 
-| 术语 | 通俗解释 | 在 MyRenderer 中的作用 | 状态 |
+| 术语 | 通俗解释 | 在 Iris 中的作用 | 状态 |
 | --- | --- | --- | --- |
 | G-Buffer | Deferred Rendering 用的一组纹理，先记录“这个像素是什么材质、朝哪里、离相机多远”，再统一算光照。 | GP-P1A 使用 Albedo、Encoded Normal、Metallic/Roughness、Depth/Stencil 四个 Attachment，并支持 1×/4× MSAA Resolve。 | 已实现 |
 | Deferred Shading（延迟着色） | 几何阶段先写 G-Buffer，把光照推迟到全屏 Lighting Pass；大量灯光时避免为每个物体重复跑完整材质光照。 | Renderer 可与原 Forward 路径实时切换，并复用 PBR、IBL、Shadow、Caustics 与最多 64 个局部灯。 | 已实现 |

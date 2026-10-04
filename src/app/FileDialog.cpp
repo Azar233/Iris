@@ -49,14 +49,14 @@ std::optional<std::filesystem::path> openSceneFileDialog(std::string& error) {
 #ifdef _WIN32
     std::array<wchar_t, 32768> filePath{};
     static constexpr wchar_t filter[] =
-        L"MyRenderer scene (*.myscene)\0*.myscene\0"
+        L"Iris scene (*.myscene)\0*.myscene\0"
         L"All files (*.*)\0*.*\0\0";
     OPENFILENAMEW dialog{};
     dialog.lStructSize = sizeof(dialog);
     dialog.lpstrFilter = filter;
     dialog.lpstrFile = filePath.data();
     dialog.nMaxFile = static_cast<DWORD>(filePath.size());
-    dialog.lpstrTitle = L"Open MyRenderer scene";
+    dialog.lpstrTitle = L"Open Iris scene";
     dialog.Flags = OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST | OFN_NOCHANGEDIR;
     if (GetOpenFileNameW(&dialog) != FALSE) return std::filesystem::path(filePath.data());
     const DWORD code = CommDlgExtendedError();
@@ -73,14 +73,14 @@ std::optional<std::filesystem::path> openRenderJobFileDialog(std::string& error)
 #ifdef _WIN32
     std::array<wchar_t, 32768> filePath{};
     static constexpr wchar_t filter[] =
-        L"MyRenderer Render Job (*.renderjob)\0*.renderjob\0"
+        L"Iris Render Job (*.renderjob)\0*.renderjob\0"
         L"All files (*.*)\0*.*\0\0";
     OPENFILENAMEW dialog{};
     dialog.lStructSize = sizeof(dialog);
     dialog.lpstrFilter = filter;
     dialog.lpstrFile = filePath.data();
     dialog.nMaxFile = static_cast<DWORD>(filePath.size());
-    dialog.lpstrTitle = L"Open MyRenderer Render Job";
+    dialog.lpstrTitle = L"Open Iris Render Job";
     dialog.Flags = OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST | OFN_NOCHANGEDIR;
     if (GetOpenFileNameW(&dialog) != FALSE) return std::filesystem::path(filePath.data());
     const DWORD code = CommDlgExtendedError();
@@ -102,7 +102,7 @@ std::optional<std::filesystem::path> saveSceneFileDialog(
     const std::wstring suggested = suggestedPath.wstring();
     std::copy_n(suggested.c_str(), std::min(suggested.size(), filePath.size() - 1U), filePath.data());
     static constexpr wchar_t filter[] =
-        L"MyRenderer scene (*.myscene)\0*.myscene\0"
+        L"Iris scene (*.myscene)\0*.myscene\0"
         L"All files (*.*)\0*.*\0\0";
     static constexpr wchar_t extension[] = L"myscene";
     OPENFILENAMEW dialog{};
@@ -110,7 +110,7 @@ std::optional<std::filesystem::path> saveSceneFileDialog(
     dialog.lpstrFilter = filter;
     dialog.lpstrFile = filePath.data();
     dialog.nMaxFile = static_cast<DWORD>(filePath.size());
-    dialog.lpstrTitle = L"Save MyRenderer scene";
+    dialog.lpstrTitle = L"Save Iris scene";
     dialog.lpstrDefExt = extension;
     dialog.Flags = OFN_OVERWRITEPROMPT | OFN_PATHMUSTEXIST | OFN_NOCHANGEDIR;
     if (GetSaveFileNameW(&dialog) != FALSE) return std::filesystem::path(filePath.data());

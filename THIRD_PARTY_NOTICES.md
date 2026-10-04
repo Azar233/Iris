@@ -1,6 +1,6 @@
 # Third-party notices
 
-MyRenderer fetches the following pinned dependencies while configuring. Their
+Iris fetches the following pinned dependencies while configuring. Their
 canonical license files are copied into the `licenses` directory of release
 packages; those licenses apply to the dependency code and take precedence over
 this summary.

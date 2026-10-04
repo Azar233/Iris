@@ -65,7 +65,7 @@ Grid 使用世界 Y=0 平面的程序化无限网格，没有固定方形边界�
 ```powershell
 $env:MYRENDERER_SMOKE_TEST=1
 $env:MYRENDERER_EDITOR_SCREENSHOT=docs/images/editor-ui-overview.png
-.\build-mingw\MyRenderer.exe .\assets\models\cube.obj
+.\build-mingw\Iris.exe .\assets\models\cube.obj
 ```
 
 `MYRENDERER_EDITOR_SCREENSHOT` 会在真实 OpenGL/ImGui 帧完成后保存整窗；同一组能力也用于底部的多标签工作区与最小窗口尺寸采集，环境变量写法见 [`media/README.md`](media/README.md)。
@@ -130,7 +130,7 @@ cmake --build build-release --target foundation-visual-regression
 # 编辑器窗口的整窗截图
 $env:MYRENDERER_SMOKE_TEST=1
 $env:MYRENDERER_EDITOR_SCREENSHOT=docs/images/editor-ui-overview.png
-.\build-mingw\MyRenderer.exe .\assets\models\cube.obj
+.\build-mingw\Iris.exe .\assets\models\cube.obj
 ```
 
 `TestEditorScene.ps1` 会自动设置 `MYRENDERER_SMOKE_TEST=1`、`MYRENDERER_EDITOR_INTERACTION_TEST=1` 与 `MYRENDERER_APPEND_TEST=<仓库>/assets/models/sphere.obj`，以 `assets/models/cube.obj` 作为初始模型，产物写在 `<BuildDirectory>/editor-regression/` 下，并在结束时恢复这三个环境变量的原值。

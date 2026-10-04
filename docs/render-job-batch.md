@@ -59,24 +59,24 @@ Schema 1 仍然可读并保持不变，只是不携带 `module`；用 schema 1 �
 
 ## B2 CLI：五个入口
 
-`MyRendererBatch` 的真实 usage：
+`IrisBatch` 的真实 usage：
 
 ```text
-MyRendererBatch validate <job.renderjob>
-MyRendererBatch render-frame <job.renderjob> [frame] [--output <stem>]
-MyRendererBatch render-sequence <job.renderjob> [--output <pattern>]
-MyRendererBatch simulate <job.renderjob>
-MyRendererBatch bake <job.renderjob>
+IrisBatch validate <job.renderjob>
+IrisBatch render-frame <job.renderjob> [frame] [--output <stem>]
+IrisBatch render-sequence <job.renderjob> [--output <pattern>]
+IrisBatch simulate <job.renderjob>
+IrisBatch bake <job.renderjob>
 ```
 
 已实际验证的调用：
 
 ```powershell
-./build-ci-msvc/Release/MyRendererBatch.exe validate ./assets/renderjobs/01_cpu_reference.renderjob
-./build-ci-msvc/Release/MyRendererBatch.exe render-frame ./assets/renderjobs/01_cpu_reference.renderjob 0
-./build-ci-msvc/Release/MyRendererBatch.exe render-sequence ./assets/renderjobs/01_cpu_reference.renderjob
-./build-ci-msvc/Release/MyRendererBatch.exe render-sequence ./assets/renderjobs/01_cpu_reference.renderjob --output ./build-ci-msvc/override/frame_{frame:04}
-./build-ci-msvc/Release/MyRendererBatch.exe render-sequence ./assets/renderjobs/02_cpu_openexr.renderjob
+./build-ci-msvc/Release/IrisBatch.exe validate ./assets/renderjobs/01_cpu_reference.renderjob
+./build-ci-msvc/Release/IrisBatch.exe render-frame ./assets/renderjobs/01_cpu_reference.renderjob 0
+./build-ci-msvc/Release/IrisBatch.exe render-sequence ./assets/renderjobs/01_cpu_reference.renderjob
+./build-ci-msvc/Release/IrisBatch.exe render-sequence ./assets/renderjobs/01_cpu_reference.renderjob --output ./build-ci-msvc/override/frame_{frame:04}
+./build-ci-msvc/Release/IrisBatch.exe render-sequence ./assets/renderjobs/02_cpu_openexr.renderjob
 ```
 
 `validate` 不只检查 JSON，也加载 `.myscene` 与每个模型资源；带 `module` 的 Job 还会真实创建一次模块实例，因此未知模块 id、错误参数名/类型与非法枚举标签都在渲染前失败。`render-frame` 拒绝越界 Frame。`render-frame` / `render-sequence` 的 `--output <stem-or-pattern>` 相对当前工作目录解析，并通过和 Job 相同的验证函数事务性覆盖输出路径；单帧命令可使用普通 Stem，序列命令仍必须包含 Frame Token，无效 Pattern 不会修改已加载 Job。`render-sequence` 与 GUI Render Queue 调用同一个 `runRenderJobSequence`：使用固定 Frame/FPS/Seed，不依赖 GUI 帧率；`failurePolicy=stop|continue` 控制帧失败后的行为。
@@ -87,7 +87,7 @@ MyRendererBatch bake <job.renderjob>
 
 GUI 可以连续提交多个 `.renderjob`，后台按列表顺序串行调用同一个 `runRenderJobSequence`。Pending Job 支持上移、下移和移除，Running Job 支持安全取消，Failed/Cancelled Job 支持重新加载 Job 后重试；Complete 与失败历史会和 Pending 顺序一起持久化。正常退出时活动项保存为 Pending，下次启动从完整帧边界继续。
 
-Windows 默认状态文件是 `%LOCALAPPDATA%/MyRenderer/render-queue.json`，可用 `MYRENDERER_RENDER_QUEUE_STATE` 覆盖。状态文件仅记录 Job 路径、顺序、状态和计数，不复制 Render Job 设置；恢复时重新验证源 Job，缺失或失效的 Job 明确标记为 Failed。
+Windows 默认状态文件是 `%LOCALAPPDATA%/MyRenderer/render-queue.json`，Iris 保留此路径以兼容既有队列，可用 `MYRENDERER_RENDER_QUEUE_STATE` 覆盖。状态文件仅记录 Job 路径、顺序、状态和计数，不复制 Render Job 设置；恢复时重新验证源 Job，缺失或失效的 Job 明确标记为 Failed。
 
 Queue 状态使用 `MyRendererRenderQueue` Schema 2，并保存单调递增的 `revision` 与 `sessionState=active|clean-shutdown`。每次变更先完整写入并关闭 `render-queue.json.partial`，再以平台原子替换安装为主文件，同时把上一份主文件保留为 `render-queue.json.bak`；Windows 使用带 Write-through 的系统替换 API。启动成功读入状态后会立即写入 `active` 标记，正常退出才写入 `clean-shutdown`，因此下一次启动可以区分正常关闭和进程中断。Schema 1 仍可读取，并在首次恢复时升级。
 
@@ -122,7 +122,7 @@ $env:MYRENDERER_SMOKE_TEST='1'
 $env:MYRENDERER_EDITOR_WINDOW_WIDTH='1440'; $env:MYRENDERER_EDITOR_WINDOW_HEIGHT='900'
 $env:MYRENDERER_EDITOR_SCREENSHOT_TAB='render-queue'
 $env:MYRENDERER_EDITOR_SCREENSHOT='docs/media/p1-workspace-render-queue.png'
-build-ci-msvc/Release/MyRenderer.exe assets/scenes/fixtures/18_atmosphere_sky.myscene
+build-ci-msvc/Release/Iris.exe assets/scenes/fixtures/18_atmosphere_sky.myscene
 ```
 
 Batch 的逐帧诊断与同机运行时读数落在 Log / Profile 页：`Render tasks` 分组在没有提交 Job 时给出 `No Render Job has been submitted.` 的显式空状态，`Runtime profile` 分组把 CPU/GPU 帧时间、Draw call、三角形数、活动 Pass 数与 RenderTarget 估算放在一起，便于把一次 Batch 结果与同场景的编辑器预览对照。
@@ -134,7 +134,7 @@ $env:MYRENDERER_SMOKE_TEST='1'
 $env:MYRENDERER_EDITOR_WINDOW_WIDTH='1440'; $env:MYRENDERER_EDITOR_WINDOW_HEIGHT='900'
 $env:MYRENDERER_EDITOR_SCREENSHOT_TAB='log'
 $env:MYRENDERER_EDITOR_SCREENSHOT='docs/media/p1-workspace-log-profile.png'
-build-ci-msvc/Release/MyRenderer.exe assets/scenes/fixtures/18_atmosphere_sky.myscene
+build-ci-msvc/Release/Iris.exe assets/scenes/fixtures/18_atmosphere_sky.myscene
 ```
 
 ## 验证
@@ -150,14 +150,14 @@ cmake --build build-ci-msvc --config Release --target package
 模块 Job 的可复现入口：
 
 ```powershell
-./build-ci-msvc/Release/MyRendererBatch.exe validate ./assets/renderjobs/03_cpu_turntable_module.renderjob
-./build-ci-msvc/Release/MyRendererBatch.exe render-sequence ./assets/renderjobs/03_cpu_turntable_module.renderjob
-./build-ci-msvc/Release/MyRendererBatch.exe render-sequence ./assets/renderjobs/03_cpu_turntable_module.renderjob --output ./build-ci-msvc/render-jobs/repeat/frame_{frame:04}
+./build-ci-msvc/Release/IrisBatch.exe validate ./assets/renderjobs/03_cpu_turntable_module.renderjob
+./build-ci-msvc/Release/IrisBatch.exe render-sequence ./assets/renderjobs/03_cpu_turntable_module.renderjob
+./build-ci-msvc/Release/IrisBatch.exe render-sequence ./assets/renderjobs/03_cpu_turntable_module.renderjob --output ./build-ci-msvc/render-jobs/repeat/frame_{frame:04}
 ```
 
 两条序列的 4 帧 PNG 逐字节一致，`frame_0002-report.json` 记录完整的模块 Manifest。
 
-`render-job-runtime` 覆盖 Schema、相对路径、资源加载、父子 Transform、Builtin/ModelData Snapshot、OpenEXR 魔数与按需格式输出、事务性 Output Override、共享两帧 Sequence/进度回调、运行中取消无输出、原子 Beauty/Normal 输出、Frame Report Schema 2、完整帧 Resume、`.partial`/缺失报告/提交中断/格式集合变化的安全重渲染、`resume=false` 保留现场、Sequence 诊断聚合，以及模块 Job（schema 2 载入、无注册表/未知模块/错误参数类型的 validate 拒绝、帧内容哈希、重跑同一帧的模块状态与 PNG 逐字节一致、报告模块 Manifest、Seed 变化使 Resume 失效）。`batch-output-override` 从真实 CLI 验证单帧普通 Stem、PNG/EXR/AOV/报告产物，以及多帧序列缺少 Frame Token 时必须失败。`render-queue-runtime` 覆盖多 Pending 重排/移除、正常关闭标记、主文件损坏时备份回退、Running/Cancelling 中断恢复、主备同时损坏时保留现场，以及 Queue/直接 Runtime 的 PNG、HDR 与规范化报告一致性。示例 `02_cpu_openexr` 已实际导出 Beauty/Normal/Depth 的 PNG + EXR；Windows Release ZIP 已确认包含 `MyRendererBatch.exe` 和示例 `.renderjob`。
+`render-job-runtime` 覆盖 Schema、相对路径、资源加载、父子 Transform、Builtin/ModelData Snapshot、OpenEXR 魔数与按需格式输出、事务性 Output Override、共享两帧 Sequence/进度回调、运行中取消无输出、原子 Beauty/Normal 输出、Frame Report Schema 2、完整帧 Resume、`.partial`/缺失报告/提交中断/格式集合变化的安全重渲染、`resume=false` 保留现场、Sequence 诊断聚合，以及模块 Job（schema 2 载入、无注册表/未知模块/错误参数类型的 validate 拒绝、帧内容哈希、重跑同一帧的模块状态与 PNG 逐字节一致、报告模块 Manifest、Seed 变化使 Resume 失效）。`batch-output-override` 从真实 CLI 验证单帧普通 Stem、PNG/EXR/AOV/报告产物，以及多帧序列缺少 Frame Token 时必须失败。`render-queue-runtime` 覆盖多 Pending 重排/移除、正常关闭标记、主文件损坏时备份回退、Running/Cancelling 中断恢复、主备同时损坏时保留现场，以及 Queue/直接 Runtime 的 PNG、HDR 与规范化报告一致性。示例 `02_cpu_openexr` 已实际导出 Beauty/Normal/Depth 的 PNG + EXR；Windows Release ZIP 已确认包含 `IrisBatch.exe` 和示例 `.renderjob`。
 
 ## 限制与取舍
 
@@ -176,21 +176,21 @@ cmake --build build-ci-msvc --config Release --target MyRendererRenderQueueTests
 ctest --test-dir build-ci-msvc -C Release -R "batch-output-override|render-queue-runtime|render-job-runtime|editor-session" --output-on-failure
 
 # 三份夹具的入口
-./build-ci-msvc/Release/MyRendererBatch.exe validate ./assets/renderjobs/01_cpu_reference.renderjob
-./build-ci-msvc/Release/MyRendererBatch.exe render-frame ./assets/renderjobs/01_cpu_reference.renderjob 0
-./build-ci-msvc/Release/MyRendererBatch.exe render-sequence ./assets/renderjobs/01_cpu_reference.renderjob
-./build-ci-msvc/Release/MyRendererBatch.exe render-sequence ./assets/renderjobs/02_cpu_openexr.renderjob
-./build-ci-msvc/Release/MyRendererBatch.exe render-sequence ./assets/renderjobs/03_cpu_turntable_module.renderjob
+./build-ci-msvc/Release/IrisBatch.exe validate ./assets/renderjobs/01_cpu_reference.renderjob
+./build-ci-msvc/Release/IrisBatch.exe render-frame ./assets/renderjobs/01_cpu_reference.renderjob 0
+./build-ci-msvc/Release/IrisBatch.exe render-sequence ./assets/renderjobs/01_cpu_reference.renderjob
+./build-ci-msvc/Release/IrisBatch.exe render-sequence ./assets/renderjobs/02_cpu_openexr.renderjob
+./build-ci-msvc/Release/IrisBatch.exe render-sequence ./assets/renderjobs/03_cpu_turntable_module.renderjob
 
 # 事务性 Output Override：同一 Job 的第二个输出位置
-./build-ci-msvc/Release/MyRendererBatch.exe render-sequence ./assets/renderjobs/01_cpu_reference.renderjob --output ./build-ci-msvc/override/frame_{frame:04}
+./build-ci-msvc/Release/IrisBatch.exe render-sequence ./assets/renderjobs/01_cpu_reference.renderjob --output ./build-ci-msvc/override/frame_{frame:04}
 
 # 插图重拍
 $env:MYRENDERER_SMOKE_TEST='1'
 $env:MYRENDERER_EDITOR_WINDOW_WIDTH='1440'; $env:MYRENDERER_EDITOR_WINDOW_HEIGHT='900'
 $env:MYRENDERER_EDITOR_SCREENSHOT_TAB='render-queue'
 $env:MYRENDERER_EDITOR_SCREENSHOT='docs/media/p1-workspace-render-queue.png'
-build-ci-msvc/Release/MyRenderer.exe assets/scenes/fixtures/18_atmosphere_sky.myscene
+build-ci-msvc/Release/Iris.exe assets/scenes/fixtures/18_atmosphere_sky.myscene
 ```
 
 ## 下一步

@@ -18,7 +18,7 @@
 
 ### 渲染与批量输出
 
-`ModuleRuntime::applyPresentation` 从作者态计算每帧 Camera 与 RendererSettings。编辑器栅格视口只向渲染调用传入这些临时设置；`MyRenderer raster-sequence` 在隐藏 OpenGL 窗口中加载同一 `.myscene`，逐帧执行 Module 并原子写入 PNG。太阳低于地平线时，模块降低解析天空的太阳能量；蓝色暮光底色从太阳仰角 `+10°` 过渡到 `−8°`，星点与月盘从 `−2°` 至 `−8°` 平滑出现。确定性星点、蓝色夜空底光及月盘写入共享环境，月光方向光与阴影接替太阳，海面散射、泡沫与镜面反射保持夜间层次。栅格与 CPU Path Tracer 共享天空辐亮度和月光方向；CPU 路径仍没有水面求交。普通场景的夜空开关默认关闭，`.myscene` 新字段有兼容默认值，参数变化会失效环境缓存。
+`ModuleRuntime::applyPresentation` 从作者态计算每帧 Camera 与 RendererSettings。编辑器栅格视口只向渲染调用传入这些临时设置；`Iris raster-sequence` 在隐藏 OpenGL 窗口中加载同一 `.myscene`，逐帧执行 Module 并原子写入 PNG。太阳低于地平线时，模块降低解析天空的太阳能量；蓝色暮光底色从太阳仰角 `+10°` 过渡到 `−8°`，星点与月盘从 `−2°` 至 `−8°` 平滑出现。确定性星点、蓝色夜空底光及月盘写入共享环境，月光方向光与阴影接替太阳，海面散射、泡沫与镜面反射保持夜间层次。栅格与 CPU Path Tracer 共享天空辐亮度和月光方向；CPU 路径仍没有水面求交。普通场景的夜空开关默认关闭，`.myscene` 新字段有兼容默认值，参数变化会失效环境缓存。
 
 CPU Render Job 同样能读取模块产生的相机、天空和雾参数；其 CPU Path Tracer 尚无海面求交和水体材质，因此本阶段的完整海况序列由栅格 Render Job 输出。栅格任务目前限定 Beauty PNG，并拒绝尚无输出 Manifest 校验的 Resume 与 Simulation Cache，以免把旧文件误认为本次结果。
 
@@ -38,13 +38,13 @@ MSVC Release 全量 CTest `20/20` 通过；新增 Render Job 边界用例修正�
 
 ## 限制与取舍
 
-月亮相对太阳使用固定演示轨道；星点来自方向哈希，均不是基于经纬度、日历、月相和恒星星表的天文模拟。云层仍待切片 6。栅格 Render Job 目前由 `MyRenderer raster-sequence` 执行，`MyRendererBatch render-sequence` 和编辑器 Render Queue 仍只执行 CPU 任务；栅格路径只输出 Beauty PNG，暂不复用 CPU Batch 的 AOV、Resume、Simulation Cache 和逐帧 Report。海面仍是 Gerstner Wave Synthesis，不是流体模拟。
+月亮相对太阳使用固定演示轨道；星点来自方向哈希，均不是基于经纬度、日历、月相和恒星星表的天文模拟。云层仍待切片 6。栅格 Render Job 目前由 `Iris raster-sequence` 执行，`IrisBatch render-sequence` 和编辑器 Render Queue 仍只执行 CPU 任务；栅格路径只输出 Beauty PNG，暂不复用 CPU Batch 的 AOV、Resume、Simulation Cache 和逐帧 Report。海面仍是 Gerstner Wave Synthesis，不是流体模拟。
 
 ## 复现命令
 
 ```powershell
 cmake --build build-ci-msvc --config Release --target coastal-sequence-acceptance
-build-ci-msvc/Release/MyRenderer.exe raster-sequence assets/renderjobs/04_coastal_sequence.renderjob --output 'build-ci-msvc/coastal-manual/frame_{frame:04}'
+build-ci-msvc/Release/Iris.exe raster-sequence assets/renderjobs/04_coastal_sequence.renderjob --output 'build-ci-msvc/coastal-manual/frame_{frame:04}'
 ```
 
 第二条命令使用独立的空目录，已有同名输出会被拒绝覆盖。

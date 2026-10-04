@@ -131,7 +131,7 @@ inline const char* label(const char* key) {
     {"Ground grid", "地面网格###Ground grid"},
     {"Ground plane", "地面###Ground plane"},
     {"XYZ axes", "XYZ 坐标轴###XYZ axes"},
-    {"About MyRenderer", "关于 MyRenderer###About MyRenderer"},
+    {"About Iris", "关于 Iris###About Iris"},
     {"Close", "关闭###Close"},
     {"Import diagnostics", "导入诊断###Import diagnostics"},
     {"Enable animation", "启用动画###Enable animation"},

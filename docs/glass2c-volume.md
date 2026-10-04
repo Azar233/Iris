@@ -98,17 +98,17 @@ cmake --build build-mingw --target glass2c-visual-regression
 $env:MYRENDERER_SMOKE_TEST='1'; $env:MYRENDERER_RENDER_WIDTH='1920'; $env:MYRENDERER_RENDER_HEIGHT='1080'
 $env:MYRENDERER_HIDE_SELECTION_OUTLINE='1'; $env:MYRENDERER_MSAA='4'
 $env:MYRENDERER_SCREENSHOT='build-ci-msvc/glass2c_msaa4.png'
-build-ci-msvc/Release/MyRenderer.exe assets/models/glass_volume_sphere.gltf
+build-ci-msvc/Release/Iris.exe assets/models/glass_volume_sphere.gltf
 
 # 单张重拍：局部平行近似（双界面折射 Off）
 $env:MYRENDERER_TWO_INTERFACE_REFRACTION='0'
 $env:MYRENDERER_SCREENSHOT='build-ci-msvc/glass2c_approximate.png'
-build-ci-msvc/Release/MyRenderer.exe assets/models/glass_volume_sphere.gltf
+build-ci-msvc/Release/Iris.exe assets/models/glass_volume_sphere.gltf
 
 # 单张重拍：出射法线调试视图
 $env:MYRENDERER_TWO_INTERFACE_REFRACTION='1'; $env:MYRENDERER_GLASS_DEBUG='9'
 $env:MYRENDERER_SCREENSHOT='build-ci-msvc/glass2c_exit_normal.png'
-build-ci-msvc/Release/MyRenderer.exe assets/models/glass_volume_sphere.gltf
+build-ci-msvc/Release/Iris.exe assets/models/glass_volume_sphere.gltf
 ```
 
 ## 验证
@@ -154,7 +154,7 @@ cmake --build build-mingw --target glass2c-benchmark
 $env:MYRENDERER_SMOKE_TEST='1'; $env:MYRENDERER_RENDER_WIDTH='1920'; $env:MYRENDERER_RENDER_HEIGHT='1080'
 $env:MYRENDERER_HIDE_SELECTION_OUTLINE='1'; $env:MYRENDERER_MSAA='4'
 $env:MYRENDERER_SCREENSHOT='build-ci-msvc/glass2c_msaa4.png'
-build-ci-msvc/Release/MyRenderer.exe assets/models/glass_volume_sphere.gltf
+build-ci-msvc/Release/Iris.exe assets/models/glass_volume_sphere.gltf
 ```
 
 可直接覆盖的相关环境变量是 `MYRENDERER_MSAA`、`MYRENDERER_TWO_INTERFACE_REFRACTION`、`MYRENDERER_GLASS_DEBUG`、`MYRENDERER_HIDE_SELECTION_OUTLINE`、`MYRENDERER_RENDER_WIDTH`、`MYRENDERER_RENDER_HEIGHT` 与 `MYRENDERER_SCREENSHOT`。夹具的完整机位、两个实例与棋盘格背景由加载 `glass_volume_sphere.gltf`（或 `View -> Volume glass preset`）自动建立。

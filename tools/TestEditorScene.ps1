@@ -1,7 +1,7 @@
 param([string]$BuildDirectory = "build-ci-msvc")
 $ErrorActionPreference = 'Stop'
 $projectRoot = Split-Path $PSScriptRoot -Parent
-$executable = Join-Path $projectRoot "$BuildDirectory/Release/MyRenderer.exe"
+$executable = Join-Path $projectRoot "$BuildDirectory/Release/Iris.exe"
 $testDirectory = Join-Path $projectRoot "$BuildDirectory/editor-regression"
 New-Item -ItemType Directory -Force -Path $testDirectory | Out-Null
 $previousSmoke = $env:MYRENDERER_SMOKE_TEST

@@ -9,9 +9,9 @@
 | 文件 | 内容 | 重拍方式 |
 | --- | --- | --- |
 | `prism5_demo_reel.mp4` | Prism-5 确定性 360 帧参数动画，24 fps 编码为 15 秒 1280 × 720 作品集预览 | 见 [`../prism5-validation.md`](../prism5-validation.md)；PNG 序列只生成在构建目录，不入库 |
-| `p1-workspace-1440x900.png` | 默认 Dock 工作区：中央 Viewport、Scene Explorer、Inspector、底部多标签工作区 | `MYRENDERER_EDITOR_WINDOW_WIDTH=1440 MYRENDERER_EDITOR_WINDOW_HEIGHT=900` + `MYRENDERER_EDITOR_SCREENSHOT=docs/media/p1-workspace-1440x900.png` 运行 `build-ci-msvc/Release/MyRenderer.exe assets/scenes/fixtures/18_atmosphere_sky.myscene` |
+| `p1-workspace-1440x900.png` | 默认 Dock 工作区：中央 Viewport、Scene Explorer、Inspector、底部多标签工作区 | `MYRENDERER_EDITOR_WINDOW_WIDTH=1440 MYRENDERER_EDITOR_WINDOW_HEIGHT=900` + `MYRENDERER_EDITOR_SCREENSHOT=docs/media/p1-workspace-1440x900.png` 运行 `build-ci-msvc/Release/Iris.exe assets/scenes/fixtures/18_atmosphere_sky.myscene` |
 | `editor-unity-layout-1600x900.png` | 新版深灰编辑器布局：左侧 Hierarchy、中央 Scene、右侧 Inspector、跨左中区域的 Project 与资源分类侧栏 | 按根目录 README 的 1600×900 编辑器截图命令重拍 |
-| `p1-workspace-hierarchy-1440x900.png` | Scene Explorer 树形层级：一个根节点和四个子节点，统计默认折叠 | `MYRENDERER_SMOKE_TEST=1`、窗口 `1440×900`、`MYRENDERER_EDITOR_SCREENSHOT=docs/media/p1-workspace-hierarchy-1440x900.png`，运行 `build-ci-msvc/Release/MyRenderer.exe assets/scenes/fixtures/01_multi_model_hierarchy.myscene` |
+| `p1-workspace-hierarchy-1440x900.png` | Scene Explorer 树形层级：一个根节点和四个子节点，统计默认折叠 | `MYRENDERER_SMOKE_TEST=1`、窗口 `1440×900`、`MYRENDERER_EDITOR_SCREENSHOT=docs/media/p1-workspace-hierarchy-1440x900.png`，运行 `build-ci-msvc/Release/Iris.exe assets/scenes/fixtures/01_multi_model_hierarchy.myscene` |
 | `p1-workspace-1100x680.png` | 同一工作区在 1100 × 680 应用下限下的布局与可达性 | 同上，窗口尺寸改为 `1100` × `680` |
 | `p1-workspace-render-queue.png` | Render Queue 标签页：任务路径输入、Enqueue、空队列状态与恢复诊断 | 加 `MYRENDERER_EDITOR_SCREENSHOT_TAB=render-queue` |
 | `p1-workspace-modules.png` | Modules 标签页：真实 Module Registry 清单（ID / Name / Kind / Target / Source / API 版本 / Build ID） | 加 `MYRENDERER_EDITOR_SCREENSHOT_TAB=modules` |

@@ -1,8 +1,8 @@
 param(
     [Parameter(Mandatory = $true)]
     [string]$Source,
-    [string]$PngOutput = "assets/icons/myrenderer-icon.png",
-    [string]$IcoOutput = "assets/icons/myrenderer.ico"
+    [string]$PngOutput = "assets/icons/iris-icon.png",
+    [string]$IcoOutput = "assets/icons/iris.ico"
 )
 
 $ErrorActionPreference = "Stop"

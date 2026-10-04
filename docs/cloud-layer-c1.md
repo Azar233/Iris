@@ -86,10 +86,10 @@
 $env:MYRENDERER_SMOKE_TEST='1'
 $env:MYRENDERER_CLOUDS='0'
 $env:MYRENDERER_SCREENSHOT='build-ci-msvc/cloud-c1-off.png'
-build-ci-msvc/Release/MyRenderer.exe assets/scenes/fixtures/18_atmosphere_sky.myscene
+build-ci-msvc/Release/Iris.exe assets/scenes/fixtures/18_atmosphere_sky.myscene
 $env:MYRENDERER_CLOUDS='1'
 $env:MYRENDERER_SCREENSHOT='build-ci-msvc/cloud-c1-on.png'
-build-ci-msvc/Release/MyRenderer.exe assets/scenes/fixtures/18_atmosphere_sky.myscene
+build-ci-msvc/Release/Iris.exe assets/scenes/fixtures/18_atmosphere_sky.myscene
 Remove-Item Env:MYRENDERER_SMOKE_TEST, Env:MYRENDERER_CLOUDS, Env:MYRENDERER_SCREENSHOT
 ```
 
@@ -494,7 +494,7 @@ MSVC Release 全量 CTest 22/22 与完整 `gpu-smoke` 通过；MinGW Debug 编�
 
 ```powershell
 cmake --build build-ci-msvc --config Release --target cloud-field-parity cloud-march-parity asset-thumbnail-layout-acceptance
-cmake -E env MYRENDERER_SMOKE_TEST=1 MYRENDERER_RENDER_WIDTH=960 MYRENDERER_RENDER_HEIGHT=540 MYRENDERER_SCREENSHOT=build-ci-msvc/cloud-repaired-hero.png MYRENDERER_HIDE_SELECTION_OUTLINE=1 build-ci-msvc/Release/MyRenderer.exe assets/scenes/02_ocean_weather_hero.myscene
+cmake -E env MYRENDERER_SMOKE_TEST=1 MYRENDERER_RENDER_WIDTH=960 MYRENDERER_RENDER_HEIGHT=540 MYRENDERER_SCREENSHOT=build-ci-msvc/cloud-repaired-hero.png MYRENDERER_HIDE_SELECTION_OUTLINE=1 build-ci-msvc/Release/Iris.exe assets/scenes/02_ocean_weather_hero.myscene
 ```
 
 当前仍是程序化 Worley slab，形态距离参考图中的写实积云还有明显差距；后续 C4 的半分辨率时间重投影、真正 3D 噪声资产和远距离 LOD 仍是质量升级项。

@@ -56,7 +56,7 @@ UI 不直接改写渲染状态，而是提交命令；Application 在集中入�
 
 ### Render Queue 持久化
 
-Render Queue 状态默认持久化到 Windows `%LOCALAPPDATA%/MyRenderer/render-queue.json`；测试或便携运行可用 `MYRENDERER_RENDER_QUEUE_STATE` 指定路径。正常关闭时活动任务会在安全取消后保存为 Pending，下次启动依靠 Job 的完整帧 Resume 继续。
+Render Queue 状态默认持久化到 Windows `%LOCALAPPDATA%/MyRenderer/render-queue.json`；Iris 保留此路径以兼容既有队列。测试或便携运行可用 `MYRENDERER_RENDER_QUEUE_STATE` 指定路径。正常关闭时活动任务会在安全取消后保存为 Pending，下次启动依靠 Job 的完整帧 Resume 继续。
 
 ## 截图
 
@@ -67,7 +67,7 @@ $env:MYRENDERER_SMOKE_TEST='1'
 $env:MYRENDERER_EDITOR_WINDOW_WIDTH='1440'; $env:MYRENDERER_EDITOR_WINDOW_HEIGHT='900'
 $env:MYRENDERER_EDITOR_SCREENSHOT_TAB='modules'   # 或 render-queue；拍默认布局时省略
 $env:MYRENDERER_EDITOR_SCREENSHOT='docs/media/p1-workspace-1440x900.png'
-build-ci-msvc/Release/MyRenderer.exe assets/scenes/fixtures/18_atmosphere_sky.myscene
+build-ci-msvc/Release/Iris.exe assets/scenes/fixtures/18_atmosphere_sky.myscene
 ```
 
 默认工作区把 Viewport 留作主区域，同时让 Scene Explorer、Inspector 与底部多标签工作区在 1440×900 首屏内共存，底部仅占中央列约 30%。
@@ -80,7 +80,7 @@ build-ci-msvc/Release/MyRenderer.exe assets/scenes/fixtures/18_atmosphere_sky.my
 
 ![1440×900 默认工作区：Scene Explorer 显示一个根节点和四个子节点，Inspector 的 Object 页可见](media/p1-workspace-hierarchy-1440x900.png)
 
-复现：设置 `MYRENDERER_SMOKE_TEST=1`、`MYRENDERER_EDITOR_WINDOW_WIDTH=1440`、`MYRENDERER_EDITOR_WINDOW_HEIGHT=900`、`MYRENDERER_EDITOR_SCREENSHOT=docs/media/p1-workspace-hierarchy-1440x900.png`，运行 `build-ci-msvc/Release/MyRenderer.exe assets/scenes/fixtures/01_multi_model_hierarchy.myscene`。
+复现：设置 `MYRENDERER_SMOKE_TEST=1`、`MYRENDERER_EDITOR_WINDOW_WIDTH=1440`、`MYRENDERER_EDITOR_WINDOW_HEIGHT=900`、`MYRENDERER_EDITOR_SCREENSHOT=docs/media/p1-workspace-hierarchy-1440x900.png`，运行 `build-ci-msvc/Release/Iris.exe assets/scenes/fixtures/01_multi_model_hierarchy.myscene`。
 
 布局约束要求应用下限尺寸仍然可用，而不是只在 1440×900 下成立：1100×680 下各面板标签完整、内容可滚动，Viewport 仍是主区域。
 
@@ -120,7 +120,7 @@ cmake --build build-ci-msvc --config Release --target gpu-smoke
 ```powershell
 $env:MYRENDERER_SMOKE_TEST = "1"
 $env:MYRENDERER_EDITOR_INTERACTION_TEST = "1"
-.\build-ci-msvc\Release\MyRenderer.exe .\assets\models\cube.obj
+.\build-ci-msvc\Release\Iris.exe .\assets\models\cube.obj
 Remove-Item Env:MYRENDERER_SMOKE_TEST, Env:MYRENDERER_EDITOR_INTERACTION_TEST
 ```
 
@@ -151,7 +151,7 @@ ctest --test-dir build-ci-msvc -C Release -R "workspace-assets|editor-session" -
 # 真实 OpenGL 交互回归：逐领域应用、拒绝与恢复
 $env:MYRENDERER_SMOKE_TEST = "1"
 $env:MYRENDERER_EDITOR_INTERACTION_TEST = "1"
-.\build-ci-msvc\Release\MyRenderer.exe .\assets\models\cube.obj
+.\build-ci-msvc\Release\Iris.exe .\assets\models\cube.obj
 Remove-Item Env:MYRENDERER_SMOKE_TEST, Env:MYRENDERER_EDITOR_INTERACTION_TEST
 
 # 工作区插图：1440×900 默认布局；换 TAB 可拍 modules / render-queue
@@ -159,7 +159,7 @@ $env:MYRENDERER_SMOKE_TEST='1'
 $env:MYRENDERER_EDITOR_WINDOW_WIDTH='1440'; $env:MYRENDERER_EDITOR_WINDOW_HEIGHT='900'
 $env:MYRENDERER_EDITOR_SCREENSHOT_TAB='modules'
 $env:MYRENDERER_EDITOR_SCREENSHOT='docs/media/p1-workspace-modules.png'
-build-ci-msvc/Release/MyRenderer.exe assets/scenes/fixtures/18_atmosphere_sky.myscene
+build-ci-msvc/Release/Iris.exe assets/scenes/fixtures/18_atmosphere_sky.myscene
 ```
 
 ## 下一步

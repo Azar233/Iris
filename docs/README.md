@@ -1,4 +1,4 @@
-# MyRenderer 文档撰写规范
+# Iris 文档撰写规范
 
 本文档是 `docs/` 与 `docs/images/README.md` 的写作标准。它的读者是**后续写文档的人（或 AI Coding 会话）**，不是渲染器使用者。写新文档或审阅既有文档前先读这一页；`docs/reference-path-tracer.md` 是最完整的既有范例。
 
@@ -59,7 +59,7 @@
 
 复现：`MYRENDERER_SUN_ELEVATION=10 MYRENDERER_SUN_AZIMUTH=120
 MYRENDERER_SCREENSHOT=build-ci-msvc/p1a-keylight-after-golden.png
-build-ci-msvc/Release/MyRenderer.exe assets/scenes/fixtures/18_atmosphere_sky.myscene`
+build-ci-msvc/Release/Iris.exe assets/scenes/fixtures/18_atmosphere_sky.myscene`
 ```
 
 规则：

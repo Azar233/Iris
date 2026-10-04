@@ -106,7 +106,7 @@ $env:MYRENDERER_RENDER_WIDTH='1072'
 $env:MYRENDERER_RENDER_HEIGHT='559'
 $env:MYRENDERER_ANIMATION_TIME='1.25'
 $env:MYRENDERER_HIDE_SELECTION_OUTLINE='1'
-build-ci-msvc/Release/MyRenderer.exe assets/scenes/02_ocean_weather_hero.myscene
+build-ci-msvc/Release/Iris.exe assets/scenes/02_ocean_weather_hero.myscene
 ```
 
 旧图对照：复制 Hero 场景到构建目录，只将 `waterNearMeshFocus` 改为 `0.0`，可重拍上方八组波的阶段图；同时将 `waterWaveDiversity` 改为 `0.0`，可重拍无海底初版。两份对照文件仅用于本机构建目录的验证，不进入场景清单。

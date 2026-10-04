@@ -1,6 +1,20 @@
-# MyRenderer
+# Iris
 
-一个独立的 C++17 / OpenGL 3.3 GPU 光栅化渲染器与 Scene Rendering Lab。项目从 Dandelion 图形学实验框架中保留了模型、相机、材质与实时预览的设计思路；当前正在新增独立的 CPU Reference Path Tracer，不包含旧 CPU 软光栅化、物理模拟和半边网格模块。
+<p align="center">
+  <img src="assets/icons/iris-source.png" width="144" alt="Iris 鸢尾花图标" />
+</p>
+
+**A C++17 real-time and offline rendering playground.**
+
+Iris 是独立的图形学与渲染实验平台，包含 OpenGL 3.3 实时光栅化、CPU 离线路径追踪，以及共享场景数据的 Editor、Runtime 和批量渲染工作流。
+
+Iris is an independent graphics and rendering project that grew from my experience with the XJTU Graphics course framework, [Dandelion](https://github.com/XJTU-Graphics/dandelion).
+
+Iris（鸢尾花）延续 Dandelion（蒲公英）的植物命名，将课程中种下的图形学兴趣继续发展为自己的渲染实验平台。名字也呼应虹膜所代表的视觉与成像，以及希腊神话中 Iris 的彩虹意象，与项目中的光谱、棱镜、色散、玻璃、焦散和大气散射相联系。
+
+正式名称为 **Iris**，仓库为 [Azar233/Iris](https://github.com/Azar233/Iris)。应用图标采用第二版紫色鸢尾花，透明背景，沿左下到右上约 45° 生长。
+
+为兼容既有工作流，内部 CMake target（如 `MyRenderer`、`MyRendererBatch`）、`MYRENDERER_*` 环境变量、`myrenderer.core.*` 模块 ID、持久化格式标识与 `MyRenderer.*` 设置文件名保持稳定；应用输出已改为 `Iris.exe` 和 `IrisBatch.exe`，发布包使用 `Iris` 名称。
 
 当前版本可以加载 OBJ、DAE、glTF 2.0 和 GLB 静态模型，将网格与纹理上传到 GPU，按子网格材质范围通过 `glDrawElements` 完成多材质渲染，并在 Dear ImGui 界面中实时调整模型与渲染参数。
 
@@ -37,7 +51,7 @@ Post-MVP 阶段已将文件导入、CPU 模型数据、GPU 模型和渲染执行
 - P1-0C Module Runtime：`Timeline`（Frame/Time/FPS/Start-End/固定 `deltaTime`/Loop/Scrub，GUI 与 Batch 共用同一定义，时间只由帧号与固定帧率导出）、编辑态与可丢弃 `RuntimeScene` 的分离（含顺序无关、对变换敏感的 `sceneContentHash`）、`ISceneModule` 最小生命周期与受限 `SceneContext`（无 Widget/GL/线程句柄，宿主注入取消检查）、六类参数并带范围与事务性覆盖的 `ParameterRegistry`、按稳定字符串 ID 显式注册的 Module Registry/Manifest/Build ID、`ModuleRuntime` runner（只向前固定步进、起始帧也求值、失败隔离），以及独立 `MyRendererModules` 目标与首个确定性模块 `myrenderer.core.turntable`。Inspector 新增 `Module` 页：由参数元数据自动生成控件，Viewport 的 Raster 与 CPU Path Traced 预览都渲染模块驱动的运行态场景，编辑态不被写回。`.renderjob` schema 2 可用 `module` 段驱动渲染序列，Frame Report 记录模块 Manifest（id/API 版本/Build ID/Seed/内容哈希/状态），模块、版本或 Seed 变化都会让 Resume 帧失效；`simulate` 只运行并输出每帧内容哈希，`bake` 写出确定性 Simulation Cache（键含场景哈希/模块/版本/Build ID/Seed/时间步/帧范围，复用时重新哈希校验，陈旧或损坏一律报 `Stale` 并重新模拟）。`module-rendering-acceptance` 逐步验证 simulate/bake、缓存命中与无缓存序列逐字节一致、陈旧缓存被拒；实测两条独立 CLI 序列（含事务性 `--output` 覆盖）帧 PNG 逐字节一致。详见 [`docs/module-runtime.md`](docs/module-runtime.md)。
 - P1-A 切片 1 解析式天空与统一太阳：`src/optics/Atmosphere.*` 提供 Rayleigh/Mie 单次散射模型（Kasten-Young 气团、闭式指数积分、太阳盘与地面反照率），一个 `sunDirection()` 同时驱动环境立方体贴图（天空盒 + IBL）、方向光方向、阴影贴图与方向光能量；`skyIntensity`/`sunIntensity` 分别控制环境天空与关键光+日盘，`skyLightColor()` 让关键光携带逐通道太阳颜色。`.myscene` 持久化天空参数，Inspector 新增 `Atmosphere` 分组（`SetAtmosphereSettings` 域命令，场景启用时自动展开），太阳盘亮度锚定晴天地面照度比 `E_sun/E_sky≈10` 使环境下半球与受光地面一致，辐照度卷积刻意排除日盘以避免重复计算与萤火虫。重建成本约 0.6 s 并在控制台/Inspector 如实显示。模型、参数、验证与已知边界见 [`docs/atmosphere-sky.md`](docs/atmosphere-sky.md)。
 - P1-A 切片 2 Aerial Perspective：`opticalDepthAlongSegment()` 用同一套 Rayleigh/Mie 系数与同一气团约定积分相机到表面的有限线段，`verticalOpticalDepth()` 给出整根垂直气柱作为计量单位。合成在 `postprocess.frag`：复用已有的深度重建，因此不需要新增 render target，透明物体会与背后的几何一起淡出；顺序为 Height Fog → Aerial Perspective → 显示变换。in-scatter 取不含太阳盘的天顶/地平线天空色，保证射线走到无穷远时精确收敛到天空、零距离处不改变像素。`.myscene` 增加三个字段，Inspector 增加 `Aerial perspective` 子节。已知边界：CPU Path Tracer 尚未接入。实现、近似与 On/Off 证据见 [`docs/atmosphere-sky.md`](docs/atmosphere-sky.md)。
-- P1-A 切片 5 昼夜与海况序列：`myrenderer.core.coastal-sequence` 使用固定帧号驱动太阳、雾、风、波浪和相机。运行 `build-ci-msvc/Release/MyRenderer.exe raster-sequence assets/renderjobs/04_coastal_sequence.renderjob` 可输出 13 帧栅格 Beauty PNG；`coastal-sequence-acceptance` 验证两次输出逐帧一致。参数、截图与限制见 [`docs/coastal-sequence.md`](docs/coastal-sequence.md)。
+- P1-A 切片 5 昼夜与海况序列：`myrenderer.core.coastal-sequence` 使用固定帧号驱动太阳、雾、风、波浪和相机。运行 `build-ci-msvc/Release/Iris.exe raster-sequence assets/renderjobs/04_coastal_sequence.renderjob` 可输出 13 帧栅格 Beauty PNG；`coastal-sequence-acceptance` 验证两次输出逐帧一致。参数、截图与限制见 [`docs/coastal-sequence.md`](docs/coastal-sequence.md)。
 - P1-A 切片 6 C1 云层参数与 2D 解析云层：`AtmosphereParameters` 新增 12 个云层字段（默认关闭），云层与解析天空**共用同一个太阳**，并作为天空的一部分合成进环境立方体，因此 Raster skybox、预滤波镜面反射与 CPU Path Tracer 的等距柱状环境看到的是同一朵云。形状来自可平铺的 Worley fBm（**逐位精确平铺**，跨一个周期的采样完全相同），覆盖率是单调阈值，光照用双叶 Henyey-Greenstein 相位（球面积分为 1）并按仰角正确地在逆光剪影与受光云之间过渡。`.myscene` 逐字段往返，Inspector 有 `Cloud layer` 分组，`MYRENDERER_CLOUD*` 可驱动固定机位对照。**观感停在"高空薄云"**：单次采样 slab 在高仰角下必然产生细密纹理，C2 的 ray marched slab 才是解法；亮度标定由 `MyRendererCloudCalibration` 打印的云/天空亮度比表决定，并已被 `atmosphere-model` 断言。实现、契约、测量方法与限制见 [`docs/cloud-layer-c1.md`](docs/cloud-layer-c1.md)。
 - Debug 构建在驱动支持时启用 OpenGL `KHR_debug` 诊断。
 - Model/View/Projection 变换与基础 Blinn-Phong 光照。
@@ -49,7 +63,7 @@ Post-MVP 阶段已将文件导入、CPU 模型数据、GPU 模型和渲染执行
 - Prism-0～5 光谱 Demo：原创封闭三棱柱、纯黑舞台、固定正面镜头、CPU 双界面 Ray/Prism 求交，以及 380～700 nm 的 7/15/21/31 档波长采样；每个样本使用 Cauchy IOR、CIE 1931 近似线性 RGB、两界面 Fresnel 与 Beer-Lambert 能量。独立 `Spectral beam HDR` Pass 把结果生成相机朝向的柔边 Ribbon Mesh，支持连续光谱和七色美术模式，并提供固定视觉回归、性能报告和 Demo Reel。
 - 多对象 `RenderItem` 场景提交、跨对象透明 Draw List 全局排序，以及可调颜色/高度并能接收 PBR 光照与阴影的程序化地面；可开启第二模型实例验证场景级排序。
 - `Shadow map → Transmission shadow → Caustics HDR/filter → Forward Opaque 或 G-Buffer + Deferred Lighting → Forward refractive → Bloom/tone map` 多 Pass 管线；Opaque HDR Color、最终 HDR Scene Color 与可采样 Depth 相互独立，可切换 ACES Tone Mapping、曝光和 Bloom。
-- 简约棱镜应用图标，覆盖 GLFW 标题栏、任务栏、Alt+Tab 和 Windows 可执行文件资源。
+- 简约紫色鸢尾花应用图标，覆盖 GLFW 标题栏、任务栏、Alt+Tab 和 Windows 可执行文件资源。
 - 顶部菜单、模型列表、Scene 面板、Inspector 面板和运行状态。
 - Windows 原生模型文件选择器、窗口拖放加载与后台 CPU 资产导入；失败导入不会替换当前场景。
 - 按文件、节点、Mesh、材质和纹理分组的结构化诊断。
@@ -70,7 +84,7 @@ Post-MVP 阶段已将文件导入、CPU 模型数据、GPU 模型和渲染执行
 ```powershell
 cmake -S . -B build -G "Visual Studio 17 2022" -A x64 -T host=x64
 cmake --build build --config Debug --parallel
-.\build\Debug\MyRenderer.exe .\assets\models\bunny.obj
+.\build\Debug\Iris.exe .\assets\models\bunny.obj
 ```
 
 ## MinGW-w64 构建
@@ -78,7 +92,7 @@ cmake --build build --config Debug --parallel
 ```powershell
 cmake -S . -B build-mingw -G "MinGW Makefiles" -DCMAKE_BUILD_TYPE=Debug
 cmake --build build-mingw --parallel
-.\build-mingw\MyRenderer.exe .\assets\models\bunny.obj
+.\build-mingw\Iris.exe .\assets\models\bunny.obj
 ```
 
 不传模型参数时，程序默认加载 `assets/models/cube.obj`。
@@ -90,7 +104,7 @@ cmake --build build-mingw --parallel
 每个渲染场景都可以保存为一个独立的 `.myscene` JSON 文件。使用 `File / 文件` 菜单中的 `Open scene...`、`Save scene`、`Save scene as...` 和 `Reopen last scene`，快捷键分别为 `Ctrl+O`、`Ctrl+S`、`Ctrl+Shift+S`；也可以把场景文件作为启动参数直接打开：
 
 ```powershell
-.\build\Release\MyRenderer.exe .\assets\scenes\fixtures\01_multi_model_hierarchy.myscene
+.\build\Release\Iris.exe .\assets\scenes\fixtures\01_multi_model_hierarchy.myscene
 ```
 
 模型资源路径以场景文件所在目录为基准保存为相对路径，因此场景目录和它引用的资源目录保持相对布局后可以整体复制到另一台机器。打开场景时，编辑器先校验层级并加载全部唯一模型资源，只有全部成功才替换当前工作区；资源缺失或格式错误时现有场景仍会保留。最近一次成功保存或打开的路径记录在运行目录的 `MyRenderer.recent-scene`，可用 `Reopen last scene` 恢复。
@@ -130,7 +144,7 @@ ImGui 窗口支持拖动与 Docking，布局会保存到运行目录下的 `MyRe
 
 ### Editor UI 设计规范
 
-![MyRenderer 编辑器总览](docs/media/editor-unity-layout-1600x900.png)
+![Iris 编辑器总览](docs/media/editor-unity-layout-1600x900.png)
 
 界面采用中性深灰工作区：左侧 Hierarchy、中央 Scene、右侧 Inspector 和横跨左侧与中央的底部 Project。Project 在宽屏显示资源分类侧栏，窄面板回退到横向分类标签。背景、标签和普通按钮用相邻灰阶分层；蓝色仅用于选中、激活和拖拽反馈。
 
@@ -151,7 +165,7 @@ $env:MYRENDERER_EDITOR_WINDOW_WIDTH = "1600"
 $env:MYRENDERER_EDITOR_WINDOW_HEIGHT = "900"
 $env:MYRENDERER_EDITOR_SCREENSHOT_TAB = "assets"
 $env:MYRENDERER_EDITOR_SCREENSHOT = "docs/media/editor-unity-layout-1600x900.png"
-.\build-mingw\MyRenderer.exe .\assets\scenes\fixtures\01_multi_model_hierarchy.myscene
+.\build-mingw\Iris.exe .\assets\scenes\fixtures\01_multi_model_hierarchy.myscene
 Remove-Item Env:MYRENDERER_SMOKE_TEST, Env:MYRENDERER_EDITOR_WINDOW_WIDTH, Env:MYRENDERER_EDITOR_WINDOW_HEIGHT, Env:MYRENDERER_EDITOR_SCREENSHOT_TAB, Env:MYRENDERER_EDITOR_SCREENSHOT
 ```
 
@@ -179,7 +193,7 @@ ctest --test-dir build-mingw --output-on-failure
 
 ```powershell
 $env:MYRENDERER_SMOKE_TEST = "1"
-.\build-mingw\MyRenderer.exe .\assets\models\sphere.obj
+.\build-mingw\Iris.exe .\assets\models\sphere.obj
 Remove-Item Env:MYRENDERER_SMOKE_TEST
 ```
 
@@ -205,7 +219,7 @@ cmake --build build-ci-msvc --config Release --target stylized-benchmark
 $env:MYRENDERER_SMOKE_TEST = "1"
 $env:MYRENDERER_PRISM_DEMO = "1"
 $env:MYRENDERER_SCREENSHOT = ".\prism0_baseline.png"
-.\build-mingw\MyRenderer.exe
+.\build-mingw\Iris.exe
 Remove-Item Env:MYRENDERER_SMOKE_TEST, Env:MYRENDERER_PRISM_DEMO, Env:MYRENDERER_SCREENSHOT
 ```
 

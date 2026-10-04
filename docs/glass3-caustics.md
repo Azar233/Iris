@@ -104,7 +104,7 @@ cmake --build build-release --target glass3-visual-regression
 cmake --build build-release --target glass3-benchmark
 ```
 
-单张重拍时，`tools/Glass3VisualRegression.cmake` 使用的固定环境变量是 `MYRENDERER_GLASS3_DEMO=1`、`MYRENDERER_SMOKE_TEST=1`、`MYRENDERER_RENDER_WIDTH=1920`、`MYRENDERER_RENDER_HEIGHT=1080`、`MYRENDERER_HIDE_SELECTION_OUTLINE=1`、`MYRENDERER_GLASS_DEBUG=0`、`MYRENDERER_CAUSTICS=1`、`MYRENDERER_CAUSTICS_MODE=1`、`MYRENDERER_TRANSMISSION_SHADOWS=1`，每次都把 `MYRENDERER_SCREENSHOT` 指向目标文件，再运行 `build-release/Release/MyRenderer.exe`；六张之间只有下面这一列不同：
+单张重拍时，`tools/Glass3VisualRegression.cmake` 使用的固定环境变量是 `MYRENDERER_GLASS3_DEMO=1`、`MYRENDERER_SMOKE_TEST=1`、`MYRENDERER_RENDER_WIDTH=1920`、`MYRENDERER_RENDER_HEIGHT=1080`、`MYRENDERER_HIDE_SELECTION_OUTLINE=1`、`MYRENDERER_GLASS_DEBUG=0`、`MYRENDERER_CAUSTICS=1`、`MYRENDERER_CAUSTICS_MODE=1`、`MYRENDERER_TRANSMISSION_SHADOWS=1`，每次都把 `MYRENDERER_SCREENSHOT` 指向目标文件，再运行 `build-release/Release/Iris.exe`；六张之间只有下面这一列不同：
 
 | 基线图 | 覆盖的环境变量 |
 | --- | --- |
@@ -172,12 +172,12 @@ $env:MYRENDERER_HIDE_SELECTION_OUTLINE='1'; $env:MYRENDERER_GLASS_DEBUG='0'
 $env:MYRENDERER_CAUSTICS='1'; $env:MYRENDERER_CAUSTICS_MODE='0'
 $env:MYRENDERER_TRANSMISSION_SHADOWS='1'; $env:MYRENDERER_MSAA='4'
 $env:MYRENDERER_SCREENSHOT='build-release/glass3_projector.png'
-build-release/Release/MyRenderer.exe
+build-release/Release/Iris.exe
 
 # 单张重拍：透射阴影可见性调试视图
 $env:MYRENDERER_CAUSTICS_MODE='1'; $env:MYRENDERER_GLASS_DEBUG='12'
 $env:MYRENDERER_SCREENSHOT='build-release/glass3_transmission_shadow.png'
-build-release/Release/MyRenderer.exe
+build-release/Release/Iris.exe
 ```
 
 可直接覆盖的相关环境变量是 `MYRENDERER_GLASS3_DEMO`、`MYRENDERER_CAUSTICS`、`MYRENDERER_CAUSTICS_MODE`、`MYRENDERER_TRANSMISSION_SHADOWS`、`MYRENDERER_GLASS_DEBUG`、`MYRENDERER_MSAA`、`MYRENDERER_HIDE_SELECTION_OUTLINE`、`MYRENDERER_RENDER_WIDTH`、`MYRENDERER_RENDER_HEIGHT` 与 `MYRENDERER_SCREENSHOT`。夹具的机位、白色接收地面、黑场背景与 Crystal preset 由 `MYRENDERER_GLASS3_DEMO=1`（或 `View / Glass caustics preset`）自动建立。

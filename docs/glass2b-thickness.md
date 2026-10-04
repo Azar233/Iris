@@ -85,17 +85,17 @@ $env:MYRENDERER_SMOKE_TEST='1'; $env:MYRENDERER_RENDER_WIDTH='1920'; $env:MYREND
 $env:MYRENDERER_HIDE_SELECTION_OUTLINE='1'; $env:MYRENDERER_MSAA='4'
 $env:MYRENDERER_GEOMETRIC_THICKNESS='1'; $env:MYRENDERER_GLASS_DEBUG='5'
 $env:MYRENDERER_SCREENSHOT='build-ci-msvc/glass2b_geometric_thickness.png'
-build-ci-msvc/Release/MyRenderer.exe assets/models/glass_material_test.gltf
+build-ci-msvc/Release/Iris.exe assets/models/glass_material_test.gltf
 
 # 同一视图的厚度回退（Geometric glass thickness Off）
 $env:MYRENDERER_GEOMETRIC_THICKNESS='0'
 $env:MYRENDERER_SCREENSHOT='build-ci-msvc/glass2b_uniform_fallback.png'
-build-ci-msvc/Release/MyRenderer.exe assets/models/glass_material_test.gltf
+build-ci-msvc/Release/Iris.exe assets/models/glass_material_test.gltf
 
 # 入口/出口深度有效性
 $env:MYRENDERER_GEOMETRIC_THICKNESS='1'; $env:MYRENDERER_GLASS_DEBUG='8'
 $env:MYRENDERER_SCREENSHOT='build-ci-msvc/glass2b_front_back_debug.png'
-build-ci-msvc/Release/MyRenderer.exe assets/models/glass_material_test.gltf
+build-ci-msvc/Release/Iris.exe assets/models/glass_material_test.gltf
 ```
 
 ## 验证
@@ -138,7 +138,7 @@ $env:MYRENDERER_SMOKE_TEST='1'; $env:MYRENDERER_RENDER_WIDTH='1920'; $env:MYREND
 $env:MYRENDERER_HIDE_SELECTION_OUTLINE='1'; $env:MYRENDERER_MSAA='4'
 $env:MYRENDERER_GEOMETRIC_THICKNESS='1'; $env:MYRENDERER_GLASS_DEBUG='5'
 $env:MYRENDERER_SCREENSHOT='build-ci-msvc/glass2b_geometric_thickness.png'
-build-ci-msvc/Release/MyRenderer.exe assets/models/glass_material_test.gltf
+build-ci-msvc/Release/Iris.exe assets/models/glass_material_test.gltf
 ```
 
 ## 下一步

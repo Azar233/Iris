@@ -148,10 +148,10 @@ saveSimulationCache(path, cache, error);                                     // 
 下面四条命令都用仓库自带的 C++ Module 夹具 `assets/renderjobs/03_cpu_turntable_module.renderjob`：
 
 ```powershell
-MyRendererBatch.exe validate        assets/renderjobs/03_cpu_turntable_module.renderjob
-MyRendererBatch.exe simulate        assets/renderjobs/03_cpu_turntable_module.renderjob   # 只运行并报告每帧内容哈希，不写任何产物
-MyRendererBatch.exe bake            assets/renderjobs/03_cpu_turntable_module.renderjob   # 运行并写入 output.simulationCache
-MyRendererBatch.exe render-sequence assets/renderjobs/03_cpu_turntable_module.renderjob   # 命中缓存时复用，否则模拟
+IrisBatch.exe validate        assets/renderjobs/03_cpu_turntable_module.renderjob
+IrisBatch.exe simulate        assets/renderjobs/03_cpu_turntable_module.renderjob   # 只运行并报告每帧内容哈希，不写任何产物
+IrisBatch.exe bake            assets/renderjobs/03_cpu_turntable_module.renderjob   # 运行并写入 output.simulationCache
+IrisBatch.exe render-sequence assets/renderjobs/03_cpu_turntable_module.renderjob   # 命中缓存时复用，否则模拟
 ```
 
 `simulate` 与 `bake` 的区别是刻意的：前者是“把模块跑一遍并给出确定性证据”，后者是“产出可复用的确定性缓存”。没有 `module` 段（或 `bake` 没有 `simulationCache` 路径）返回 65；写入失败返回 74；模块失败返回 70。`render-frame` / `render-sequence` 每帧会打印 `simulation cache Hit|Missing|Stale` 与原因。
@@ -196,7 +196,7 @@ Inspector 增加 `Module` 页，把 C1 的数据变成可操作界面：
 
 `module-rendering-acceptance` 现在同时证明这条：同一个场景、同一个相机、同一帧。
 
-- **无模块**时，编辑器的 CPU Path Traced 预览与 `MyRendererBatch render-frame` 的 PNG **逐字节一致**（comparator MAE 0、changed 0%）。这是硬门槛：它证明场景快照、相机、灯光、采样与显示编码在两条路径上完全相同。
+- **无模块**时，编辑器的 CPU Path Traced 预览与 `IrisBatch render-frame` 的 PNG **逐字节一致**（comparator MAE 0、changed 0%）。这是硬门槛：它证明场景快照、相机、灯光、采样与显示编码在两条路径上完全相同。
 - **有模块**（第 12 帧）时两侧在 `MAE ≤ 1e-5`、changed `0%` 内一致；实测 MAE `4.8e-07`，即仅 1～2 个通道值差 1 个 LSB。差异只出现在模块改写变换的帧上：编辑器渲染自己的运行态副本，而批处理把结果写回场景文档后由自己的层级解析重新合成世界变换。这是最后一位的合成差异，不是积分器或采样差异，因此它按容差断言，并把实测值写在验收脚本注释里。
 
 ## 截图
@@ -210,7 +210,7 @@ $env:MYRENDERER_SMOKE_TEST='1'
 $env:MYRENDERER_EDITOR_WINDOW_WIDTH='1440'; $env:MYRENDERER_EDITOR_WINDOW_HEIGHT='900'
 $env:MYRENDERER_EDITOR_SCREENSHOT_TAB='modules'
 $env:MYRENDERER_EDITOR_SCREENSHOT='docs/media/p1-workspace-modules.png'
-build-ci-msvc/Release/MyRenderer.exe assets/scenes/fixtures/18_atmosphere_sky.myscene
+build-ci-msvc/Release/Iris.exe assets/scenes/fixtures/18_atmosphere_sky.myscene
 ```
 
 Inspector 的 `Module` 页在未选择模块时是显式空状态，而不是隐藏控件：选择框显示 `None`，`Seed` 字段仍然可见并保留上一次的值，页面写明未激活时不改写编辑态场景。
@@ -222,7 +222,7 @@ $env:MYRENDERER_SMOKE_TEST='1'
 $env:MYRENDERER_EDITOR_WINDOW_WIDTH='1440'; $env:MYRENDERER_EDITOR_WINDOW_HEIGHT='900'
 $env:MYRENDERER_EDITOR_SCREENSHOT_TAB='module'
 $env:MYRENDERER_EDITOR_SCREENSHOT='docs/media/c1-module-inspector.png'
-build-ci-msvc/Release/MyRenderer.exe assets/scenes/fixtures/18_atmosphere_sky.myscene
+build-ci-msvc/Release/Iris.exe assets/scenes/fixtures/18_atmosphere_sky.myscene
 ```
 
 除上面两张入库插图外，历史截图只写在构建目录，均未改写版本化 UI 或渲染固定图：Modules 页 1440×900 与 1100×680 的 `c1a-modules-panel.png` / `c1a-modules-panel-1100x680.png`，模块预览第 0 帧与第 6 帧的 `c1b-module-frame0.png` / `c1b-module-frame6.png`。
@@ -262,22 +262,22 @@ ctest --test-dir build-ci-msvc -C Release -R "runtime-timeline|module-runtime|ed
 cmake --build build-ci-msvc --config Release --target module-rendering-acceptance
 
 # 手工复现 simulate 与 bake 的区别
-./build-ci-msvc/Release/MyRendererBatch.exe validate assets/renderjobs/03_cpu_turntable_module.renderjob
-./build-ci-msvc/Release/MyRendererBatch.exe simulate assets/renderjobs/03_cpu_turntable_module.renderjob
-./build-ci-msvc/Release/MyRendererBatch.exe bake assets/renderjobs/03_cpu_turntable_module.renderjob
-./build-ci-msvc/Release/MyRendererBatch.exe render-sequence assets/renderjobs/03_cpu_turntable_module.renderjob
+./build-ci-msvc/Release/IrisBatch.exe validate assets/renderjobs/03_cpu_turntable_module.renderjob
+./build-ci-msvc/Release/IrisBatch.exe simulate assets/renderjobs/03_cpu_turntable_module.renderjob
+./build-ci-msvc/Release/IrisBatch.exe bake assets/renderjobs/03_cpu_turntable_module.renderjob
+./build-ci-msvc/Release/IrisBatch.exe render-sequence assets/renderjobs/03_cpu_turntable_module.renderjob
 
 # 插图重拍：Modules 页
 $env:MYRENDERER_SMOKE_TEST='1'
 $env:MYRENDERER_EDITOR_WINDOW_WIDTH='1440'; $env:MYRENDERER_EDITOR_WINDOW_HEIGHT='900'
 $env:MYRENDERER_EDITOR_SCREENSHOT_TAB='modules'
 $env:MYRENDERER_EDITOR_SCREENSHOT='docs/media/p1-workspace-modules.png'
-build-ci-msvc/Release/MyRenderer.exe assets/scenes/fixtures/18_atmosphere_sky.myscene
+build-ci-msvc/Release/Iris.exe assets/scenes/fixtures/18_atmosphere_sky.myscene
 
 # 插图重拍：Inspector 的 Module 页
 $env:MYRENDERER_EDITOR_SCREENSHOT_TAB='module'
 $env:MYRENDERER_EDITOR_SCREENSHOT='docs/media/c1-module-inspector.png'
-build-ci-msvc/Release/MyRenderer.exe assets/scenes/fixtures/18_atmosphere_sky.myscene
+build-ci-msvc/Release/Iris.exe assets/scenes/fixtures/18_atmosphere_sky.myscene
 ```
 
 ## 下一步

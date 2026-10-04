@@ -164,7 +164,7 @@ GP-P1E Skinning（`skinning-visual-regression`，阈值 MAE `0.01` / changed `0.
 以下图片版本化在 `docs/images/`，但按 [`../README.md`](../README.md) 第 3 节的分类属于说明性插图（UI、展示与外部参考），它们的重拍命令与归类需要确认；本次没有移动任何文件。
 
 - `p1-workspace-reference.png`：用户提供的 P1 GUI / Workspace 信息架构参考，只用于约束大视口、Scene Explorer / Inspector、底部多标签工作区与紧凑工具栏的方向；它不是渲染回归基线，也不要求像素级复刻。具体可借鉴项与禁止照搬项见 [`../../todolist.md`](../../todolist.md) 的「P1 GUI / Workspace 参考与约束」。
-- `editor-ui-overview.png`：MyRenderer 编辑器总览，在真实 OpenGL/ImGui 帧完成后捕获整个编辑器窗口，而不是只保存 Viewport 纹理；它支撑根 `README.md` 的 Editor UI 设计规范（`#0E0F10` → `#202126` 的中性黑灰分层，`#4D9EFF` 只用于选中/激活/拖拽反馈）。重拍：`MYRENDERER_SMOKE_TEST=1`、`MYRENDERER_EDITOR_SCREENSHOT=docs/images/editor-ui-overview.png`，运行 `.\build-mingw\MyRenderer.exe .\assets\models\cube.obj`。
+- `editor-ui-overview.png`：Iris 编辑器总览，在真实 OpenGL/ImGui 帧完成后捕获整个编辑器窗口，而不是只保存 Viewport 纹理；它支撑根 `README.md` 的 Editor UI 设计规范（`#0E0F10` → `#202126` 的中性黑灰分层，`#4D9EFF` 只用于选中/激活/拖拽反馈）。重拍：`MYRENDERER_SMOKE_TEST=1`、`MYRENDERER_EDITOR_SCREENSHOT=docs/images/editor-ui-overview.png`，运行 `.\build-mingw\Iris.exe .\assets\models\cube.obj`。
 - `editor-ui-renderer-drawers.png`：Renderer 抽屉与两列属性布局；仓库中没有记录它的重拍命令（待补）。
 - `polyhaven-studio-lounge.png`：`13_polyhaven_studio_lounge` 展示场景（暖色室内陈列，验证复杂 glTF 材质、Alpha 植物、局部灯光、阴影与构图）的截图，用于根 `README.md` 展示；仓库中没有记录它的重拍命令（待补）。
 - `polyhaven-material-gallery.png`：`14_polyhaven_material_gallery` 中性材质展台（集中验收织物/木材、石材、陶瓷和氧化金属）的截图，用于根 `README.md` 展示；仓库中没有记录它的重拍命令（待补）。

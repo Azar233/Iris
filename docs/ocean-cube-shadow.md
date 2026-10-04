@@ -35,7 +35,7 @@
 ```powershell
 $env:MYRENDERER_SMOKE_TEST='1'
 $env:MYRENDERER_SCREENSHOT='build-ci-msvc/ocean-cube-shadow.png'
-build-ci-msvc/Release/MyRenderer.exe assets/scenes/fixtures/25_ocean_cube_shadow.myscene
+build-ci-msvc/Release/Iris.exe assets/scenes/fixtures/25_ocean_cube_shadow.myscene
 Remove-Item Env:MYRENDERER_SMOKE_TEST,Env:MYRENDERER_SCREENSHOT
 ```
 
