@@ -29,9 +29,9 @@ void mainImage( out vec4 fragColor, in vec2 fragCoord )
         vec2 uv = q + vec2(sin(phi), cos(phi))*r;
         sum += textureLod(iChannel0, uv, 0.0);
     }
-    const float BLOOM_AMOUNT = 0.05;
+    float BLOOM_AMOUNT = 0.05 * uBloomStrength;
     sum.xyz = mix(textureLod(iChannel0, q, 0.0).xyz, sum.xyz / NUM_SAMPLES, BLOOM_AMOUNT);
     // Make it look as if some auto exposure magic is going on
-    float exposure = 0.06 * (1.0+0.2*sin(0.5*iTime)*sin(1.8*iTime));
+    float exposure = 0.06 * uExposure * (1.0+0.2*sin(0.5*iTime)*sin(1.8*iTime));
     fragColor = vec4(tonemapACES(exposure*sum.xyz), 1.0);
 }

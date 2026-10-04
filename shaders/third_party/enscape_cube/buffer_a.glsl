@@ -15,9 +15,9 @@ const vec3 LOW_SCATTER = vec3(1.0, 0.7, 0.5);
 // Procedural generation mostly from TDM https://www.shadertoy.com/view/Ms2SD1
 const int ITER_GEOMETRY = 3;
 const int ITER_FRAGMENT = 5;
-const float SEA_HEIGHT = 0.6;
-const float SEA_CHOPPY = 4.0;
-const float SEA_FREQ = 0.16;
+#define SEA_HEIGHT uWaveHeight
+#define SEA_CHOPPY uWaveChoppiness
+#define SEA_FREQ uWaveFrequency
 const vec3 SEA_BASE = 8.0*vec3(0.1,0.21,0.35);
 
 // Cube parameters
@@ -104,7 +104,7 @@ float clouds(vec3 p, out float cloudHeight, bool fast)
     float largeWeather = clamp((textureLod(iChannel0, -0.00005*p.zx, 0.0).x-0.18)*5.0, 0.0, 2.0);
     p.x += iTime*8.3;
     float weather = largeWeather*max(0.0, textureLod(iChannel0, 0.0002*p.zx, 0.0).x-0.28)/0.72;
-    weather *= smoothstep(0.0, 0.5, cloudHeight) * smoothstep(1.0, 0.5, cloudHeight);
+    weather *= uCloudCoverage * smoothstep(0.0, 0.5, cloudHeight) * smoothstep(1.0, 0.5, cloudHeight);
     float cloudShape = pow(weather, 0.3+1.5*smoothstep(0.2, 0.5, cloudHeight));
     if(cloudShape <= 0.0)
         return 0.0;
@@ -211,7 +211,7 @@ float mapWater(vec3 p, int steps, bool cube) {
     vec2 uv = p.xz; uv.x *= 0.75;
 
     float d, h = 0.0;
-    const float SEA_SPEED = 0.8;
+    float SEA_SPEED = uWaveSpeed;
     const mat2 octave_m = mat2(1.6,1.2,-1.2,1.6);
     float seaTime = (1.0 + iTime * SEA_SPEED);
     for(int i = 0; i < steps; i++)
@@ -288,7 +288,7 @@ float D_GGX(in float r, in float NoH, in vec3 h)
 
 float castRay( in vec3 ro, in vec3 rd, in float tmin)
 {
-    float tmax = 10.0;
+    float tmax = max(10.0, length(ro) + 10.0);
 #if 1
     float maxY = 3.0;
     float minY = -1.0;
@@ -369,7 +369,8 @@ vec3 getSeaColor(in vec3 p, in vec3 N, in vec3 sun_direction, in vec3 dir, in ve
     vec3 reflection = skyRay(p, L, sun_direction, true);
     if(cubeRes != -1.)
         reflection = renderCubeFast(p, L, sun_direction, cubeRes);
-    vec3 color = mix(cloudShadow*SEA_BASE, reflection, fresnel);
+    vec3 color = mix(cloudShadow*SEA_BASE, reflection,
+        clamp(fresnel * uReflectionStrength, 0.0, 1.0));
     float subsurfaceAmount = 12.0*HenyeyGreenstein(mu, 0.5);
     const vec3 SEA_WATER_COLOR = 0.6*vec3(0.8,0.9,0.6);
     color += subsurfaceAmount * SEA_WATER_COLOR * max(0.0, 1.0+p.y - 0.6*SEA_HEIGHT);
@@ -469,30 +470,55 @@ void mainImage( out vec4 fragColor, in vec2 fragCoord )
     vec2 q = fragCoord.xy / iResolution.xy;
     vec2 v = -1.0 + 2.0*q;
     v.x *= iResolution.x/ iResolution.y;
-    vec2 mo = iMouse.xy / iResolution.xy;
-
-    float camRot = -7.0*mo.x;
-    vec3 org = (vec3(6.0*cos(camRot), mix(2.2, 10.0, mo.y), 6.0*sin(camRot)));
-    vec3 ta = vec3(0.0, mix(1.2, 12.0, mo.y), 0.0);
-
-    if (iMouse.z < 0.)
-    {
-        vec3 offset = -0.4*vec3(-5.7, 0.0, 1.6);
-        ta = vec3(0.0, 2.9, 0.0)+offset;
-        org = vec3(1.6, 3.1, 5.7)+offset;
-    }
-
-    vec3 ww = normalize( ta - org);
-    vec3 uu = normalize(cross( vec3(0.0,1.0,0.0), ww ));
-    vec3 vv = normalize(cross(ww,uu));
-    vec3 dir = normalize( v.x*uu + v.y*vv + 1.4*ww );
+    vec3 org = uCameraPosition;
+    vec3 dir = normalize(uCameraForward + uCameraTanHalfFov *
+        (v.x * uCameraRight + v.y * uCameraUp));
     vec3 color=vec3(.0);
-    vec3 sun_direction = normalize( vec3(0.6,0.45,-0.8) );
+    vec3 sun_direction = normalize(uSunDirection);
     float fogDistance = intersectSphere(org, dir, vec3(0.0, -EARTH_RADIUS, 0.0), EARTH_RADIUS);
     float mu = dot(sun_direction, dir);
 
     setupCubeForm();
-    float cubeRes = castRay(org, dir, 2.0);
+    float cubeRes = castRay(org, dir, max(uCameraNear, 0.001));
+
+    // The original camera stays above the ocean. Give the editor camera a
+    // bounded underwater view so crossing the surface does not expose an
+    // uninitialised height-map hit as a flat grey half-screen.
+    if (mapWater(org, ITER_GEOMETRY, false) < 0.0)
+    {
+        vec3 underwater = vec3(0.18, 2.8, 4.8) *
+            (0.7 + 0.3 * clamp(dir.y + 0.5, 0.0, 1.0));
+        float surfaceDistance = 1e5;
+        if (dir.y > 0.02)
+        {
+            surfaceDistance = max(0.01, (1.2 - org.y) / dir.y);
+            for (int iteration = 0; iteration < 5; ++iteration)
+            {
+                float surfaceError = mapWater(org + dir * surfaceDistance,
+                    ITER_GEOMETRY, false);
+                surfaceDistance = clamp(surfaceDistance - surfaceError / dir.y,
+                    0.01, 1e5);
+            }
+            if (surfaceDistance < 80.0)
+            {
+                vec3 sky = skyRay(org + dir * surfaceDistance, dir,
+                    sun_direction, true);
+                float transmission = exp(-0.8 * surfaceDistance) *
+                    smoothstep(0.02, 0.18, dir.y);
+                underwater = mix(underwater, sky * vec3(0.25, 0.65, 0.8),
+                    transmission);
+            }
+        }
+        if (cubeRes > 0.0 && cubeRes < surfaceDistance)
+        {
+            vec3 cube = renderCube(org, dir, sun_direction, cubeRes);
+            vec3 transmittance = exp(-cubeRes * vec3(0.6, 0.24, 0.12));
+            underwater = mix(underwater, cube * transmittance,
+                exp(-0.35 * cubeRes));
+        }
+        fragColor = vec4(underwater, 1.0);
+        return;
+    }
 
     // Sky
     if(fogDistance == -1. && cubeRes == -1.)

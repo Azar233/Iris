@@ -124,8 +124,22 @@ struct GpuPassTiming {
     std::size_t measurementSerial{0};
 };
 
+struct EnscapeCubeSettings {
+    float waveHeight{0.6f};
+    float waveFrequency{0.16f};
+    float waveChoppiness{4.0f};
+    float waveSpeed{0.8f};
+    float cloudCoverage{1.0f};
+    float reflectionStrength{1.0f};
+    float sunAzimuthDegrees{143.1301f};
+    float sunElevationDegrees{24.2277f};
+    float bloomStrength{1.0f};
+    float exposure{1.0f};
+};
+
 struct RendererSettings {
     bool enscapeCubeShaderEnabled{false};
+    EnscapeCubeSettings enscapeCube;
     glm::vec3 backgroundColor{0.055f, 0.065f, 0.085f};
     glm::vec3 baseColor{1.0f};
     glm::vec3 lightDirection{-0.45f, -0.8f, -0.35f};

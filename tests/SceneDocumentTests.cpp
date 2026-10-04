@@ -35,6 +35,16 @@ int main() {
         source.camera.fieldOfViewDegrees = 39.0f;
         source.renderer.renderPath = RenderPath::Deferred;
         source.renderer.enscapeCubeShaderEnabled = true;
+        source.renderer.enscapeCube.waveHeight = 0.93f;
+        source.renderer.enscapeCube.waveFrequency = 0.22f;
+        source.renderer.enscapeCube.waveChoppiness = 5.2f;
+        source.renderer.enscapeCube.waveSpeed = 1.3f;
+        source.renderer.enscapeCube.cloudCoverage = 0.7f;
+        source.renderer.enscapeCube.reflectionStrength = 1.4f;
+        source.renderer.enscapeCube.sunAzimuthDegrees = -75.0f;
+        source.renderer.enscapeCube.sunElevationDegrees = 36.0f;
+        source.renderer.enscapeCube.bloomStrength = 1.6f;
+        source.renderer.enscapeCube.exposure = 1.25f;
         source.renderer.backgroundColor = glm::vec3(0.01f, 0.02f, 0.03f);
         source.renderer.ssaoEnabled = true;
         source.renderer.bloomIntensity = 0.37f;
@@ -215,6 +225,21 @@ int main() {
         require(close(firstLoad.camera.distance, 7.5f), "camera survives first load");
         require(firstLoad.renderer.enscapeCubeShaderEnabled,
             "GLSL study mode survives first load");
+        const auto sameOceanSettings = [](const EnscapeCubeSettings& a,
+            const EnscapeCubeSettings& b) {
+            return close(a.waveHeight, b.waveHeight)
+                && close(a.waveFrequency, b.waveFrequency)
+                && close(a.waveChoppiness, b.waveChoppiness)
+                && close(a.waveSpeed, b.waveSpeed)
+                && close(a.cloudCoverage, b.cloudCoverage)
+                && close(a.reflectionStrength, b.reflectionStrength)
+                && close(a.sunAzimuthDegrees, b.sunAzimuthDegrees)
+                && close(a.sunElevationDegrees, b.sunElevationDegrees)
+                && close(a.bloomStrength, b.bloomStrength)
+                && close(a.exposure, b.exposure);
+        };
+        require(sameOceanSettings(firstLoad.renderer.enscapeCube,
+            source.renderer.enscapeCube), "GLSL ocean controls survive first load");
 
         require(saveSceneDocument(scenePath, firstLoad, error), error.c_str());
         SceneDocument secondLoad;
@@ -226,6 +251,8 @@ int main() {
         require(close(secondLoad.renderer.bloomIntensity, 0.37f), "renderer settings survive repeated load");
         require(secondLoad.renderer.enscapeCubeShaderEnabled,
             "GLSL study mode survives repeated load");
+        require(sameOceanSettings(secondLoad.renderer.enscapeCube,
+            source.renderer.enscapeCube), "GLSL ocean controls survive repeated load");
         require(secondLoad.renderer.shadingMode == ShadingMode::Stylized
                 && secondLoad.renderer.stylizedPreset == StylizedPreset::NightAurora
                 && secondLoad.renderer.stylizedBandCount == 4
@@ -289,8 +316,13 @@ int main() {
                 }
                 if (entry.path().filename() == "03_enscape_ocean_study.myscene") {
                     require(example.entities.empty()
-                        && example.renderer.enscapeCubeShaderEnabled,
-                        "ocean study must use the isolated four-pass GLSL renderer");
+                        && example.renderer.enscapeCubeShaderEnabled
+                        && close(example.camera.target.x, -2.28f)
+                        && close(example.camera.target.z, -0.64f)
+                        && close(example.camera.fieldOfViewDegrees, 71.0753556f)
+                        && close(example.renderer.enscapeCube.waveHeight, 0.6f)
+                        && close(example.renderer.enscapeCube.sunAzimuthDegrees, -53.1301f),
+                        "ocean study must save the engine camera and GLSL defaults");
                 }
                 if (entry.path().filename() == "18_atmosphere_sky.myscene") {
                     require(!example.renderer.atmosphere.cloudHalfResolution

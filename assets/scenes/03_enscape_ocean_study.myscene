@@ -3,14 +3,14 @@
   "version": 1,
   "camera": {
     "target": [
-      0.0,
-      3.8,
-      -30.0
+      -2.28,
+      2.9,
+      -0.64
     ],
-    "yawDegrees": -4.0,
-    "pitchDegrees": 2.0,
-    "distance": 16.0,
-    "fieldOfViewDegrees": 46.0,
+    "yawDegrees": 47.22115129223356,
+    "pitchDegrees": 1.3651309967886975,
+    "distance": 8.394974687275715,
+    "fieldOfViewDegrees": 71.07535558394876,
     "farPlane": 1600.0
   },
   "playback": {
@@ -99,7 +99,17 @@
     "cloudAmbientScale": 0.9,
     "temporalAaEnabled": true,
     "localLights": [],
-    "enscapeCubeShaderEnabled": true
+    "enscapeCubeShaderEnabled": true,
+    "enscapeWaveHeight": 0.6,
+    "enscapeWaveFrequency": 0.16,
+    "enscapeWaveChoppiness": 4.0,
+    "enscapeWaveSpeed": 0.8,
+    "enscapeCloudCoverage": 1.0,
+    "enscapeReflectionStrength": 1.0,
+    "enscapeBloomStrength": 1.0,
+    "enscapeExposure": 1.0,
+    "enscapeSunAzimuthDegrees": -53.13010235415598,
+    "enscapeSunElevationDegrees": 24.22774531795417
   },
   "entities": []
 }

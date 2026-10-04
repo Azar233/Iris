@@ -9,6 +9,8 @@
 #include <glad/gl.h>
 
 #include "render/RenderTarget.h"
+#include "render/Camera.h"
+#include "render/Renderer.h"
 #include "render/Shader.h"
 
 namespace {
@@ -130,13 +132,33 @@ void EnscapeCubeRenderer::resize(int width, int height) {
 }
 
 void EnscapeCubeRenderer::draw(Shader& shader, unsigned int framebuffer,
-    int width, int height, float timeSeconds, unsigned int fullscreenVertexArray) {
+    int width, int height, float timeSeconds, unsigned int fullscreenVertexArray,
+    const Camera& camera, const EnscapeCubeSettings& parameters) {
     glBindFramebuffer(GL_FRAMEBUFFER, framebuffer);
     glViewport(0, 0, width, height);
     shader.use();
     shader.setVec3("iResolution", {static_cast<float>(width), static_cast<float>(height), 1.0f});
     shader.setFloat("iTime", timeSeconds);
-    shader.setVec4("iMouse", {0.0f, 0.0f, -1.0f, 0.0f});
+    shader.setVec3("uCameraPosition", camera.position());
+    shader.setVec3("uCameraForward", camera.forwardDirection());
+    shader.setVec3("uCameraRight", camera.rightDirection());
+    shader.setVec3("uCameraUp", camera.upDirection());
+    shader.setFloat("uCameraTanHalfFov",
+        std::tan(camera.fieldOfView() * 0.008726646259971648f));
+    shader.setFloat("uCameraNear", camera.nearPlane());
+    shader.setFloat("uWaveHeight", parameters.waveHeight);
+    shader.setFloat("uWaveFrequency", parameters.waveFrequency);
+    shader.setFloat("uWaveChoppiness", parameters.waveChoppiness);
+    shader.setFloat("uWaveSpeed", parameters.waveSpeed);
+    shader.setFloat("uCloudCoverage", parameters.cloudCoverage);
+    shader.setFloat("uReflectionStrength", parameters.reflectionStrength);
+    constexpr float degreesToRadians = 0.017453292519943295f;
+    const float azimuth = parameters.sunAzimuthDegrees * degreesToRadians;
+    const float elevation = parameters.sunElevationDegrees * degreesToRadians;
+    shader.setVec3("uSunDirection", {std::cos(elevation) * std::sin(azimuth),
+        std::sin(elevation), std::cos(elevation) * std::cos(azimuth)});
+    shader.setFloat("uBloomStrength", parameters.bloomStrength);
+    shader.setFloat("uExposure", parameters.exposure);
     shader.setInt("iChannel0", 0);
     shader.setInt("iChannel1", 1);
     shader.setInt("iChannel2", 2);
@@ -145,9 +167,29 @@ void EnscapeCubeRenderer::draw(Shader& shader, unsigned int framebuffer,
     glDrawArrays(GL_TRIANGLES, 0, 3);
 }
 
-void EnscapeCubeRenderer::render(RenderTarget& target, int width, int height,
+void EnscapeCubeRenderer::render(RenderTarget& target, const Camera& camera,
+    const RendererSettings& settings, int width, int height,
     float timeSeconds, unsigned int fullscreenVertexArray) {
     resize(width, height);
+    const glm::mat4 viewProjection = camera.projectionMatrix(static_cast<float>(width) / height)
+        * camera.viewMatrix();
+    if (!cameraValid_) {
+        historyValid_ = false;
+    } else {
+        for (int column = 0; column < 4; ++column) {
+            for (int row = 0; row < 4; ++row) {
+                if (std::abs(viewProjection[column][row] - previousViewProjection_[column][row])
+                    > 1.0e-5f) historyValid_ = false;
+            }
+        }
+    }
+    const auto& parameters = settings.enscapeCube;
+    const std::array<float, 10> parameterKey{parameters.waveHeight,
+        parameters.waveFrequency, parameters.waveChoppiness, parameters.waveSpeed,
+        parameters.cloudCoverage, parameters.reflectionStrength,
+        parameters.sunAzimuthDegrees, parameters.sunElevationDegrees,
+        parameters.bloomStrength, parameters.exposure};
+    if (!parametersValid_ || parameterKey != previousParameters_) historyValid_ = false;
     if (std::abs(timeSeconds - previousTime_) > 0.25f) historyValid_ = false;
     glDisable(GL_DEPTH_TEST);
     glDisable(GL_BLEND);
@@ -158,18 +200,21 @@ void EnscapeCubeRenderer::render(RenderTarget& target, int width, int height,
     glBindTexture(GL_TEXTURE_2D, weatherTexture_);
     glActiveTexture(GL_TEXTURE2);
     glBindTexture(GL_TEXTURE_3D, volumeTexture_);
-    draw(*shaders_[0], framebuffers_[0], width, height, timeSeconds, fullscreenVertexArray);
+    draw(*shaders_[0], framebuffers_[0], width, height, timeSeconds,
+        fullscreenVertexArray, camera, parameters);
 
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, textures_[0]);
-    draw(*shaders_[1], framebuffers_[1], width, height, timeSeconds, fullscreenVertexArray);
+    draw(*shaders_[1], framebuffers_[1], width, height, timeSeconds,
+        fullscreenVertexArray, camera, parameters);
 
     const unsigned int outputHistory = 2U + (historyIndex_ ^ 1U);
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, textures_[1]);
     glActiveTexture(GL_TEXTURE1);
     glBindTexture(GL_TEXTURE_2D, historyValid_ ? textures_[2U + historyIndex_] : textures_[1]);
-    draw(*shaders_[2], framebuffers_[outputHistory], width, height, timeSeconds, fullscreenVertexArray);
+    draw(*shaders_[2], framebuffers_[outputHistory], width, height, timeSeconds,
+        fullscreenVertexArray, camera, parameters);
     historyIndex_ ^= 1U;
     historyValid_ = true;
 
@@ -181,7 +226,7 @@ void EnscapeCubeRenderer::render(RenderTarget& target, int width, int height,
     GLint finalFramebuffer = 0;
     glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &finalFramebuffer);
     draw(*shaders_[3], static_cast<unsigned int>(finalFramebuffer), width, height,
-        timeSeconds, fullscreenVertexArray);
+        timeSeconds, fullscreenVertexArray, camera, parameters);
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
     glUseProgram(0);
     glBindVertexArray(0);
@@ -193,4 +238,8 @@ void EnscapeCubeRenderer::render(RenderTarget& target, int width, int height,
     glBindTexture(GL_TEXTURE_3D, 0);
     glActiveTexture(GL_TEXTURE0);
     previousTime_ = timeSeconds;
+    previousViewProjection_ = viewProjection;
+    previousParameters_ = parameterKey;
+    cameraValid_ = true;
+    parametersValid_ = true;
 }

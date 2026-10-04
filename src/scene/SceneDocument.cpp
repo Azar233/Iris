@@ -45,6 +45,16 @@ void writeMatrix(Writer& writer, const glm::mat4& value) {
 void writeRendererSettings(Writer& writer, const RendererSettings& settings) {
     writer.StartObject();
     writer.Key("enscapeCubeShaderEnabled"); writer.Bool(settings.enscapeCubeShaderEnabled);
+    writer.Key("enscapeWaveHeight"); writer.Double(settings.enscapeCube.waveHeight);
+    writer.Key("enscapeWaveFrequency"); writer.Double(settings.enscapeCube.waveFrequency);
+    writer.Key("enscapeWaveChoppiness"); writer.Double(settings.enscapeCube.waveChoppiness);
+    writer.Key("enscapeWaveSpeed"); writer.Double(settings.enscapeCube.waveSpeed);
+    writer.Key("enscapeCloudCoverage"); writer.Double(settings.enscapeCube.cloudCoverage);
+    writer.Key("enscapeReflectionStrength"); writer.Double(settings.enscapeCube.reflectionStrength);
+    writer.Key("enscapeSunAzimuthDegrees"); writer.Double(settings.enscapeCube.sunAzimuthDegrees);
+    writer.Key("enscapeSunElevationDegrees"); writer.Double(settings.enscapeCube.sunElevationDegrees);
+    writer.Key("enscapeBloomStrength"); writer.Double(settings.enscapeCube.bloomStrength);
+    writer.Key("enscapeExposure"); writer.Double(settings.enscapeCube.exposure);
 #define WRITE_FLOAT(field) writer.Key(#field); writer.Double(settings.field)
 #define WRITE_INT(field) writer.Key(#field); writer.Int(settings.field)
 #define WRITE_BOOL(field) writer.Key(#field); writer.Bool(settings.field)
@@ -285,6 +295,26 @@ void readRendererSettings(const scene_json::Value& value, RendererSettings& sett
 #define READ_BOOL(field) settings.field = readBool(value, #field, settings.field)
 #define READ_VEC3(field) settings.field = readVec3(value, #field, settings.field)
     READ_BOOL(enscapeCubeShaderEnabled);
+    settings.enscapeCube.waveHeight = std::clamp(readFloat(value, "enscapeWaveHeight",
+        settings.enscapeCube.waveHeight), 0.05f, 1.5f);
+    settings.enscapeCube.waveFrequency = std::clamp(readFloat(value, "enscapeWaveFrequency",
+        settings.enscapeCube.waveFrequency), 0.04f, 0.5f);
+    settings.enscapeCube.waveChoppiness = std::clamp(readFloat(value, "enscapeWaveChoppiness",
+        settings.enscapeCube.waveChoppiness), 1.0f, 8.0f);
+    settings.enscapeCube.waveSpeed = std::clamp(readFloat(value, "enscapeWaveSpeed",
+        settings.enscapeCube.waveSpeed), 0.0f, 2.0f);
+    settings.enscapeCube.cloudCoverage = std::clamp(readFloat(value, "enscapeCloudCoverage",
+        settings.enscapeCube.cloudCoverage), 0.0f, 2.0f);
+    settings.enscapeCube.reflectionStrength = std::clamp(readFloat(value,
+        "enscapeReflectionStrength", settings.enscapeCube.reflectionStrength), 0.0f, 2.0f);
+    settings.enscapeCube.sunAzimuthDegrees = std::clamp(readFloat(value,
+        "enscapeSunAzimuthDegrees", settings.enscapeCube.sunAzimuthDegrees), -180.0f, 180.0f);
+    settings.enscapeCube.sunElevationDegrees = std::clamp(readFloat(value,
+        "enscapeSunElevationDegrees", settings.enscapeCube.sunElevationDegrees), 1.0f, 85.0f);
+    settings.enscapeCube.bloomStrength = std::clamp(readFloat(value,
+        "enscapeBloomStrength", settings.enscapeCube.bloomStrength), 0.0f, 3.0f);
+    settings.enscapeCube.exposure = std::clamp(readFloat(value, "enscapeExposure",
+        settings.enscapeCube.exposure), 0.25f, 3.0f);
     READ_VEC3(backgroundColor); READ_VEC3(baseColor); READ_VEC3(lightDirection);
     READ_FLOAT(ambientStrength); READ_FLOAT(diffuseStrength); READ_FLOAT(specularStrength);
     READ_FLOAT(shininess); READ_INT(msaaSamples);

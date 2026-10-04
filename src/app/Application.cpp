@@ -2019,8 +2019,27 @@ void Application::drawInspectorPanel() {
                 ImGui::EndDisabled();
             }
             if (EditorUi::section("Lighting & environment", true)) {
-            if (EditorUi::Checkbox("Enscape Cube GLSL study", &rendererSettings_.enscapeCubeShaderEnabled)) {
+            if (EditorUi::Checkbox(EditorUi::label("Enscape Cube GLSL study"), &rendererSettings_.enscapeCubeShaderEnabled)) {
                 renderer_->invalidateTemporalHistory();
+            }
+            if (rendererSettings_.enscapeCubeShaderEnabled) {
+                auto& ocean = rendererSettings_.enscapeCube;
+                ImGui::SeparatorText(EditorUi::chinese ? "GLSL 海面参数" : "GLSL ocean controls");
+                bool changed = false;
+                changed |= EditorUi::SliderFloat(EditorUi::label("GLSL wave height"), &ocean.waveHeight, 0.05f, 1.5f, "%.2f");
+                changed |= EditorUi::SliderFloat(EditorUi::label("GLSL wave frequency"), &ocean.waveFrequency, 0.04f, 0.5f, "%.3f");
+                changed |= EditorUi::SliderFloat(EditorUi::label("GLSL choppiness"), &ocean.waveChoppiness, 1.0f, 8.0f, "%.2f");
+                changed |= EditorUi::SliderFloat(EditorUi::label("GLSL wave speed"), &ocean.waveSpeed, 0.0f, 2.0f, "%.2f");
+                changed |= EditorUi::SliderFloat(EditorUi::label("GLSL cloud coverage"), &ocean.cloudCoverage, 0.0f, 2.0f, "%.2f");
+                changed |= EditorUi::SliderFloat(EditorUi::label("GLSL reflection"), &ocean.reflectionStrength, 0.0f, 2.0f, "%.2f");
+                changed |= EditorUi::SliderFloat(EditorUi::label("GLSL sun azimuth"), &ocean.sunAzimuthDegrees, -180.0f, 180.0f, "%.0f deg");
+                changed |= EditorUi::SliderFloat(EditorUi::label("GLSL sun elevation"), &ocean.sunElevationDegrees, 1.0f, 85.0f, "%.0f deg");
+                changed |= EditorUi::SliderFloat(EditorUi::label("GLSL bloom"), &ocean.bloomStrength, 0.0f, 3.0f, "%.2f");
+                changed |= EditorUi::SliderFloat(EditorUi::label("GLSL exposure"), &ocean.exposure, 0.25f, 3.0f, "%.2f");
+                if (changed) renderer_->invalidateTemporalHistory();
+                ImGui::TextWrapped("%s", EditorUi::chinese
+                    ? "此模式使用 GLSL 内部光照；普通 SSAO 参数不适用。"
+                    : "This mode uses GLSL lighting; regular SSAO controls do not apply.");
             }
             EditorUi::Checkbox("Metallic-roughness PBR", &rendererSettings_.pbrEnabled);
             EditorUi::Checkbox("Image-based lighting", &rendererSettings_.iblEnabled);

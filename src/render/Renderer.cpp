@@ -231,7 +231,7 @@ void Renderer::render(
             enscapeCubeRenderer_ = std::make_unique<EnscapeCubeRenderer>(
                 shaderDirectory_);
         }
-        enscapeCubeRenderer_->render(*renderTarget_, width, height,
+        enscapeCubeRenderer_->render(*renderTarget_, camera, settings, width, height,
             settings.water.timeSeconds, fullscreenVertexArray_);
         activePassNames_ = {"Enscape Cube: ocean and clouds", "Enscape Cube: bloom and tone map",
             "Enscape Cube: TAA", "Enscape Cube: final image"};
