@@ -1040,8 +1040,8 @@ int Application::run(const std::filesystem::path& initialModel) {
         }
         ImGui::Render();
         if (thumbnailAcceptance) {
-            const ImGuiWindow* workspace = ImGui::FindWindowByName(EditorUi::label("Workspace###Workspace"));
-            const ImGuiWindow* viewport = ImGui::FindWindowByName(EditorUi::label("Viewport###Viewport"));
+            const ImGuiWindow* workspace = ImGui::FindWindowByName(EditorUi::label("Project###Workspace"));
+            const ImGuiWindow* viewport = ImGui::FindWindowByName(EditorUi::label("Scene###Viewport"));
             int windowWidth = 0, windowHeight = 0;
             glfwGetWindowSize(window_, &windowWidth, &windowHeight);
             if (workspace != nullptr && viewport != nullptr && workspace->Size.y > 0.0f) {
@@ -1168,8 +1168,8 @@ int Application::run(const std::filesystem::path& initialModel) {
             && std::any_of(uploadedThumbnails_.begin(), uploadedThumbnails_.end(),
                 [](const auto& entry) { return entry.second.texture != 0U; }));
     if (thumbnailAcceptance) {
-        const ImGuiWindow* workspace = ImGui::FindWindowByName(EditorUi::label("Workspace###Workspace"));
-        const ImGuiWindow* viewport = ImGui::FindWindowByName(EditorUi::label("Viewport###Viewport"));
+        const ImGuiWindow* workspace = ImGui::FindWindowByName(EditorUi::label("Project###Workspace"));
+        const ImGuiWindow* viewport = ImGui::FindWindowByName(EditorUi::label("Scene###Viewport"));
         std::cout << "1100x680 thumbnail layout and upload: "
             << (thumbnailAcceptancePassed ? "PASS" : "FAIL")
             << " (checked=" << thumbnailLayoutChecked
@@ -1300,7 +1300,7 @@ void Application::initializeGui() {
     const bool automatedRun = std::getenv("MYRENDERER_SMOKE_TEST") != nullptr
         || benchmarkMode_ || prismReelMode_;
     // Hidden regression/benchmark windows must not overwrite the interactive layout.
-    io.IniFilename = automatedRun ? nullptr : "MyRenderer.editor.ini";
+    io.IniFilename = automatedRun ? nullptr : "MyRenderer.editor.v2.ini";
 
     EditorUi::initialize(io);
     ImGui::StyleColorsDark();
@@ -1310,17 +1310,17 @@ void Application::initializeGui() {
     style.PopupRounding = 2.0f;
     style.FrameRounding = 2.0f;
     style.GrabRounding = 2.0f;
-    style.TabRounding = 2.0f;
+    style.TabRounding = 0.0f;
     style.ScrollbarRounding = 2.0f;
     style.WindowBorderSize = 1.0f;
     style.ChildBorderSize = 1.0f;
     style.PopupBorderSize = 1.0f;
-    style.FrameBorderSize = 1.0f;
+    style.FrameBorderSize = 0.0f;
     style.TabBorderSize = 0.0f;
-    style.WindowPadding = ImVec2(8.0f, 8.0f);
-    style.FramePadding = ImVec2(7.0f, 4.0f);
-    style.ItemSpacing = ImVec2(8.0f, 6.0f);
-    style.ItemInnerSpacing = ImVec2(6.0f, 4.0f);
+    style.WindowPadding = ImVec2(7.0f, 6.0f);
+    style.FramePadding = ImVec2(6.0f, 3.0f);
+    style.ItemSpacing = ImVec2(6.0f, 5.0f);
+    style.ItemInnerSpacing = ImVec2(5.0f, 4.0f);
     style.CellPadding = ImVec2(6.0f, 4.0f);
     style.IndentSpacing = 16.0f;
     style.ScrollbarSize = 13.0f;
@@ -1328,44 +1328,44 @@ void Application::initializeGui() {
     style.WindowMinSize = EditorUi::minimumDockedPanelSize;
 
     ImVec4* colors = style.Colors;
-    colors[ImGuiCol_Text] = ImVec4(0.86f, 0.87f, 0.89f, 1.0f);
-    colors[ImGuiCol_TextDisabled] = ImVec4(0.48f, 0.50f, 0.54f, 1.0f);
-    colors[ImGuiCol_WindowBg] = ImVec4(0.075f, 0.078f, 0.086f, 1.0f);
-    colors[ImGuiCol_ChildBg] = ImVec4(0.068f, 0.071f, 0.078f, 1.0f);
-    colors[ImGuiCol_PopupBg] = ImVec4(0.09f, 0.094f, 0.102f, 0.98f);
-    colors[ImGuiCol_Border] = ImVec4(0.23f, 0.24f, 0.27f, 1.0f);
+    colors[ImGuiCol_Text] = ImVec4(0.84f, 0.85f, 0.86f, 1.0f);
+    colors[ImGuiCol_TextDisabled] = ImVec4(0.57f, 0.59f, 0.61f, 1.0f);
+    colors[ImGuiCol_WindowBg] = ImVec4(0.18f, 0.19f, 0.20f, 1.0f);
+    colors[ImGuiCol_ChildBg] = ImVec4(0.16f, 0.17f, 0.18f, 1.0f);
+    colors[ImGuiCol_PopupBg] = ImVec4(0.18f, 0.19f, 0.20f, 0.99f);
+    colors[ImGuiCol_Border] = ImVec4(0.10f, 0.11f, 0.12f, 1.0f);
     colors[ImGuiCol_BorderShadow] = ImVec4(0.0f, 0.0f, 0.0f, 0.0f);
-    colors[ImGuiCol_FrameBg] = ImVec4(0.12f, 0.125f, 0.138f, 1.0f);
-    colors[ImGuiCol_FrameBgHovered] = ImVec4(0.17f, 0.18f, 0.20f, 1.0f);
-    colors[ImGuiCol_FrameBgActive] = ImVec4(0.20f, 0.21f, 0.23f, 1.0f);
-    colors[ImGuiCol_TitleBg] = ImVec4(0.055f, 0.057f, 0.063f, 1.0f);
-    colors[ImGuiCol_TitleBgActive] = ImVec4(0.09f, 0.094f, 0.103f, 1.0f);
-    colors[ImGuiCol_MenuBarBg] = ImVec4(0.085f, 0.088f, 0.096f, 1.0f);
-    colors[ImGuiCol_ScrollbarBg] = ImVec4(0.055f, 0.057f, 0.063f, 1.0f);
-    colors[ImGuiCol_ScrollbarGrab] = ImVec4(0.25f, 0.26f, 0.29f, 1.0f);
-    colors[ImGuiCol_ScrollbarGrabHovered] = ImVec4(0.34f, 0.35f, 0.38f, 1.0f);
-    colors[ImGuiCol_ScrollbarGrabActive] = ImVec4(0.42f, 0.44f, 0.48f, 1.0f);
-    colors[ImGuiCol_CheckMark] = ImVec4(0.30f, 0.62f, 1.0f, 1.0f);
-    colors[ImGuiCol_SliderGrab] = ImVec4(0.35f, 0.63f, 0.96f, 1.0f);
-    colors[ImGuiCol_SliderGrabActive] = ImVec4(0.48f, 0.73f, 1.0f, 1.0f);
-    colors[ImGuiCol_Button] = ImVec4(0.14f, 0.145f, 0.16f, 1.0f);
-    colors[ImGuiCol_ButtonHovered] = ImVec4(0.20f, 0.21f, 0.23f, 1.0f);
-    colors[ImGuiCol_ButtonActive] = ImVec4(0.11f, 0.115f, 0.128f, 1.0f);
-    colors[ImGuiCol_Header] = ImVec4(0.14f, 0.145f, 0.16f, 1.0f);
-    colors[ImGuiCol_HeaderHovered] = ImVec4(0.20f, 0.21f, 0.23f, 1.0f);
-    colors[ImGuiCol_HeaderActive] = ImVec4(0.16f, 0.34f, 0.58f, 1.0f);
-    colors[ImGuiCol_Separator] = ImVec4(0.23f, 0.24f, 0.27f, 1.0f);
-    colors[ImGuiCol_SeparatorHovered] = ImVec4(0.36f, 0.59f, 0.88f, 1.0f);
-    colors[ImGuiCol_SeparatorActive] = ImVec4(0.30f, 0.62f, 1.0f, 1.0f);
-    colors[ImGuiCol_ResizeGrip] = ImVec4(0.30f, 0.62f, 1.0f, 0.18f);
-    colors[ImGuiCol_ResizeGripHovered] = ImVec4(0.30f, 0.62f, 1.0f, 0.55f);
-    colors[ImGuiCol_ResizeGripActive] = ImVec4(0.30f, 0.62f, 1.0f, 0.85f);
-    colors[ImGuiCol_Tab] = ImVec4(0.09f, 0.094f, 0.103f, 1.0f);
-    colors[ImGuiCol_TabHovered] = ImVec4(0.18f, 0.28f, 0.41f, 1.0f);
-    colors[ImGuiCol_TabSelected] = ImVec4(0.14f, 0.24f, 0.36f, 1.0f);
-    colors[ImGuiCol_TabSelectedOverline] = ImVec4(0.30f, 0.62f, 1.0f, 1.0f);
-    colors[ImGuiCol_DockingPreview] = ImVec4(0.30f, 0.62f, 1.0f, 0.65f);
-    colors[ImGuiCol_DockingEmptyBg] = ImVec4(0.055f, 0.057f, 0.063f, 1.0f);
+    colors[ImGuiCol_FrameBg] = ImVec4(0.22f, 0.23f, 0.24f, 1.0f);
+    colors[ImGuiCol_FrameBgHovered] = ImVec4(0.28f, 0.29f, 0.30f, 1.0f);
+    colors[ImGuiCol_FrameBgActive] = ImVec4(0.32f, 0.34f, 0.36f, 1.0f);
+    colors[ImGuiCol_TitleBg] = ImVec4(0.15f, 0.16f, 0.17f, 1.0f);
+    colors[ImGuiCol_TitleBgActive] = ImVec4(0.22f, 0.23f, 0.24f, 1.0f);
+    colors[ImGuiCol_MenuBarBg] = ImVec4(0.16f, 0.17f, 0.18f, 1.0f);
+    colors[ImGuiCol_ScrollbarBg] = ImVec4(0.14f, 0.15f, 0.16f, 1.0f);
+    colors[ImGuiCol_ScrollbarGrab] = ImVec4(0.32f, 0.33f, 0.34f, 1.0f);
+    colors[ImGuiCol_ScrollbarGrabHovered] = ImVec4(0.39f, 0.40f, 0.41f, 1.0f);
+    colors[ImGuiCol_ScrollbarGrabActive] = ImVec4(0.45f, 0.46f, 0.48f, 1.0f);
+    colors[ImGuiCol_CheckMark] = ImVec4(0.36f, 0.58f, 0.78f, 1.0f);
+    colors[ImGuiCol_SliderGrab] = ImVec4(0.42f, 0.62f, 0.80f, 1.0f);
+    colors[ImGuiCol_SliderGrabActive] = ImVec4(0.51f, 0.72f, 0.91f, 1.0f);
+    colors[ImGuiCol_Button] = ImVec4(0.23f, 0.24f, 0.25f, 1.0f);
+    colors[ImGuiCol_ButtonHovered] = ImVec4(0.30f, 0.31f, 0.32f, 1.0f);
+    colors[ImGuiCol_ButtonActive] = ImVec4(0.34f, 0.36f, 0.38f, 1.0f);
+    colors[ImGuiCol_Header] = ImVec4(0.23f, 0.24f, 0.25f, 1.0f);
+    colors[ImGuiCol_HeaderHovered] = ImVec4(0.30f, 0.32f, 0.34f, 1.0f);
+    colors[ImGuiCol_HeaderActive] = ImVec4(0.24f, 0.36f, 0.47f, 1.0f);
+    colors[ImGuiCol_Separator] = ImVec4(0.12f, 0.13f, 0.14f, 1.0f);
+    colors[ImGuiCol_SeparatorHovered] = ImVec4(0.34f, 0.50f, 0.65f, 1.0f);
+    colors[ImGuiCol_SeparatorActive] = ImVec4(0.40f, 0.60f, 0.79f, 1.0f);
+    colors[ImGuiCol_ResizeGrip] = ImVec4(0.38f, 0.56f, 0.71f, 0.18f);
+    colors[ImGuiCol_ResizeGripHovered] = ImVec4(0.38f, 0.56f, 0.71f, 0.55f);
+    colors[ImGuiCol_ResizeGripActive] = ImVec4(0.38f, 0.56f, 0.71f, 0.85f);
+    colors[ImGuiCol_Tab] = ImVec4(0.18f, 0.19f, 0.20f, 1.0f);
+    colors[ImGuiCol_TabHovered] = ImVec4(0.29f, 0.32f, 0.35f, 1.0f);
+    colors[ImGuiCol_TabSelected] = ImVec4(0.24f, 0.25f, 0.26f, 1.0f);
+    colors[ImGuiCol_TabSelectedOverline] = ImVec4(0.39f, 0.59f, 0.78f, 1.0f);
+    colors[ImGuiCol_DockingPreview] = ImVec4(0.39f, 0.59f, 0.78f, 0.65f);
+    colors[ImGuiCol_DockingEmptyBg] = ImVec4(0.14f, 0.15f, 0.16f, 1.0f);
 
     if (!ImGui_ImplGlfw_InitForOpenGL(window_, true)) {
         throw std::runtime_error("Failed to initialize the ImGui GLFW backend");
@@ -1565,9 +1565,9 @@ void Application::drawMainMenu() {
         ImGui::MenuItem(EditorUi::label("Auto rotate"), nullptr, &autoRotate_);
         ImGui::Separator();
         if (ImGui::BeginMenu(EditorUi::label("Panels"))) {
-            ImGui::MenuItem(EditorUi::label("Scene Explorer###Hierarchy"), nullptr, &hierarchyPanelOpen_);
+            ImGui::MenuItem(EditorUi::label("Hierarchy###Hierarchy"), nullptr, &hierarchyPanelOpen_);
             ImGui::MenuItem(EditorUi::label("Inspector###Inspector"), nullptr, &inspectorPanelOpen_);
-            ImGui::MenuItem(EditorUi::label("Workspace###Workspace"), nullptr, &assetsPanelOpen_);
+            ImGui::MenuItem(EditorUi::label("Project###Workspace"), nullptr, &assetsPanelOpen_);
             ImGui::EndMenu();
         }
         ImGui::EndMenu();
@@ -3037,7 +3037,7 @@ void Application::updateModulePreview() {
 
 void Application::drawViewportPanel() {
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
-    const bool visible = ImGui::Begin(EditorUi::label("Viewport###Viewport"));
+    const bool visible = ImGui::Begin(EditorUi::label("Scene###Viewport"));
     ImGui::PopStyleVar();
     if (!visible) {
         ImGui::End();
@@ -3101,9 +3101,9 @@ void Application::drawViewportPanel() {
     ImGui::SameLine();
     if (ImGui::SmallButton(EditorUi::label("Panels"))) ImGui::OpenPopup("ViewportPanels");
     if (ImGui::BeginPopup("ViewportPanels")) {
-        ImGui::MenuItem(EditorUi::label("Scene Explorer###Hierarchy"), nullptr, &hierarchyPanelOpen_);
+        ImGui::MenuItem(EditorUi::label("Hierarchy###Hierarchy"), nullptr, &hierarchyPanelOpen_);
         ImGui::MenuItem(EditorUi::label("Inspector###Inspector"), nullptr, &inspectorPanelOpen_);
-        ImGui::MenuItem(EditorUi::label("Workspace###Workspace"), nullptr, &assetsPanelOpen_);
+        ImGui::MenuItem(EditorUi::label("Project###Workspace"), nullptr, &assetsPanelOpen_);
         ImGui::EndPopup();
     }
     ImGui::SameLine();

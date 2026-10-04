@@ -123,20 +123,20 @@ cmake --build build-mingw --parallel
 - View / `Glass caustics preset`：加载透明水晶球、白色接收地面与固定高机位，默认启用 Light-space RGB 焦散、彩色透射阴影和空间滤波；可即时切到 Projector / Decal 做美术对照。
 - View / `Local light stress preset`：加载 10×10 立方体固定舞台，并在 Renderer 面板选择 8/32/64 档 Point/Spot 灯光；切换 Forward/Deferred 可查看相同画面下的活动 Pass、Draw Call 与估算 Opaque Attachment 流量。
 - 渲染视口：点击 Viewport 后可用 `W/A/S/D` 沿观察方向自由移动，`Shift` 下降、`Space` 上升；鼠标右键拖动旋转相机，中键拖动平移，滚轮缩放。文本框获得输入焦点时不会移动相机；工具栏或 File 菜单可将当前解析后画面保存为 PNG。
-- 面板收纳：使用视口工具栏 `Panels` 或 `View > Panels` 显示/隐藏 Scene Explorer、Inspector 和 Workspace；`Reset layout` 会恢复完整默认工作区。
+- 面板收纳：使用场景工具栏 `Panels` 或 `View > Panels` 显示/隐藏 Hierarchy、Inspector 和 Project；`Reset layout` 会恢复完整默认工作区。
 - `Esc`：退出程序。
 
-ImGui 窗口支持拖动与 Docking，布局会保存到运行目录下的 `MyRenderer.editor.ini`。应用窗口最小为 1100×680，Dock 叶节点最小为 260×120；启动时会自动修复旧配置中小于该界限的异常布局。隐藏的 Smoke Test、Benchmark 与 Demo Reel 不会写入交互布局文件。
+ImGui 窗口支持拖动与 Docking，布局会保存到运行目录下的 `MyRenderer.editor.v2.ini`。应用窗口最小为 1100×680，Dock 叶节点最小为 260×120；启动时会自动修复小于该界限的异常布局。旧版 `MyRenderer.editor.ini` 保留，第一次启动新版界面会使用新的默认布局。隐藏的 Smoke Test、Benchmark 与 Demo Reel 不会写入交互布局文件。
 
 ### Editor UI 设计规范
 
-![MyRenderer 编辑器总览](docs/images/editor-ui-overview.png)
+![MyRenderer 编辑器总览](docs/media/editor-unity-layout-1600x900.png)
 
-界面采用成熟游戏引擎常见的中性黑灰工作区：背景从 `#0E0F10` 到 `#202126` 分层，边框与普通按钮保持低饱和灰色；`#4D9EFF` 只用于选中、激活和拖拽反馈。不要用大面积高饱和颜色区分普通层级，也不要为单个功能再引入一套强调色。
+界面采用中性深灰工作区：左侧 Hierarchy、中央 Scene、右侧 Inspector 和横跨左侧与中央的底部 Project。Project 在宽屏显示资源分类侧栏，窄面板回退到横向分类标签。背景、标签和普通按钮用相邻灰阶分层；蓝色仅用于选中、激活和拖拽反馈。
 
 ![Renderer 抽屉与两列属性布局](docs/images/editor-ui-renderer-drawers.png)
 
-- 布局：Viewport 永远是主工作区；Hierarchy、Inspector 与 Content Browser 是可收纳辅助面板。新增默认布局时必须同时满足 1100×680 应用下限和 260×120 面板下限。
+- 布局：Scene 永远是主工作区；Hierarchy、Inspector 与 Project 是可收纳辅助面板。新增默认布局时必须同时满足 1100×680 应用下限和 260×120 面板下限。
 - 属性：Inspector 参数必须放进语义清晰的折叠分组，并通过 `EditorUi::section` 创建；高频基础分组可默认展开，诊断、压力测试和高级光学分组默认折叠。
 - 控件：滑块、输入框、颜色和下拉框统一使用 `EditorUi` 属性控件，以保持左侧标签、右侧值的两列结构。不要在面板中直接依赖 ImGui 默认的“控件后置标签”布局。
 - 状态：工具栏布尔项使用紧凑状态按钮；中性灰表示关闭，蓝色表示开启。操作说明在宽视口中直接显示，空间不足时由悬停提示承接，不能挤压渲染区域。
@@ -147,9 +147,12 @@ ImGui 窗口支持拖动与 Docking，布局会保存到运行目录下的 `MyRe
 
 ```powershell
 $env:MYRENDERER_SMOKE_TEST = "1"
-$env:MYRENDERER_EDITOR_SCREENSHOT = "docs/images/editor-ui-overview.png"
-.\build-mingw\MyRenderer.exe .\assets\models\cube.obj
-Remove-Item Env:MYRENDERER_SMOKE_TEST, Env:MYRENDERER_EDITOR_SCREENSHOT
+$env:MYRENDERER_EDITOR_WINDOW_WIDTH = "1600"
+$env:MYRENDERER_EDITOR_WINDOW_HEIGHT = "900"
+$env:MYRENDERER_EDITOR_SCREENSHOT_TAB = "assets"
+$env:MYRENDERER_EDITOR_SCREENSHOT = "docs/media/editor-unity-layout-1600x900.png"
+.\build-mingw\MyRenderer.exe .\assets\scenes\fixtures\01_multi_model_hierarchy.myscene
+Remove-Item Env:MYRENDERER_SMOKE_TEST, Env:MYRENDERER_EDITOR_WINDOW_WIDTH, Env:MYRENDERER_EDITOR_WINDOW_HEIGHT, Env:MYRENDERER_EDITOR_SCREENSHOT_TAB, Env:MYRENDERER_EDITOR_SCREENSHOT
 ```
 
 ## 支持范围与格式路线

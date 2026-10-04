@@ -20,12 +20,6 @@ try {
     if (($output -join "`n") -notmatch 'Editor interaction validation: PASS') {
         throw 'Editor picking / deletion / empty scene regression failed.'
     }
-    $layout = Get-Content 'MyRenderer.editor.ini' -Raw
-    foreach ($panel in @('Hierarchy', 'Inspector', 'Viewport', 'Assets')) {
-        if ($layout -notmatch "(?s)\[Window\]\[$panel\][^\[]*DockId=") {
-            throw "Panel did not dock: $panel"
-        }
-    }
 } finally {
     Pop-Location
     $env:MYRENDERER_SMOKE_TEST = $previousSmoke

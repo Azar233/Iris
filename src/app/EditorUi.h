@@ -15,19 +15,18 @@ inline void setLanguage(bool value) { chinese = value; std::ofstream("MyRenderer
 inline void initialize(ImGuiIO& io) {
   std::string language; std::ifstream("MyRenderer.language") >> language; chinese = language != "en";
   for (const char* font : {"C:/Windows/Fonts/msyh.ttc", "C:/Windows/Fonts/simhei.ttf", "C:/Windows/Fonts/simsun.ttc"}) {
-    if (std::filesystem::exists(font) && io.Fonts->AddFontFromFileTTF(font, 18.0f, nullptr, io.Fonts->GetGlyphRangesChineseFull())) { chineseFontAvailable = true; break; }
+    if (std::filesystem::exists(font) && io.Fonts->AddFontFromFileTTF(font, 16.0f, nullptr, io.Fonts->GetGlyphRangesChineseFull())) { chineseFontAvailable = true; break; }
   }
   if (!chineseFontAvailable) chinese = false;
   io.MouseDrawCursor = false;
 }
 inline const char* label(const char* key) {
   static const std::unordered_map<std::string, std::string> values {
-    {"Hierarchy###Hierarchy", "场景层级###Hierarchy"},
-    {"Scene Explorer###Hierarchy", "场景浏览器###Hierarchy"},
+    {"Hierarchy###Hierarchy", "层级###Hierarchy"},
     {"Inspector###Inspector", "检查器###Inspector"},
-    {"Viewport###Viewport", "场景视口###Viewport"},
+    {"Scene###Viewport", "场景###Viewport"},
     {"Content Browser###Assets", "资源浏览器###Assets"},
-    {"Workspace###Workspace", "工作区###Workspace"},
+    {"Project###Workspace", "项目###Workspace"},
     {"New empty scene", "新建空场景###New empty scene"},
     {"Open scene...", "打开场景…###Open scene..."},
     {"Reopen last scene", "恢复最近场景###Reopen last scene"},

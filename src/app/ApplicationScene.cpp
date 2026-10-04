@@ -43,8 +43,8 @@ bool hasUndersizedDockLeaf(const ImGuiDockNode* node) {
             || hasUndersizedDockLeaf(node->ChildNodes[1]);
     }
     if (node->Windows.empty()) return false;
-    return node->Size.x + 1.0f < EditorUi::minimumDockedPanelSize.x
-        || node->Size.y + 1.0f < EditorUi::minimumDockedPanelSize.y;
+    return node->Size.x + 8.0f < EditorUi::minimumDockedPanelSize.x
+        || node->Size.y + 8.0f < EditorUi::minimumDockedPanelSize.y;
 }
 
 const char* backendName(EditorRenderBackend backend) {
@@ -1103,12 +1103,19 @@ void Application::drawScenePanel() {
         EditorUi::minimumDockedPanelSize,
         ImVec2(FLT_MAX, FLT_MAX)
     );
-    if (!ImGui::Begin(EditorUi::label("Scene Explorer###Hierarchy"))) {
+    if (!ImGui::Begin(EditorUi::label("Hierarchy###Hierarchy"))) {
         ImGui::End();
         return;
     }
 
-    ImGui::SeparatorText(EditorUi::label("Scene objects"));
+    const std::string sceneName = currentScenePath_.empty()
+        ? (EditorUi::chinese ? "未命名场景" : "Untitled Scene")
+        : currentScenePath_.stem().u8string();
+    ImGui::TextDisabled("%s", sceneName.c_str());
+    if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal) && !currentScenePath_.empty()) {
+        ImGui::SetTooltip("%s", currentScenePath_.u8string().c_str());
+    }
+    ImGui::Separator();
     if (!scene_.entities().empty()) {
         const char* rootLabel = EditorUi::chinese
             ? "场景根节点（拖放对象到此）" : "Scene root (drop an object here)";
@@ -1560,7 +1567,7 @@ void Application::drawAssetsPanel() {
         EditorUi::minimumDockedPanelSize,
         ImVec2(FLT_MAX, FLT_MAX)
     );
-    if (!ImGui::Begin(EditorUi::label("Workspace###Workspace"))) {
+    if (!ImGui::Begin(EditorUi::label("Project###Workspace"))) {
         ImGui::End();
         return;
     }
@@ -1606,7 +1613,29 @@ void Application::drawAssetsPanel() {
             ImGui::TextDisabled("%zu assets | cache #%llu", workspaceAssets_.records().size(),
                 static_cast<unsigned long long>(thumbnailCacheGeneration_));
 
-            if (ImGui::BeginTabBar("ContentCategories", ImGuiTabBarFlags_FittingPolicyScroll)) {
+            const bool showFolderSidebar = ImGui::GetContentRegionAvail().x >= 600.0f;
+            if (showFolderSidebar) {
+                const float sidebarWidth = std::clamp(
+                    ImGui::GetContentRegionAvail().x * 0.20f, 145.0f, 185.0f);
+                if (ImGui::BeginChild("AssetFolders", ImVec2(sidebarWidth, 0.0f), true)) {
+                    ImGui::TextDisabled("PROJECT");
+                    ImGui::Separator();
+                    ImGui::TextUnformatted("Assets");
+                    for (int index = 0; index < static_cast<int>(WorkspaceAssetCategory::Count); ++index) {
+                        const auto category = static_cast<WorkspaceAssetCategory>(index);
+                        const std::string categoryLabel = "  "
+                            + std::string(workspaceAssetCategoryName(category))
+                            + " (" + std::to_string(workspaceAssets_.count(category)) + ")";
+                        if (ImGui::Selectable(categoryLabel.c_str(), contentCategory_ == index)) {
+                            if (contentCategory_ != index) contentExtensionFilter_.clear();
+                            contentCategory_ = index;
+                        }
+                    }
+                }
+                ImGui::EndChild();
+                ImGui::SameLine();
+                ImGui::BeginGroup();
+            } else if (ImGui::BeginTabBar("ContentCategories", ImGuiTabBarFlags_FittingPolicyScroll)) {
                 for (int index = 0; index < static_cast<int>(WorkspaceAssetCategory::Count); ++index) {
                     const auto category = static_cast<WorkspaceAssetCategory>(index);
                     const std::string categoryLabel = std::string(workspaceAssetCategoryName(category))
@@ -1622,6 +1651,9 @@ void Application::drawAssetsPanel() {
             }
 
             const auto activeCategory = static_cast<WorkspaceAssetCategory>(contentCategory_);
+            if (showFolderSidebar) {
+                ImGui::TextDisabled("Assets  /  %s", workspaceAssetCategoryName(activeCategory));
+            }
             const auto extensions = workspaceAssets_.extensions(activeCategory);
             ImGui::SetNextItemWidth(135.0f);
             const char* extensionPreview = contentExtensionFilter_.empty()
@@ -1667,9 +1699,10 @@ void Application::drawAssetsPanel() {
                     }
                 }
             }
-            const float reservedHeight = activeCategory == WorkspaceAssetCategory::Models
-                ? 178.0f : 112.0f;
-            const float resultHeight = std::max(130.0f,
+            const WorkspaceAssetRecord* selectedAsset = workspaceAssets_.find(selectedWorkspaceAsset_);
+            const float reservedHeight = (activeCategory == WorkspaceAssetCategory::Models
+                ? 86.0f : 0.0f) + (selectedAsset != nullptr ? 82.0f : 0.0f);
+            const float resultHeight = std::max(80.0f,
                 ImGui::GetContentRegionAvail().y - reservedHeight);
             if (ImGui::BeginChild("AssetResults", ImVec2(0.0f, resultHeight), true)) {
                 if (visibleAssets.empty()) {
@@ -1757,9 +1790,8 @@ void Application::drawAssetsPanel() {
             }
             ImGui::EndChild();
 
-            ImGui::SeparatorText(EditorUi::label("Asset details"));
-            const WorkspaceAssetRecord* selectedAsset = workspaceAssets_.find(selectedWorkspaceAsset_);
             if (selectedAsset != nullptr) {
+                ImGui::SeparatorText(EditorUi::label("Asset details"));
                 ImGui::Text("%s | %s", workspaceAssetCategoryBadge(selectedAsset->category),
                             selectedAsset->displayName.c_str());
                 ImGui::TextDisabled("%s | %s | preview %016llx",
@@ -1774,8 +1806,6 @@ void Application::drawAssetsPanel() {
                     ? "Send to Render Queue" : "Read-only metadata";
                 if (ImGui::Button(actionLabel)) queueAssetAction(*selectedAsset);
                 ImGui::EndDisabled();
-            } else {
-                ImGui::TextDisabled("Select an asset to inspect its path, size and preview cache key.");
             }
 
             if (activeCategory == WorkspaceAssetCategory::Models) {
@@ -1807,6 +1837,7 @@ void Application::drawAssetsPanel() {
                 }
                 ImGui::EndDisabled();
             }
+            if (showFolderSidebar) ImGui::EndGroup();
             ImGui::EndTabItem();
         }
 
@@ -1994,7 +2025,7 @@ void Application::drawAssetsPanel() {
         }
 
         if (ImGui::BeginTabItem(
-                "Log / Profile",
+                "Console",
                 nullptr,
                 focusLogTab_ ? ImGuiTabItemFlags_SetSelected : 0
             )) {
@@ -2147,16 +2178,17 @@ void Application::drawEditorLayout() {
         const ImVec2 workSize = ImGui::GetMainViewport()->WorkSize;
         ImGui::DockBuilderSetNodeSize(dock, workSize);
         ImGuiID center = dock;
-        const float leftWidth = std::max(EditorUi::minimumDockedPanelSize.x, workSize.x * 0.18f);
-        const float leftRatio = std::min(leftWidth / std::max(workSize.x, 1.0f), 0.28f);
-        const ImGuiID left = ImGui::DockBuilderSplitNode(center, ImGuiDir_Left, leftRatio, nullptr, &center);
-        const float remainingWidth = std::max(workSize.x - leftWidth, 1.0f);
-        const float rightWidth = std::max(300.0f, workSize.x * 0.23f);
-        const float rightRatio = std::min(rightWidth / remainingWidth, 0.38f);
+        const float rightWidth = std::max(306.0f, workSize.x * 0.22f);
+        const float rightRatio = std::min(rightWidth / std::max(workSize.x, 1.0f), 0.38f);
         const ImGuiID right = ImGui::DockBuilderSplitNode(center, ImGuiDir_Right, rightRatio, nullptr, &center);
-        const float bottomRatio = workSize.y < 700.0f ? 0.43f : 0.30f;
+        const float bottomHeight = std::clamp(workSize.y * 0.26f, 300.0f, 340.0f);
+        const float bottomRatio = std::min(bottomHeight / std::max(workSize.y, 1.0f), 0.49f);
         const ImGuiID bottom = ImGui::DockBuilderSplitNode(center, ImGuiDir_Down,
             bottomRatio, nullptr, &center);
+        const float availableWidth = std::max(workSize.x - rightWidth, 1.0f);
+        const float leftWidth = std::max(276.0f, workSize.x * 0.17f);
+        const float leftRatio = std::min(leftWidth / availableWidth, 0.32f);
+        const ImGuiID left = ImGui::DockBuilderSplitNode(center, ImGuiDir_Left, leftRatio, nullptr, &center);
         ImGui::DockBuilderDockWindow("###Hierarchy", left);
         ImGui::DockBuilderDockWindow("###Inspector", right);
         ImGui::DockBuilderDockWindow("###Viewport", center);

@@ -24,6 +24,7 @@
 # Runtime state
 /MyRenderer.ini
 /MyRenderer.editor.ini
+/MyRenderer.editor.v2.ini
 /MyRenderer.language
 /MyRenderer.recent-scene
 /screenshots/

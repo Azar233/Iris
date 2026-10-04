@@ -18,7 +18,7 @@
 
 ### 持久化：语言与布局
 
-- 语言写入工作目录下 `MyRenderer.language`，布局写入 `MyRenderer.editor.ini`。
+- 语言写入工作目录下 `MyRenderer.language`，布局写入 `MyRenderer.editor.v2.ini`。
 - 语言开关只写两个值：`zh-CN` 或 `en`；读取时把非 `en` 一律当作中文。窗口位置与停靠状态由 Dear ImGui 写进 ini；自动化运行（`MYRENDERER_SMOKE_TEST=1`）时 `io.IniFilename` 被置空，因此隐藏窗口运行不会顺手改写用户布局。
 
 ### 运行时：追加式导入与场景初始化
@@ -104,7 +104,7 @@ cmake --build build-release --target foundation-visual-regression
 powershell -File tools/TestEditorScene.ps1 -BuildDirectory build-ci-msvc
 ```
 
-该脚本本身给出了两条可判读的通过条件：标准输出里出现 `Append scene validation: PASS` 与 `Editor interaction validation: PASS`，并且工作目录下的 `MyRenderer.editor.ini` 里 `Hierarchy`、`Inspector`、`Viewport`、`Assets` 四个 `[Window]` 段各自带有 `DockId=`。
+该脚本以标准输出中的 `Append scene validation: PASS` 与 `Editor interaction validation: PASS` 验证交互。Smoke 模式不会写入布局文件；停靠窗口与资源缩略图的最小尺寸检查由 `asset-thumbnail-layout-acceptance` 单独完成。
 
 ## 限制与取舍
 
