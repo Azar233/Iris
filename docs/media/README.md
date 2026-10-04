@@ -2,6 +2,20 @@
 
 本目录存放**文档插图**：用来解释功能、UI 或前后对照的截图与视频，不参与任何自动像素比对。规范见 [`../README.md`](../README.md) 第 3 节。
 
+## Iris 首页截图
+
+2026-10-04 使用源码 revision `0d74ca4` 的 `build-ci-msvc` Release 应用重新捕获。GPU 为 NVIDIA GeForce RTX 4060 Laptop GPU，OpenGL 3.3，驱动 591.44。两张图均为真实 1600×900 OpenGL / ImGui 帧缓冲截图；仅用于界面展示，截图中的 FPS 不作为性能结论。
+
+在项目根目录运行以下命令。Smoke 模式创建隐藏窗口并渲染 5 帧，截图在预热 2 帧后保存，不会写入交互式布局文件。
+
+```powershell
+cmake -E env MYRENDERER_SMOKE_TEST=1 MYRENDERER_EDITOR_WINDOW_WIDTH=1600 MYRENDERER_EDITOR_WINDOW_HEIGHT=900 MYRENDERER_EDITOR_SCREENSHOT_WARMUP=2 MYRENDERER_EDITOR_SCREENSHOT_TAB=object MYRENDERER_EDITOR_SCREENSHOT=docs/media/iris-editor-scene-1600x900.png build-ci-msvc/Release/Iris.exe assets/scenes/fixtures/13_polyhaven_studio_lounge.myscene
+
+cmake -E env MYRENDERER_SMOKE_TEST=1 MYRENDERER_EDITOR_WINDOW_WIDTH=1600 MYRENDERER_EDITOR_WINDOW_HEIGHT=900 MYRENDERER_EDITOR_SCREENSHOT_WARMUP=2 MYRENDERER_EDITOR_SCREENSHOT_TAB=renderer MYRENDERER_EDITOR_SCREENSHOT=docs/media/iris-editor-1600x900.png build-ci-msvc/Release/Iris.exe assets/scenes/03_enscape_ocean_study.myscene
+```
+
+室内场景图展示 Hierarchy 的 9 个实体、Scene 视口、Inspector 的 Object / Transform 属性，以及 Project 的 Assets 分类；海面场景图展示 Renderer 页的 Material、PBR 与 Lighting & environment 分组。海面和黄色方块由程序化渲染生成，所以该场景的实体层级为空。
+
 回归基线与历史证据在 [`../images/`](../images/)、[`../reference-images/`](../reference-images/) 与 [`../performance/`](../performance/)，它们的清单在各自的 `README.md`；不要把说明性截图放进那三个目录。
 
 ## 现有素材
@@ -10,7 +24,9 @@
 | --- | --- | --- |
 | `prism5_demo_reel.mp4` | Prism-5 确定性 360 帧参数动画，24 fps 编码为 15 秒 1280 × 720 作品集预览 | 见 [`../prism5-validation.md`](../prism5-validation.md)；PNG 序列只生成在构建目录，不入库 |
 | `p1-workspace-1440x900.png` | 默认 Dock 工作区：中央 Viewport、Scene Explorer、Inspector、底部多标签工作区 | `MYRENDERER_EDITOR_WINDOW_WIDTH=1440 MYRENDERER_EDITOR_WINDOW_HEIGHT=900` + `MYRENDERER_EDITOR_SCREENSHOT=docs/media/p1-workspace-1440x900.png` 运行 `build-ci-msvc/Release/Iris.exe assets/scenes/fixtures/18_atmosphere_sky.myscene` |
-| `editor-unity-layout-1600x900.png` | 新版深灰编辑器布局：左侧 Hierarchy、中央 Scene、右侧 Inspector、跨左中区域的 Project 与资源分类侧栏 | 按根目录 README 的 1600×900 编辑器截图命令重拍 |
+| `editor-unity-layout-1600x900.png` | 深灰编辑器布局的历史截图：左侧 Hierarchy、中央 Scene、右侧 Inspector、跨左中区域的 Project 与资源分类侧栏 | 按[完整指南](../project-guide.md#editor-ui-设计规范)的 1600×900 编辑器截图命令重拍 |
+| `iris-editor-scene-1600x900.png` | Iris 当前 UI：9 个实体的室内场景、Object Inspector 与 Project 资源分类侧栏 | 见下方「Iris 首页截图」 |
+| `iris-editor-1600x900.png` | Iris 当前 UI：程序化海面、天空与黄色方块，Renderer Inspector 展示材质、PBR 和光照参数 | 见下方「Iris 首页截图」 |
 | `p1-workspace-hierarchy-1440x900.png` | Scene Explorer 树形层级：一个根节点和四个子节点，统计默认折叠 | `MYRENDERER_SMOKE_TEST=1`、窗口 `1440×900`、`MYRENDERER_EDITOR_SCREENSHOT=docs/media/p1-workspace-hierarchy-1440x900.png`，运行 `build-ci-msvc/Release/Iris.exe assets/scenes/fixtures/01_multi_model_hierarchy.myscene` |
 | `p1-workspace-1100x680.png` | 同一工作区在 1100 × 680 应用下限下的布局与可达性 | 同上，窗口尺寸改为 `1100` × `680` |
 | `p1-workspace-render-queue.png` | Render Queue 标签页：任务路径输入、Enqueue、空队列状态与恢复诊断 | 加 `MYRENDERER_EDITOR_SCREENSHOT_TAB=render-queue` |
