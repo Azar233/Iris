@@ -197,6 +197,8 @@ private:
     };
     std::map<std::filesystem::path, std::uint64_t> thumbnailKeys_;
     std::map<std::filesystem::path, UploadedThumbnail> uploadedThumbnails_;
+    unsigned int editorIconTexture_{0U};
+    bool editorIconLoadAttempted_{false};
     std::future<PendingThumbnail> pendingThumbnail_;
     std::uint64_t sceneGeneration_{0};
     std::unique_ptr<Shader> pickingShader_;

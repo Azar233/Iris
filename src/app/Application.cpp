@@ -994,6 +994,7 @@ int Application::run(const std::filesystem::path& initialModel) {
             camera_.orbit(0.012f, 0.0f);
         }
         if (animationEnabled_ && (rendererSettings_.water.enabled
+            || rendererSettings_.enscapeCubeShaderEnabled
             || (model_ != nullptr && model_->hasSkinning()))) {
             if (animationFrameStep_ > 0.0f) {
                 animationTimeSeconds_ = static_cast<float>(animationDemoFrame_++) * animationFrameStep_;
@@ -1433,6 +1434,10 @@ void Application::shutdown() {
             if (entry.second.texture != 0U) glDeleteTextures(1, &entry.second.texture);
         }
         uploadedThumbnails_.clear();
+        if (editorIconTexture_ != 0U) {
+            glDeleteTextures(1, &editorIconTexture_);
+            editorIconTexture_ = 0U;
+        }
         cpuPreviewTask_.cancel();
         cpuPreviewTask_.wait();
         cpuPreviewProgress_.reset();
@@ -1580,7 +1585,7 @@ void Application::drawMainMenu() {
         ImGui::EndMenu();
     }
 
-    if (ImGui::BeginMenu("Language / 语言")) {
+    if (ImGui::BeginMenu(EditorUi::chinese ? "语言" : "Language")) {
         if (ImGui::MenuItem("English", nullptr, !EditorUi::chinese)) EditorUi::setLanguage(false);
         if (ImGui::MenuItem("简体中文", nullptr, EditorUi::chinese, EditorUi::chineseFontAvailable)) EditorUi::setLanguage(true);
         ImGui::EndMenu();

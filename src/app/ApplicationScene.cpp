@@ -25,6 +25,7 @@
 
 #include <imgui.h>
 #include <imgui_internal.h>
+#include <stb_image.h>
 #include "app/EditorDomain.h"
 #include "module/BuiltinModules.h"
 #include "app/EditorUi.h"
@@ -70,9 +71,69 @@ std::string formatAssetSize(std::uintmax_t bytes) {
     return text;
 }
 
+enum class EditorIcon : int {
+    Play, Pause, Step, Reset, Scene, Folder, Model, Image
+};
+
+ImVec2 iconUv(EditorIcon icon, bool bottomRight) {
+    const int index = static_cast<int>(icon);
+    return ImVec2((index % 4 + (bottomRight ? 1 : 0)) * 0.25f,
+                  (index / 4 + (bottomRight ? 1 : 0)) * 0.5f);
+}
+
+bool iconButton(unsigned int texture, const char* id, EditorIcon icon,
+                const char* tooltip, bool active = false) {
+    if (active) ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.18f, 0.37f, 0.59f, 1.0f));
+    const bool clicked = ImGui::ImageButton(id,
+        static_cast<ImTextureID>(static_cast<std::uintptr_t>(texture)),
+        ImVec2(18.0f, 18.0f), iconUv(icon, false), iconUv(icon, true));
+    if (active) ImGui::PopStyleColor();
+    if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) ImGui::SetTooltip("%s", tooltip);
+    return clicked;
+}
+
+void drawAssetIcon(unsigned int texture, EditorIcon icon, ImVec2 top, ImVec2 bottom) {
+    ImDrawList* draw = ImGui::GetWindowDrawList();
+    draw->AddRectFilled(top, bottom, IM_COL32(37, 49, 65, 255), 3.0f);
+    const float size = std::min(bottom.x - top.x, bottom.y - top.y) * 0.62f;
+    const ImVec2 center((top.x + bottom.x) * 0.5f, (top.y + bottom.y) * 0.5f);
+    draw->AddImage(static_cast<ImTextureID>(static_cast<std::uintptr_t>(texture)),
+        ImVec2(center.x - size * 0.5f, center.y - size * 0.5f),
+        ImVec2(center.x + size * 0.5f, center.y + size * 0.5f),
+        iconUv(icon, false), iconUv(icon, true), IM_COL32(191, 216, 244, 255));
+}
+
+unsigned int loadEditorIconTexture(const std::filesystem::path& path) {
+    int width = 0, height = 0, channels = 0;
+    unsigned char* pixels = stbi_load(path.u8string().c_str(), &width, &height, &channels, 4);
+    if (pixels == nullptr || width != 256 || height != 128) {
+        stbi_image_free(pixels);
+        return 0U;
+    }
+    GLint oldTexture = 0;
+    glGetIntegerv(GL_TEXTURE_BINDING_2D, &oldTexture);
+    GLuint texture = 0;
+    glGenTextures(1, &texture);
+    glBindTexture(GL_TEXTURE_2D, texture);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, width, height, 0,
+                GL_RGBA, GL_UNSIGNED_BYTE, pixels);
+    glBindTexture(GL_TEXTURE_2D, static_cast<GLuint>(oldTexture));
+    stbi_image_free(pixels);
+    return texture;
+}
+
 } // namespace
 
 void Application::drawWorkspaceToolbar() {
+    if (!editorIconLoadAttempted_) {
+        editorIconLoadAttempted_ = true;
+        editorIconTexture_ = loadEditorIconTexture(sourceRoot_ / "assets/icons/editor-atlas.png");
+        if (editorIconTexture_ == 0U) std::cerr << "Editor icon atlas unavailable\n";
+    }
     ImGuiViewport* viewport = ImGui::GetMainViewport();
     const ImGuiWindowFlags flags = ImGuiWindowFlags_NoScrollbar
         | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_MenuBar;
@@ -101,6 +162,12 @@ void Application::drawWorkspaceToolbar() {
 
         ImGui::Separator();
         const char* activityLabels[] = {"Edit", "Preview", "Bake", "Render"};
+        const char* activityHelp[] = {
+            EditorUi::chinese ? "编辑场景对象与设置；停止动画播放。" : "Edit scene objects and settings; stop animation playback.",
+            EditorUi::chinese ? "预览场景并推进动态着色器时间。" : "Preview the scene and advance animated shaders.",
+            EditorUi::chinese ? "切换到 Bake 工作流；烘焙尚未实现。" : "Switch to the Bake workflow; baking is not implemented yet.",
+            EditorUi::chinese ? "切换到 Render 工作流；使用右侧按钮渲染。" : "Switch to the Render workflow; use the buttons on the right to render."
+        };
         for (int index = 0; index < 4; ++index) {
             if (index > 0) ImGui::SameLine();
             const auto activity = static_cast<EditorActivity>(index);
@@ -108,33 +175,65 @@ void Application::drawWorkspaceToolbar() {
             if (EditorUi::toolbarToggle(activityLabels[index], &selected) && selected) {
                 editorSession_.requestActivity(activity);
             }
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", activityHelp[index]);
         }
 
         ImGui::Separator();
-        ImGui::BeginDisabled(editorSession_.activity() == EditorActivity::Edit);
-        if (ImGui::SmallButton(editorSession_.paused() ? "Resume" : "Pause")) {
-            editorSession_.requestPause(!editorSession_.paused());
+        const bool playing = animationPlaying_ && !animationTimeFixed_;
+        const bool playClicked = editorIconTexture_ != 0U
+            ? iconButton(editorIconTexture_, "##Play", EditorIcon::Play,
+                EditorUi::chinese ? "播放／继续动态着色器与模型动画" :
+                    "Play / resume animated shaders and model animation", playing)
+            : ImGui::SmallButton("Play");
+        if (playClicked) {
+            animationEnabled_ = true;
+            animationPlaying_ = true;
+            animationTimeFixed_ = false;
+            editorSession_.requestActivity(EditorActivity::Preview);
+            editorSession_.requestPause(false);
         }
         ImGui::SameLine();
-        ImGui::BeginDisabled(!editorSession_.paused());
-        if (ImGui::SmallButton("Single Step")) {
+        const bool pauseClicked = editorIconTexture_ != 0U
+            ? iconButton(editorIconTexture_, "##Pause", EditorIcon::Pause,
+                EditorUi::chinese ? "暂停并冻结当前画面" :
+                    "Pause animated shaders at the current time", !playing)
+            : ImGui::SmallButton("Pause");
+        if (pauseClicked) {
+            animationPlaying_ = false;
+            editorSession_.requestPause(true);
+        }
+        ImGui::SameLine();
+        const bool stepClicked = editorIconTexture_ != 0U
+            ? iconButton(editorIconTexture_, "##Step", EditorIcon::Step,
+                EditorUi::chinese ? "按时间轴帧率前进一帧" :
+                    "Advance the paused shader by one timeline frame")
+            : ImGui::SmallButton("Step");
+        if (stepClicked) {
+            animationPlaying_ = false;
+            editorSession_.requestPause(true);
             editorSession_.request(EditorCommand{EditorCommandType::Step});
         }
-        ImGui::EndDisabled();
         ImGui::SameLine();
-        if (ImGui::SmallButton("Reset")) editorSession_.request(EditorCommand{EditorCommandType::Reset});
-        ImGui::EndDisabled();
+        const bool resetClicked = editorIconTexture_ != 0U
+            ? iconButton(editorIconTexture_, "##Reset", EditorIcon::Reset,
+                EditorUi::chinese ? "将着色器时间重置到起始帧" :
+                    "Reset shader time to the timeline start")
+            : ImGui::SmallButton("Reset");
+        if (resetClicked) editorSession_.request(EditorCommand{EditorCommandType::Reset});
         ImGui::SameLine();
         if (ImGui::SmallButton("Render Frame")) {
             editorSession_.request(EditorCommand{EditorCommandType::RenderFrame});
         }
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Save the current raster or CPU preview frame.");
         ImGui::SameLine();
         if (ImGui::SmallButton("Render Sequence")) {
             editorSession_.request(EditorCommand{EditorCommandType::RenderSequence});
         }
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Submit the configured frame sequence to the render queue.");
 
-        const std::string frameLabel = "Frame " + std::to_string(editorSession_.frame())
-            + " | " + editorSession_.taskStatus();
+        char timeText[32]{};
+        std::snprintf(timeText, sizeof(timeText), "%.2fs", animationTimeSeconds_);
+        const std::string frameLabel = std::string(timeText) + " | " + editorSession_.taskStatus();
         const float right = ImGui::GetWindowWidth() - ImGui::CalcTextSize(frameLabel.c_str()).x - 12.0f;
         if (right > ImGui::GetCursorPosX()) ImGui::SetCursorPosX(right);
         ImGui::TextDisabled("%s", frameLabel.c_str());
@@ -167,7 +266,9 @@ void Application::processEditorCommands() {
                     animationPlaying_ = false;
                     editorSession_.setTaskStatus("Idle");
                 } else if (activity == EditorActivity::Preview) {
+                    animationEnabled_ = true;
                     animationPlaying_ = true;
+                    animationTimeFixed_ = false;
                     editorSession_.setTaskStatus("Previewing");
                 } else {
                     editorSession_.setTaskStatus("Ready");
@@ -178,16 +279,20 @@ void Application::processEditorCommands() {
                 cpuPreviewPaused_ = command.flag;
                 cpuPreviewTask_.setPaused(command.flag);
                 animationPlaying_ = !command.flag;
+                if (!command.flag) animationTimeFixed_ = false;
                 editorSession_.setTaskStatus(command.flag ? "Paused" : "Previewing");
                 break;
             case EditorCommandType::Step:
-                editorSession_.setFrame(editorSession_.frame() + 1);
+                animationPlaying_ = false;
+                animationTimeSeconds_ += static_cast<float>(editorSession_.timeline().fixedDeltaSeconds());
+                editorSession_.setFrame(static_cast<int>(std::lround(
+                    animationTimeSeconds_ * editorSession_.framesPerSecond())));
                 animationTimeFixed_ = true;
-                animationTimeSeconds_ = static_cast<float>(editorSession_.timeSeconds());
                 cpuPreviewRestartRequested_ = true;
                 editorSession_.setTaskStatus("Stepped");
                 break;
             case EditorCommandType::Reset:
+                animationPlaying_ = false;
                 editorSession_.setFrame(editorSession_.startFrame());
                 animationTimeFixed_ = true;
                 animationTimeSeconds_ = static_cast<float>(editorSession_.timeSeconds());
@@ -1067,7 +1172,8 @@ void Application::updateRenderQueue() {
     renderQueue_->update();
     const auto queueEntries = renderQueue_->entries();
     if (queueEntries.empty()) {
-        editorSession_.setTaskStatus("Idle");
+        editorSession_.setTaskStatus(editorSession_.paused() ? "Paused"
+            : animationPlaying_ && !animationTimeFixed_ ? "Previewing" : "Idle");
         return;
     }
     const auto active = std::find_if(queueEntries.begin(), queueEntries.end(), [](const auto& entry) {
@@ -1620,12 +1726,31 @@ void Application::drawAssetsPanel() {
                 if (ImGui::BeginChild("AssetFolders", ImVec2(sidebarWidth, 0.0f), true)) {
                     ImGui::TextDisabled("PROJECT");
                     ImGui::Separator();
+                    if (editorIconTexture_ != 0U) {
+                        ImGui::Image(static_cast<ImTextureID>(static_cast<std::uintptr_t>(editorIconTexture_)),
+                            ImVec2(15.0f, 15.0f), iconUv(EditorIcon::Folder, false),
+                            iconUv(EditorIcon::Folder, true));
+                        ImGui::SameLine();
+                    }
                     ImGui::TextUnformatted("Assets");
                     for (int index = 0; index < static_cast<int>(WorkspaceAssetCategory::Count); ++index) {
                         const auto category = static_cast<WorkspaceAssetCategory>(index);
-                        const std::string categoryLabel = "  "
-                            + std::string(workspaceAssetCategoryName(category))
+                        const std::string categoryLabel = std::string(workspaceAssetCategoryName(category))
                             + " (" + std::to_string(workspaceAssets_.count(category)) + ")";
+                        if (editorIconTexture_ != 0U) {
+                            const EditorIcon icon = category == WorkspaceAssetCategory::Scenes
+                                ? EditorIcon::Scene : category == WorkspaceAssetCategory::Models
+                                ? EditorIcon::Model : category == WorkspaceAssetCategory::Textures
+                                || category == WorkspaceAssetCategory::Hdri
+                                ? EditorIcon::Image : EditorIcon::Folder;
+                            ImGui::Image(static_cast<ImTextureID>(static_cast<std::uintptr_t>(editorIconTexture_)),
+                                ImVec2(15.0f, 15.0f), iconUv(icon, false), iconUv(icon, true));
+                            if (ImGui::IsItemClicked()) {
+                                if (contentCategory_ != index) contentExtensionFilter_.clear();
+                                contentCategory_ = index;
+                            }
+                            ImGui::SameLine();
+                        }
                         if (ImGui::Selectable(categoryLabel.c_str(), contentCategory_ == index)) {
                             if (contentCategory_ != index) contentExtensionFilter_.clear();
                             contentCategory_ = index;
@@ -1719,7 +1844,12 @@ void Application::drawAssetsPanel() {
                             ImGui::PushID(asset->relativePath.generic_u8string().c_str());
                             const bool selected = selectedWorkspaceAsset_ == asset->path;
                             const auto thumbnail = uploadedThumbnails_.find(asset->path);
-                            if (thumbnail != uploadedThumbnails_.end()
+                            if (asset->category == WorkspaceAssetCategory::Scenes
+                                && editorIconTexture_ != 0U) {
+                                ImGui::InvisibleButton("##SceneFileIcon", ImVec2(128.0f, 80.0f));
+                                drawAssetIcon(editorIconTexture_, EditorIcon::Scene,
+                                    ImGui::GetItemRectMin(), ImGui::GetItemRectMax());
+                            } else if (thumbnail != uploadedThumbnails_.end()
                                 && thumbnail->second.texture != 0U) {
                                 ImGui::Image(static_cast<ImTextureID>(static_cast<std::uintptr_t>(
                                     thumbnail->second.texture)), ImVec2(128.0f, 80.0f));
@@ -1727,12 +1857,19 @@ void Application::drawAssetsPanel() {
                                 ImGui::InvisibleButton("##ThumbnailPlaceholder", ImVec2(128.0f, 80.0f));
                                 const ImVec2 top = ImGui::GetItemRectMin();
                                 const ImVec2 bottom = ImGui::GetItemRectMax();
-                                ImGui::GetWindowDrawList()->AddRectFilled(top, bottom,
-                                    IM_COL32(40, 49, 62, 255));
-                                ImGui::GetWindowDrawList()->AddText(
-                                    ImVec2(top.x + 9.0f, top.y + 31.0f), IM_COL32(196, 207, 221, 255),
-                                    thumbnail != uploadedThumbnails_.end()
-                                        ? "UNAVAILABLE" : workspaceAssetCategoryBadge(asset->category));
+                                if (editorIconTexture_ != 0U) {
+                                    const EditorIcon icon = asset->category == WorkspaceAssetCategory::Models
+                                        ? EditorIcon::Model : asset->category == WorkspaceAssetCategory::Textures
+                                        || asset->category == WorkspaceAssetCategory::Hdri
+                                        ? EditorIcon::Image : EditorIcon::Scene;
+                                    drawAssetIcon(editorIconTexture_, icon, top, bottom);
+                                } else {
+                                    ImGui::GetWindowDrawList()->AddRectFilled(top, bottom,
+                                        IM_COL32(40, 49, 62, 255));
+                                    ImGui::GetWindowDrawList()->AddText(
+                                        ImVec2(top.x + 9.0f, top.y + 31.0f), IM_COL32(196, 207, 221, 255),
+                                        workspaceAssetCategoryBadge(asset->category));
+                                }
                                 if (thumbnail != uploadedThumbnails_.end()
                                     && !thumbnail->second.error.empty() && ImGui::IsItemHovered()) {
                                     ImGui::SetTooltip("%s", thumbnail->second.error.c_str());
@@ -1751,6 +1888,9 @@ void Application::drawAssetsPanel() {
                                 if (ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) {
                                     queueAssetAction(*asset);
                                 }
+                            }
+                            if (ImGui::IsItemHovered()) {
+                                ImGui::SetTooltip("%s", asset->relativePath.generic_u8string().c_str());
                             }
                             ImGui::TextDisabled("%s", formatAssetSize(asset->sizeBytes).c_str());
                             ImGui::PopID();
@@ -2231,6 +2371,9 @@ void Application::newEmptyScene() {
     prismDemoEnabled_ = glassVolumeDemoEnabled_ = glassCausticsDemoEnabled_ = false;
     lightStressDemoEnabled_ = instanceStressDemoEnabled_ = sceneFoundationDemoEnabled_ = false;
     animationDemoEnabled_ = animationEnabled_ = false;
+    animationPlaying_ = false;
+    animationTimeFixed_ = false;
+    animationTimeSeconds_ = 0.0f;
     temporalMotionDemoEnabled_ = objectMotionDemoEnabled_ = false;
     autoRotate_ = showGroundPlane_ = showComparisonObject_ = false;
     prismCameraLocked_ = false;
@@ -2412,6 +2555,9 @@ bool Application::openScene(const std::filesystem::path& path) {
         animationTimeSeconds_ = document.playback.animationTimeSeconds;
         animationSpeed_ = document.playback.animationSpeed;
         animationClipIndex_ = document.playback.animationClipIndex;
+        editorSession_.requestActivity(animationPlaying_
+            ? EditorActivity::Preview : EditorActivity::Edit);
+        editorSession_.requestPause(false);
         prismDemoEnabled_ = document.playback.prismEnabled;
         prismCameraLocked_ = document.playback.prismCameraLocked;
         prismOpticalPreset_ = document.playback.prismPreset;
@@ -2633,6 +2779,27 @@ SceneEntityId Application::pickEntity(const std::vector<RenderItem>& items,
 bool Application::editorInteractionRegression() {
     try {
         const auto check = [](bool passed, const char* message) { if (!passed) throw std::runtime_error(message); };
+        newEmptyScene();
+        animationEnabled_ = true;
+        animationTimeSeconds_ = 1.25f;
+        editorSession_.requestActivity(EditorActivity::Preview);
+        processEditorCommands();
+        editorSession_.requestPause(true);
+        processEditorCommands();
+        check(!animationPlaying_ && editorSession_.paused(), "toolbar pause did not stop animation");
+        const float pausedTime = animationTimeSeconds_;
+        editorSession_.request(EditorCommand{EditorCommandType::Step});
+        processEditorCommands();
+        check(animationTimeFixed_ && !animationPlaying_
+              && std::abs(animationTimeSeconds_ - pausedTime
+                  - static_cast<float>(editorSession_.timeline().fixedDeltaSeconds())) < 1.0e-5f,
+              "toolbar step did not advance exactly one frame from the paused time");
+        editorSession_.requestPause(false);
+        processEditorCommands();
+        check(animationPlaying_ && !animationTimeFixed_, "toolbar resume left time fixed");
+        editorSession_.requestActivity(EditorActivity::Edit);
+        processEditorCommands();
+        check(!animationPlaying_, "Edit did not stop playback");
         newEmptyScene();
         const auto cube = sourceRoot_ / "assets/models/cube.obj";
         finishModelLoad(cube, findImporter(cube)->load(cube), true);
