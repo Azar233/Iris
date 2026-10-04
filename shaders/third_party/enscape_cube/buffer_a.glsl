@@ -481,40 +481,64 @@ void mainImage( out vec4 fragColor, in vec2 fragCoord )
     setupCubeForm();
     float cubeRes = castRay(org, dir, max(uCameraNear, 0.001));
 
-    // The original camera stays above the ocean. Give the editor camera a
-    // bounded underwater view so crossing the surface does not expose an
-    // uninitialised height-map hit as a flat grey half-screen.
+    // Resolve the water-to-air interface before sampling the sky. The former
+    // direct sky lookup made the clouds fill the entire underwater view.
     if (mapWater(org, ITER_GEOMETRY, false) < 0.0)
     {
-        vec3 underwater = vec3(0.18, 2.8, 4.8) *
-            (0.7 + 0.3 * clamp(dir.y + 0.5, 0.0, 1.0));
+        float clarity = max(uUnderwaterClarity, 0.25);
+        vec3 extinction = vec3(0.8, 0.30, 0.16) / clarity;
+        vec3 waterScatter = vec3(0.16, 2.35, 3.75) *
+            (0.75 + 0.25 * clamp(dir.y + 0.5, 0.0, 1.0));
+        vec3 underwater = waterScatter;
         float surfaceDistance = 1e5;
-        if (dir.y > 0.02)
+        if (dir.y > 0.005)
         {
-            surfaceDistance = max(0.01, (1.2 - org.y) / dir.y);
-            for (int iteration = 0; iteration < 5; ++iteration)
+            // Every sea octave is bounded by two times its amplitude. This
+            // gives a guaranteed point above the wave field for bisection.
+            float surfaceCeiling = 2.0 * SEA_HEIGHT *
+                (1.0 + 0.22 + 0.22 * 0.22) + 0.05;
+            float upper = min(160.0, max(0.01,
+                (surfaceCeiling - org.y) / dir.y));
+            if (mapWater(org + dir * upper, ITER_GEOMETRY, false) > 0.0)
             {
-                float surfaceError = mapWater(org + dir * surfaceDistance,
-                    ITER_GEOMETRY, false);
-                surfaceDistance = clamp(surfaceDistance - surfaceError / dir.y,
-                    0.01, 1e5);
-            }
-            if (surfaceDistance < 80.0)
-            {
-                vec3 sky = skyRay(org + dir * surfaceDistance, dir,
-                    sun_direction, true);
-                float transmission = exp(-0.8 * surfaceDistance) *
-                    smoothstep(0.02, 0.18, dir.y);
-                underwater = mix(underwater, sky * vec3(0.25, 0.65, 0.8),
-                    transmission);
+                float lower = 0.0;
+                for (int iteration = 0; iteration < 12; ++iteration)
+                {
+                    float middle = 0.5 * (lower + upper);
+                    if (mapWater(org + dir * middle, ITER_GEOMETRY, false) < 0.0)
+                        lower = middle;
+                    else
+                        upper = middle;
+                }
+                surfaceDistance = 0.5 * (lower + upper);
+                vec3 hit = org + dir * surfaceDistance;
+                float eps = max(0.06, surfaceDistance * 0.002);
+                float height = mapWater(hit, ITER_GEOMETRY, false);
+                vec3 normal = normalize(vec3(
+                    mapWater(hit + vec3(eps, 0.0, 0.0), ITER_GEOMETRY, false) - height,
+                    eps,
+                    mapWater(hit + vec3(0.0, 0.0, eps), ITER_GEOMETRY, false) - height));
+                // Average the finest waves for a stable, readable Snell window.
+                normal = normalize(mix(vec3(0.0, 1.0, 0.0), normal, 0.55));
+                vec3 airRay = refract(dir, -normal, 1.333);
+                if (dot(airRay, airRay) > 0.0 && airRay.y > 0.0)
+                {
+                    float fresnel = Schlick(0.0204, clamp(dot(dir, normal), 0.0, 1.0));
+                    vec3 transmittance = exp(-surfaceDistance * extinction);
+                    vec3 sky = skyRay(hit + airRay * 0.02, airRay,
+                        sun_direction, true);
+                    underwater = waterScatter * (vec3(1.0) - transmittance)
+                        + sky * vec3(0.34, 0.62, 0.72) * transmittance
+                        * (1.0 - fresnel);
+                }
             }
         }
         if (cubeRes > 0.0 && cubeRes < surfaceDistance)
         {
             vec3 cube = renderCube(org, dir, sun_direction, cubeRes);
-            vec3 transmittance = exp(-cubeRes * vec3(0.6, 0.24, 0.12));
-            underwater = mix(underwater, cube * transmittance,
-                exp(-0.35 * cubeRes));
+            vec3 transmittance = exp(-cubeRes * extinction);
+            underwater = waterScatter * (vec3(1.0) - transmittance)
+                + cube * vec3(0.72, 0.84, 0.9) * transmittance;
         }
         fragColor = vec4(underwater, 1.0);
         return;

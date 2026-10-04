@@ -115,6 +115,7 @@ inline const char* label(const char* key) {
     {"GLSL wave speed", "GLSL 波浪速度###GLSL wave speed"},
     {"GLSL cloud coverage", "GLSL 云量###GLSL cloud coverage"},
     {"GLSL reflection", "GLSL 反射强度###GLSL reflection"},
+    {"GLSL underwater clarity", "GLSL 水下清晰度###GLSL underwater clarity"},
     {"GLSL sun azimuth", "GLSL 太阳方位角###GLSL sun azimuth"},
     {"GLSL sun elevation", "GLSL 太阳仰角###GLSL sun elevation"},
     {"GLSL bloom", "GLSL 泛光强度###GLSL bloom"},

@@ -106,6 +106,7 @@
     "enscapeWaveSpeed": 0.8,
     "enscapeCloudCoverage": 1.0,
     "enscapeReflectionStrength": 1.0,
+    "enscapeUnderwaterClarity": 1.0,
     "enscapeBloomStrength": 1.0,
     "enscapeExposure": 1.0,
     "enscapeSunAzimuthDegrees": -53.13010235415598,

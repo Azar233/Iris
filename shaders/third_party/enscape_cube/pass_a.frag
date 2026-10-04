@@ -13,6 +13,7 @@ uniform float uWaveChoppiness;
 uniform float uWaveSpeed;
 uniform float uCloudCoverage;
 uniform float uReflectionStrength;
+uniform float uUnderwaterClarity;
 uniform vec3 uSunDirection;
 uniform sampler2D iChannel0;
 uniform sampler2D iChannel1;

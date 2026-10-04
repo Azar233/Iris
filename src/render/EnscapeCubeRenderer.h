@@ -45,6 +45,6 @@ private:
     bool cameraValid_{false};
     bool parametersValid_{false};
     glm::mat4 previousViewProjection_{1.0f};
-    std::array<float, 10> previousParameters_{};
+    std::array<float, 11> previousParameters_{};
     float previousTime_{0.0f};
 };

@@ -131,6 +131,7 @@ struct EnscapeCubeSettings {
     float waveSpeed{0.8f};
     float cloudCoverage{1.0f};
     float reflectionStrength{1.0f};
+    float underwaterClarity{1.0f};
     float sunAzimuthDegrees{143.1301f};
     float sunElevationDegrees{24.2277f};
     float bloomStrength{1.0f};

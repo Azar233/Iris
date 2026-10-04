@@ -152,6 +152,7 @@ void EnscapeCubeRenderer::draw(Shader& shader, unsigned int framebuffer,
     shader.setFloat("uWaveSpeed", parameters.waveSpeed);
     shader.setFloat("uCloudCoverage", parameters.cloudCoverage);
     shader.setFloat("uReflectionStrength", parameters.reflectionStrength);
+    shader.setFloat("uUnderwaterClarity", parameters.underwaterClarity);
     constexpr float degreesToRadians = 0.017453292519943295f;
     const float azimuth = parameters.sunAzimuthDegrees * degreesToRadians;
     const float elevation = parameters.sunElevationDegrees * degreesToRadians;
@@ -184,9 +185,9 @@ void EnscapeCubeRenderer::render(RenderTarget& target, const Camera& camera,
         }
     }
     const auto& parameters = settings.enscapeCube;
-    const std::array<float, 10> parameterKey{parameters.waveHeight,
+    const std::array<float, 11> parameterKey{parameters.waveHeight,
         parameters.waveFrequency, parameters.waveChoppiness, parameters.waveSpeed,
-        parameters.cloudCoverage, parameters.reflectionStrength,
+        parameters.cloudCoverage, parameters.reflectionStrength, parameters.underwaterClarity,
         parameters.sunAzimuthDegrees, parameters.sunElevationDegrees,
         parameters.bloomStrength, parameters.exposure};
     if (!parametersValid_ || parameterKey != previousParameters_) historyValid_ = false;

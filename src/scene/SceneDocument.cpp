@@ -51,6 +51,7 @@ void writeRendererSettings(Writer& writer, const RendererSettings& settings) {
     writer.Key("enscapeWaveSpeed"); writer.Double(settings.enscapeCube.waveSpeed);
     writer.Key("enscapeCloudCoverage"); writer.Double(settings.enscapeCube.cloudCoverage);
     writer.Key("enscapeReflectionStrength"); writer.Double(settings.enscapeCube.reflectionStrength);
+    writer.Key("enscapeUnderwaterClarity"); writer.Double(settings.enscapeCube.underwaterClarity);
     writer.Key("enscapeSunAzimuthDegrees"); writer.Double(settings.enscapeCube.sunAzimuthDegrees);
     writer.Key("enscapeSunElevationDegrees"); writer.Double(settings.enscapeCube.sunElevationDegrees);
     writer.Key("enscapeBloomStrength"); writer.Double(settings.enscapeCube.bloomStrength);
@@ -307,6 +308,8 @@ void readRendererSettings(const scene_json::Value& value, RendererSettings& sett
         settings.enscapeCube.cloudCoverage), 0.0f, 2.0f);
     settings.enscapeCube.reflectionStrength = std::clamp(readFloat(value,
         "enscapeReflectionStrength", settings.enscapeCube.reflectionStrength), 0.0f, 2.0f);
+    settings.enscapeCube.underwaterClarity = std::clamp(readFloat(value,
+        "enscapeUnderwaterClarity", settings.enscapeCube.underwaterClarity), 0.25f, 3.0f);
     settings.enscapeCube.sunAzimuthDegrees = std::clamp(readFloat(value,
         "enscapeSunAzimuthDegrees", settings.enscapeCube.sunAzimuthDegrees), -180.0f, 180.0f);
     settings.enscapeCube.sunElevationDegrees = std::clamp(readFloat(value,

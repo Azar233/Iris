@@ -2032,6 +2032,7 @@ void Application::drawInspectorPanel() {
                 changed |= EditorUi::SliderFloat(EditorUi::label("GLSL wave speed"), &ocean.waveSpeed, 0.0f, 2.0f, "%.2f");
                 changed |= EditorUi::SliderFloat(EditorUi::label("GLSL cloud coverage"), &ocean.cloudCoverage, 0.0f, 2.0f, "%.2f");
                 changed |= EditorUi::SliderFloat(EditorUi::label("GLSL reflection"), &ocean.reflectionStrength, 0.0f, 2.0f, "%.2f");
+                changed |= EditorUi::SliderFloat(EditorUi::label("GLSL underwater clarity"), &ocean.underwaterClarity, 0.25f, 3.0f, "%.2f");
                 changed |= EditorUi::SliderFloat(EditorUi::label("GLSL sun azimuth"), &ocean.sunAzimuthDegrees, -180.0f, 180.0f, "%.0f deg");
                 changed |= EditorUi::SliderFloat(EditorUi::label("GLSL sun elevation"), &ocean.sunElevationDegrees, 1.0f, 85.0f, "%.0f deg");
                 changed |= EditorUi::SliderFloat(EditorUi::label("GLSL bloom"), &ocean.bloomStrength, 0.0f, 3.0f, "%.2f");

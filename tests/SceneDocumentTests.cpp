@@ -41,6 +41,7 @@ int main() {
         source.renderer.enscapeCube.waveSpeed = 1.3f;
         source.renderer.enscapeCube.cloudCoverage = 0.7f;
         source.renderer.enscapeCube.reflectionStrength = 1.4f;
+        source.renderer.enscapeCube.underwaterClarity = 1.7f;
         source.renderer.enscapeCube.sunAzimuthDegrees = -75.0f;
         source.renderer.enscapeCube.sunElevationDegrees = 36.0f;
         source.renderer.enscapeCube.bloomStrength = 1.6f;
@@ -233,6 +234,7 @@ int main() {
                 && close(a.waveSpeed, b.waveSpeed)
                 && close(a.cloudCoverage, b.cloudCoverage)
                 && close(a.reflectionStrength, b.reflectionStrength)
+                && close(a.underwaterClarity, b.underwaterClarity)
                 && close(a.sunAzimuthDegrees, b.sunAzimuthDegrees)
                 && close(a.sunElevationDegrees, b.sunElevationDegrees)
                 && close(a.bloomStrength, b.bloomStrength)
@@ -321,6 +323,7 @@ int main() {
                         && close(example.camera.target.z, -0.64f)
                         && close(example.camera.fieldOfViewDegrees, 71.0753556f)
                         && close(example.renderer.enscapeCube.waveHeight, 0.6f)
+                        && close(example.renderer.enscapeCube.underwaterClarity, 1.0f)
                         && close(example.renderer.enscapeCube.sunAzimuthDegrees, -53.1301f),
                         "ocean study must save the engine camera and GLSL defaults");
                 }
