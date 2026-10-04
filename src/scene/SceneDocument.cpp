@@ -44,6 +44,7 @@ void writeMatrix(Writer& writer, const glm::mat4& value) {
 
 void writeRendererSettings(Writer& writer, const RendererSettings& settings) {
     writer.StartObject();
+    writer.Key("enscapeCubeShaderEnabled"); writer.Bool(settings.enscapeCubeShaderEnabled);
 #define WRITE_FLOAT(field) writer.Key(#field); writer.Double(settings.field)
 #define WRITE_INT(field) writer.Key(#field); writer.Int(settings.field)
 #define WRITE_BOOL(field) writer.Key(#field); writer.Bool(settings.field)
@@ -283,6 +284,7 @@ void readRendererSettings(const scene_json::Value& value, RendererSettings& sett
 #define READ_INT(field) settings.field = readInt(value, #field, settings.field)
 #define READ_BOOL(field) settings.field = readBool(value, #field, settings.field)
 #define READ_VEC3(field) settings.field = readVec3(value, #field, settings.field)
+    READ_BOOL(enscapeCubeShaderEnabled);
     READ_VEC3(backgroundColor); READ_VEC3(baseColor); READ_VEC3(lightDirection);
     READ_FLOAT(ambientStrength); READ_FLOAT(diffuseStrength); READ_FLOAT(specularStrength);
     READ_FLOAT(shininess); READ_INT(msaaSamples);

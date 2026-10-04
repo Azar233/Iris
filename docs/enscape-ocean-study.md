@@ -1,21 +1,23 @@
-# 开放海域七方块场景
+# Enscape Cube GLSL 海面研究场景
 
-`assets/scenes/03_enscape_ocean_study.myscene` 是一个独立的开放海域视觉对照场景。构图参考 [Enscape Cube](https://www.shadertoy.com/view/4dSBDt)：低视角海平线、局部多云天空、深蓝海面，以及右侧部分入水的黄橙色方块组。原有 `02_ocean_weather_hero.myscene` 保持不变。
+`assets/scenes/03_enscape_ocean_study.myscene` 现在直接运行用户提供的 [Enscape Cube](https://www.shadertoy.com/view/4dSBDt) 四段 GLSL：Buffer A 生成云、海面和方块；Buffer B 做泛光与 ACES；Buffer C 做时域抗锯齿；Image 做最终色散与暗角。该模式只在本场景启用，可在 Inspector 的 **Lighting & environment → Enscape Cube GLSL study** 切换。其他 `.myscene` 沿用原渲染管线，`02_ocean_weather_hero.myscene` 未修改。
 
-用户提供的 Shadertoy 文件包含主画面的多尺度海面高度场与法线、天空与海面反射、方块水下折射和接触泡沫，以及独立的 Bloom、TAA 和后处理 Pass。该源文件注明 CC BY-NC-SA 3.0，并引用了 Seascape。此场景只用仓库已有的网格海面、Kloofendal 局部多云 HDRI、七个 `cube.obj` 实体和内置后处理重建构图与参数；没有复制原 GLSL 或将其加入 MIT 代码库。
+四段源码及 OpenGL 3.3 包装放在 `shaders/third_party/enscape_cube/`。源文件注明 **CC BY-NC-SA 3.0**，并署名 Thomas / @Thomas_ensc；海面部分引用 Alexander Alekseev（TDM）的 Seascape。此目录独立于项目 MIT 许可，详情见该目录的 `LICENSE.md` 和根目录 `THIRD_PARTY_NOTICES.md`。原 Shadertoy 的纹理通道资源没有随文本提供，运行时生成固定种子的 256² 天气纹理和 32³ 噪声纹理，因此不会逐像素等同原作。
 
-相机高度约 4.36 世界单位，海平线在画面上部，七块方块由两层 2×2 排列组成，左后方上层空出一块。每块实体可单独选择、移动和改色。海面启用多方向几何波、近景网格聚焦、较强的微法线细波和高粗糙度反射；天空盒与海面反射共用环境 HDRI。场景以 `1.25 s` 为保存的动画时间。
+本次只做视觉复刻：方块是 Buffer A 内的 SDF，与编辑器实体/物理系统没有连接。为避免暗示已实现浮力，移除了原着色器按波浪调整方块姿态的代码，方块保持固定倾角和高度。海面、折射和接触效果仍按原 GLSL 绘制。另将 TAA 邻域采样限制在图像边界内，并在画面尺寸、场景或时间跳变时清除历史。该模式使用自己的时域抗锯齿，渲染目标按 1× 分配，不再为未使用的 MSAA 缓冲付费。
 
-![七方块开放海域场景](media/p1a-enscape-ocean-study.png)
+![GLSL 海面研究场景](media/p1a-enscape-ocean-study.png)
 
-在 MSVC Release、OpenGL 3.3、4×MSAA 下，以 `920×517` 固定机位验证 `1.25 s` 和 `4.0 s` 两个时刻，七块方块均能加载且保持部分入水。场景文档测试检查内置场景数量、模型资源和七方块配置；完整 CTest 为 `26/26`。现有方块没有浮力动画，海面仍有可见的程序化反射环纹；HDRI 云层不会随时间变化，也没有实现原作的云体积和云影反射。因此该场景是可编辑的构图与材质研究场景，不是 Shadertoy 逐像素移植。
+图示在 NVIDIA RTX 4060 Laptop、OpenGL 3.3、`920×517`、保存时间 `1.25 s`、TAA 预热 4 帧后采集：
 
 ```powershell
 $env:MYRENDERER_SMOKE_TEST='1'
 $env:MYRENDERER_RENDER_WIDTH='920'
 $env:MYRENDERER_RENDER_HEIGHT='517'
 $env:MYRENDERER_ANIMATION_TIME='1.25'
-$env:MYRENDERER_HIDE_SELECTION_OUTLINE='1'
 $env:MYRENDERER_SCREENSHOT='docs/media/p1a-enscape-ocean-study.png'
+$env:MYRENDERER_SCREENSHOT_WARMUP='4'
 build-ci-msvc/Release/MyRenderer.exe assets/scenes/03_enscape_ocean_study.myscene
 ```
+
+该 GLSL 场景目前使用着色器内置相机和固定方块，Inspector 的常规海面、天空盒、SSAO 等设置不作用于此模式。后续如需保留这些编辑能力，需要将着色器参数和镜头输入映射到共享场景模型。由于 Buffer A 逐像素执行云层积分与海面高度场追踪，实时成本明显高于原网格海面路径；本阶段以参考效果验证为先。

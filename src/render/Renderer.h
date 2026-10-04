@@ -26,6 +26,7 @@ class GodRaysRenderer;
 class DebugGrid;
 class SelectionOutline;
 class EnvironmentMap;
+class EnscapeCubeRenderer;
 class GBuffer;
 class GpuModel;
 class OpticalPathDebugRenderer;
@@ -124,6 +125,7 @@ struct GpuPassTiming {
 };
 
 struct RendererSettings {
+    bool enscapeCubeShaderEnabled{false};
     glm::vec3 backgroundColor{0.055f, 0.065f, 0.085f};
     glm::vec3 baseColor{1.0f};
     glm::vec3 lightDirection{-0.45f, -0.8f, -0.35f};
@@ -276,11 +278,7 @@ public:
         std::string& error
     ) const;
     int activeMsaaSamples() const;
-    void invalidateTemporalHistory() {
-        previousViewProjectionValid_ = false;
-        temporalFrameIndex_ = 0U; // A capture reset also restarts the TAA jitter sequence.
-        cloudHistoryInvalidated_ = true;
-    }
+    void invalidateTemporalHistory();
     bool hasGpuFrameTime() const { return hasGpuFrameTime_; }
     double gpuFrameTimeMilliseconds() const { return gpuFrameTimeMilliseconds_; }
     double latestGpuFrameMeasurementMilliseconds() const { return latestGpuFrameMeasurementMilliseconds_; }
@@ -331,6 +329,7 @@ private:
     bool atmosphereActive_{false};
     int builtEnvironmentPreset_{0};
     std::unique_ptr<Shader> shader_;
+    std::filesystem::path shaderDirectory_;
     std::unique_ptr<CausticsMap> causticsMap_;
     std::unique_ptr<CloudLayerRenderer> cloudLayer_;
     // The layer's extinction. A constant rather than a `RendererSettings` field because it is the
@@ -349,6 +348,7 @@ private:
     std::unique_ptr<DebugGrid> debugGrid_;
     std::unique_ptr<SelectionOutline> selectionOutline_;
     std::unique_ptr<EnvironmentMap> environmentMap_;
+    std::unique_ptr<EnscapeCubeRenderer> enscapeCubeRenderer_;
     std::unique_ptr<GBuffer> gBuffer_;
     std::unique_ptr<OpticalPathDebugRenderer> opticalPathDebugRenderer_;
     std::unique_ptr<ShadowMap> shadowMap_;
@@ -368,6 +368,7 @@ private:
     std::unique_ptr<Shader> waterGBufferShader_;
     float previousWaterTime_{0.0f};
     bool previousWaterValid_{false};
+    bool enscapeCubeActive_{false};
     unsigned int fullscreenVertexArray_{0};
     std::array<unsigned int, 4> timingQueries_{};
     std::array<bool, 4> timingQueryPending_{};

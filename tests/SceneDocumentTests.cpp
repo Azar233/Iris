@@ -34,6 +34,7 @@ int main() {
         source.camera.distance = 7.5f;
         source.camera.fieldOfViewDegrees = 39.0f;
         source.renderer.renderPath = RenderPath::Deferred;
+        source.renderer.enscapeCubeShaderEnabled = true;
         source.renderer.backgroundColor = glm::vec3(0.01f, 0.02f, 0.03f);
         source.renderer.ssaoEnabled = true;
         source.renderer.bloomIntensity = 0.37f;
@@ -212,6 +213,8 @@ int main() {
             && firstLoad.renderer.localLights.front().type == LocalLightType::Spot,
             "local environment light survives first load");
         require(close(firstLoad.camera.distance, 7.5f), "camera survives first load");
+        require(firstLoad.renderer.enscapeCubeShaderEnabled,
+            "GLSL study mode survives first load");
 
         require(saveSceneDocument(scenePath, firstLoad, error), error.c_str());
         SceneDocument secondLoad;
@@ -221,6 +224,8 @@ int main() {
         require(secondLoad.entities[0].modelResource == firstLoad.entities[0].modelResource,
             "relative model path is repeatable");
         require(close(secondLoad.renderer.bloomIntensity, 0.37f), "renderer settings survive repeated load");
+        require(secondLoad.renderer.enscapeCubeShaderEnabled,
+            "GLSL study mode survives repeated load");
         require(secondLoad.renderer.shadingMode == ShadingMode::Stylized
                 && secondLoad.renderer.stylizedPreset == StylizedPreset::NightAurora
                 && secondLoad.renderer.stylizedBandCount == 4
@@ -283,11 +288,9 @@ int main() {
                         "open-ocean hero must render without a seabed entity");
                 }
                 if (entry.path().filename() == "03_enscape_ocean_study.myscene") {
-                    require(example.entities.size() == 7U
-                        && example.renderer.water.enabled
-                        && example.renderer.skyboxEnabled
-                        && !example.renderer.atmosphere.enabled,
-                        "ocean study must retain seven cubes and the HDRI-backed water scene");
+                    require(example.entities.empty()
+                        && example.renderer.enscapeCubeShaderEnabled,
+                        "ocean study must use the isolated four-pass GLSL renderer");
                 }
                 if (entry.path().filename() == "18_atmosphere_sky.myscene") {
                     require(!example.renderer.atmosphere.cloudHalfResolution

@@ -15,6 +15,7 @@ this summary.
 | Dear ImGui | 1.92.7-docking | MIT | <https://github.com/ocornut/imgui> |
 | Assimp | 6.0.5 | BSD-3-Clause; bundled components retain their own notices | <https://github.com/assimp/assimp> |
 | osgw water material / Ashima Simplex noise | Copied 3D noise shader in `shaders/ocean_snoise.glsl` | MIT | <https://github.com/CaffeineViking/osgw>, <https://github.com/ashima/webgl-noise> |
+| Enscape Cube Shadertoy GLSL (Thomas / @Thomas_ensc; Seascape ocean procedure by Alexander Alekseev / TDM) | User-supplied source and adapters in `shaders/third_party/enscape_cube/` | CC BY-NC-SA 3.0 | <https://www.shadertoy.com/view/4dSBDt> |
 
 Assimp brings the stb image loader, RapidJSON and zlib into this build. Their
 license notices remain in the fetched Assimp source tree and Assimp's canonical

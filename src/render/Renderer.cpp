@@ -21,6 +21,7 @@
 #include "render/DebugGrid.h"
 #include "render/SelectionOutline.h"
 #include "render/EnvironmentMap.h"
+#include "render/EnscapeCubeRenderer.h"
 #include "render/GBuffer.h"
 #include "render/GpuModel.h"
 #include "render/OpticalPathDebugRenderer.h"
@@ -142,6 +143,7 @@ Renderer::Renderer(
     waterGBufferShader_(std::make_unique<Shader>(
         vertexShaderPath.parent_path() / "water.vert",
         vertexShaderPath.parent_path() / "water_gbuffer.frag")) {
+    shaderDirectory_ = vertexShaderPath.parent_path();
     glGenQueries(static_cast<GLsizei>(timingQueries_.size()), timingQueries_.data());
     glGenQueries(static_cast<GLsizei>(beamStartQueries_.size()), beamStartQueries_.data());
     glGenQueries(static_cast<GLsizei>(beamEndQueries_.size()), beamEndQueries_.data());
@@ -219,7 +221,35 @@ void Renderer::render(
             invalidateTemporalHistory();
         }
     }
-    renderTarget_->resize(width, height, settings.msaaSamples);
+    renderTarget_->resize(width, height,
+        settings.enscapeCubeShaderEnabled ? 1 : settings.msaaSamples);
+    if (settings.enscapeCubeShaderEnabled) {
+        if (!enscapeCubeActive_) invalidateTemporalHistory();
+        enscapeCubeActive_ = true;
+        if (gBuffer_->framebuffer() != 0U) gBuffer_->destroy();
+        if (!enscapeCubeRenderer_) {
+            enscapeCubeRenderer_ = std::make_unique<EnscapeCubeRenderer>(
+                shaderDirectory_);
+        }
+        enscapeCubeRenderer_->render(*renderTarget_, width, height,
+            settings.water.timeSeconds, fullscreenVertexArray_);
+        activePassNames_ = {"Enscape Cube: ocean and clouds", "Enscape Cube: bloom and tone map",
+            "Enscape Cube: TAA", "Enscape Cube: final image"};
+        activePassContexts_.clear();
+        gpuPassTimings_.clear();
+        hasGpuFrameTime_ = false;
+        activeRenderPath_ = RenderPath::Forward;
+        drawCallCount_ = 4U;
+        submittedInstanceCount_ = 0U;
+        visibleInstanceCount_ = 0U;
+        culledInstanceCount_ = 0U;
+        renderedInstanceTriangleCount_ = 0U;
+        previousViewProjectionValid_ = false;
+        stateCache_.invalidate();
+        return;
+    }
+    enscapeCubeActive_ = false;
+    if (enscapeCubeRenderer_) enscapeCubeRenderer_->invalidateHistory();
     const bool deferredActive = settings.renderPath == RenderPath::Deferred;
     activeRenderPath_ = settings.renderPath;
     const bool gBufferDebugActive = deferredActive
@@ -1703,6 +1733,13 @@ unsigned int Renderer::colorTexture() const {
     return renderTarget_->colorTexture();
 }
 
+void Renderer::invalidateTemporalHistory() {
+    previousViewProjectionValid_ = false;
+    temporalFrameIndex_ = 0U;
+    cloudHistoryInvalidated_ = true;
+    if (enscapeCubeRenderer_) enscapeCubeRenderer_->invalidateHistory();
+}
+
 TextureCache& Renderer::textureCache() {
     return *textureCache_;
 }
@@ -1784,6 +1821,7 @@ std::size_t Renderer::estimatedOpaqueTrafficBytesPerFrame() const {
 
 void Renderer::drawSelectionOutline(const std::vector<RenderItem>& items, const Camera& camera,
     std::uint64_t selected, bool cullBackFaces) {
+    if (enscapeCubeActive_) return;
     selectionOutline_->draw(*renderTarget_, items, camera, selected, cullBackFaces);
     stateCache_.invalidate();
 }

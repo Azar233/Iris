@@ -290,6 +290,7 @@ add_executable(MyRenderer
     src/render/PostProcessor.cpp
     src/render/RenderTarget.cpp
     src/render/Renderer.cpp
+    src/render/EnscapeCubeRenderer.cpp
     src/render/SceneDrawList.cpp
     src/render/Shader.cpp
     src/render/ShadowMap.cpp

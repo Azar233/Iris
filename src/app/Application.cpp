@@ -2019,6 +2019,9 @@ void Application::drawInspectorPanel() {
                 ImGui::EndDisabled();
             }
             if (EditorUi::section("Lighting & environment", true)) {
+            if (EditorUi::Checkbox("Enscape Cube GLSL study", &rendererSettings_.enscapeCubeShaderEnabled)) {
+                renderer_->invalidateTemporalHistory();
+            }
             EditorUi::Checkbox("Metallic-roughness PBR", &rendererSettings_.pbrEnabled);
             EditorUi::Checkbox("Image-based lighting", &rendererSettings_.iblEnabled);
             EditorUi::Checkbox(EditorUi::label("Skybox"), &rendererSettings_.skyboxEnabled);
