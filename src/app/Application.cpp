@@ -3441,9 +3441,11 @@ void Application::drawViewportPanel() {
 }
 
 void Application::updateViewportCameraNavigation() {
+    const ImGuiIO& io = ImGui::GetIO();
     if ((prismDemoEnabled_ && prismCameraLocked_)
         || !ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows)
-        || ImGui::GetIO().WantTextInput
+        || io.WantTextInput
+        || io.KeyCtrl || io.KeyAlt || io.KeySuper
         || ImGui::IsAnyItemActive()
         || frameDeltaTime_ <= 0.0f) {
         return;
@@ -3455,18 +3457,20 @@ void Application::updateViewportCameraNavigation() {
     if (ImGui::IsKeyDown(ImGuiKey_S)) forward -= 1.0f;
     if (ImGui::IsKeyDown(ImGuiKey_D)) right += 1.0f;
     if (ImGui::IsKeyDown(ImGuiKey_A)) right -= 1.0f;
-    const float lengthSquared = forward * forward + right * right;
+    float up = 0.0f;
+    if (ImGui::IsKeyDown(ImGuiKey_Space)) up += 1.0f;
+    if (ImGui::IsKeyDown(ImGuiKey_LeftShift)
+        || ImGui::IsKeyDown(ImGuiKey_RightShift)) up -= 1.0f;
+    const float lengthSquared = forward * forward + right * right + up * up;
     if (lengthSquared <= 0.0f) return;
 
     const float inverseLength = 1.0f / std::sqrt(lengthSquared);
     forward *= inverseLength;
     right *= inverseLength;
-    const float boost = ImGui::IsKeyDown(ImGuiKey_LeftShift)
-            || ImGui::IsKeyDown(ImGuiKey_RightShift)
-        ? 3.0f : 1.0f;
+    up *= inverseLength;
     const float speed = std::clamp(camera_.orbitState().distance * 0.8f, 1.5f, 30.0f)
-        * boost * frameDeltaTime_;
-    camera_.moveLocal(forward * speed, right * speed);
+        * frameDeltaTime_;
+    camera_.moveLocal(forward * speed, right * speed, up * speed);
 }
 
 void Application::captureReferenceComparison(int width, int height) {

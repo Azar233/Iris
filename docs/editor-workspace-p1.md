@@ -32,7 +32,7 @@ Scene Explorer 按已有 `SceneEntity::parent` 显示可展开的对象树。对
 
 Raster 与 CPU Path Traced 在相同 Viewport 位置显示 Backend、活动状态、分辨率、Frame/SPP、Denoiser 与任务状态；CPU 模式继续显示 Render/Denoise 时间、History、Ray 与 BVH 统计。
 
-Viewport 获得焦点后，`W/A/S/D` 沿当前观察方向与右方向连续移动相机，`Shift` 提供 3 倍加速；移动会同时平移轨道目标，因此可继续使用原有右键环绕、中键平移和滚轮缩放。文本输入或其他 ImGui 控件处于活动状态时键盘导航暂停，Prism 锁定机位也保持不可移动。
+Viewport 获得焦点后，`W/A/S/D` 沿当前观察方向与右方向连续移动相机，`Shift` 沿世界竖直方向下降，`Space` 上升；同时按多个方向键时会归一化移动速度。移动会同时平移轨道目标，因此可继续使用原有右键环绕、中键平移和滚轮缩放。文本输入、快捷键修饰键或其他 ImGui 控件处于活动状态时键盘导航暂停，Prism 锁定机位也保持不可移动。
 
 ### 底部 Workspace 面板
 

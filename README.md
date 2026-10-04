@@ -122,7 +122,7 @@ cmake --build build-mingw --parallel
 - View / `Volume glass preset`：加载平滑闭合球体，自动创建两个独立玻璃实例、原创棋盘格背景和固定正面机位；Renderer 面板可切换真实双界面折射，并使用 Clear / Olive / Amber / Crystal 四组体积玻璃参数。
 - View / `Glass caustics preset`：加载透明水晶球、白色接收地面与固定高机位，默认启用 Light-space RGB 焦散、彩色透射阴影和空间滤波；可即时切到 Projector / Decal 做美术对照。
 - View / `Local light stress preset`：加载 10×10 立方体固定舞台，并在 Renderer 面板选择 8/32/64 档 Point/Spot 灯光；切换 Forward/Deferred 可查看相同画面下的活动 Pass、Draw Call 与估算 Opaque Attachment 流量。
-- 渲染视口：点击 Viewport 后可用 `W/A/S/D` 沿观察方向自由移动，按住 `Shift` 加速；鼠标右键拖动旋转相机，中键拖动平移，滚轮缩放。文本框获得输入焦点时不会移动相机；工具栏或 File 菜单可将当前解析后画面保存为 PNG。
+- 渲染视口：点击 Viewport 后可用 `W/A/S/D` 沿观察方向自由移动，`Shift` 下降、`Space` 上升；鼠标右键拖动旋转相机，中键拖动平移，滚轮缩放。文本框获得输入焦点时不会移动相机；工具栏或 File 菜单可将当前解析后画面保存为 PNG。
 - 面板收纳：使用视口工具栏 `Panels` 或 `View > Panels` 显示/隐藏 Scene Explorer、Inspector 和 Workspace；`Reset layout` 会恢复完整默认工作区。
 - `Esc`：退出程序。
 
