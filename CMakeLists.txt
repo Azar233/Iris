@@ -313,7 +313,7 @@ if(WIN32)
         @ONLY
     )
     target_sources(MyRenderer PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/MyRenderer.rc")
-    target_link_libraries(MyRenderer PRIVATE comdlg32)
+    target_link_libraries(MyRenderer PRIVATE comdlg32 shell32 ole32 uuid)
 endif()
 
 target_include_directories(MyRenderer PRIVATE

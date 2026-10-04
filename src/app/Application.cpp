@@ -1230,10 +1230,10 @@ void Application::initializeWindow() {
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
     glfwWindowHint(GLFW_SAMPLES, 0);
-    if (std::getenv("MYRENDERER_SMOKE_TEST") != nullptr || benchmarkMode_ || prismReelMode_
-        || rasterSequenceMode_) {
-        glfwWindowHint(GLFW_VISIBLE, GLFW_FALSE);
-    }
+    const bool hiddenWindow = std::getenv("MYRENDERER_SMOKE_TEST") != nullptr
+        || benchmarkMode_ || prismReelMode_ || rasterSequenceMode_;
+    // Configure icons and Shell identity before the taskbar sees the window.
+    glfwWindowHint(GLFW_VISIBLE, GLFW_FALSE);
 #ifndef NDEBUG
     glfwWindowHint(GLFW_OPENGL_DEBUG_CONTEXT, GLFW_TRUE);
 #endif
@@ -1256,6 +1256,9 @@ void Application::initializeWindow() {
         throw std::runtime_error("Failed to create an OpenGL 3.3 window");
     }
     setMyRendererWindowIcon(window_);
+    if (!hiddenWindow) {
+        glfwShowWindow(window_);
+    }
     glfwSetWindowUserPointer(window_, this);
     glfwSetDropCallback(window_, [](GLFWwindow* window, int count, const char** paths) {
         auto* application = static_cast<Application*>(glfwGetWindowUserPointer(window));
@@ -1460,6 +1463,7 @@ void Application::shutdown() {
         guiInitialized_ = false;
     }
     if (window_ != nullptr) {
+        clearMyRendererWindowIdentity(window_);
         glfwDestroyWindow(window_);
         window_ = nullptr;
     }

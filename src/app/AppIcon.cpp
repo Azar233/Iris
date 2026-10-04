@@ -2,7 +2,10 @@
 
 #include <array>
 #include <cstring>
+#include <cstdlib>
 #include <filesystem>
+#include <iostream>
+#include <string>
 
 #ifdef _WIN32
 #ifndef WIN32_LEAN_AND_MEAN
@@ -13,6 +16,9 @@
 #endif
 #define GLFW_EXPOSE_NATIVE_WIN32
 #include <windows.h>
+#include <shobjidl.h>
+#include <shellapi.h>
+#include <propkey.h>
 #include <GLFW/glfw3.h>
 #include <GLFW/glfw3native.h>
 #else
@@ -78,12 +84,51 @@ void setNativeWindowsIcons(GLFWwindow* window) {
         ));
     };
 
-    if (HICON small = loadIcon(GetSystemMetrics(SM_CXSMICON), GetSystemMetrics(SM_CYSMICON))) {
-        SendMessageW(handle, WM_SETICON, ICON_SMALL, reinterpret_cast<LPARAM>(small));
-        SendMessageW(handle, WM_SETICON, ICON_SMALL2, reinterpret_cast<LPARAM>(small));
+    if (HICON smallIcon = loadIcon(GetSystemMetrics(SM_CXSMICON), GetSystemMetrics(SM_CYSMICON))) {
+        SendMessageW(handle, WM_SETICON, ICON_SMALL, reinterpret_cast<LPARAM>(smallIcon));
+        SendMessageW(handle, WM_SETICON, ICON_SMALL2, reinterpret_cast<LPARAM>(smallIcon));
     }
     if (HICON large = loadIcon(GetSystemMetrics(SM_CXICON), GetSystemMetrics(SM_CYICON))) {
         SendMessageW(handle, WM_SETICON, ICON_BIG, reinterpret_cast<LPARAM>(large));
+    }
+
+    // Taskbar groups use Shell properties independently of WM_SETICON. Point
+    // directly at the embedded resource so portable builds need no shortcut.
+    const HRESULT comResult = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
+    IPropertyStore* properties = nullptr;
+    const HRESULT storeResult = SHGetPropertyStoreForWindow(handle, IID_PPV_ARGS(&properties));
+    if (SUCCEEDED(storeResult)) {
+        const auto setString = [properties](REFPROPERTYKEY key, const std::wstring& text) {
+            PROPVARIANT value{};
+            value.vt = VT_LPWSTR;
+            value.pwszVal = const_cast<wchar_t*>(text.c_str());
+            return properties->SetValue(key, value);
+        };
+        std::wstring executable(32768, L'\0');
+        const DWORD length = GetModuleFileNameW(nullptr, executable.data(),
+                                                static_cast<DWORD>(executable.size()));
+        if (length > 0 && length < executable.size()) {
+            executable.resize(length);
+            const HRESULT commandResult = setString(PKEY_AppUserModel_RelaunchCommand, L"\"" + executable + L"\"");
+            const HRESULT nameResult = setString(PKEY_AppUserModel_RelaunchDisplayNameResource, L"Iris");
+            const HRESULT iconResult = setString(PKEY_AppUserModel_RelaunchIconResource,
+                      executable + L",-" + std::to_wstring(kApplicationIconResource));
+            // Set identity last, once all taskbar presentation properties exist.
+            const HRESULT idResult = setString(PKEY_AppUserModel_ID, L"Azar233.Iris");
+            const HRESULT commitResult = properties->Commit();
+            if (FAILED(commandResult) || FAILED(nameResult) || FAILED(iconResult)
+                || FAILED(idResult) || FAILED(commitResult)) {
+                std::cerr << "Failed to configure Iris taskbar properties\n";
+            } else if (std::getenv("MYRENDERER_SMOKE_TEST") != nullptr) {
+                std::cout << "Iris taskbar identity and embedded icon configured\n";
+            }
+        }
+        properties->Release();
+    } else {
+        std::cerr << "Failed to access Iris taskbar properties: " << storeResult << '\n';
+    }
+    if (SUCCEEDED(comResult)) {
+        CoUninitialize();
     }
 }
 #endif
@@ -136,5 +181,31 @@ void setMyRendererWindowIcon(GLFWwindow* window) {
     // Applying the compiled multi-size resource as well prevents Windows from
     // falling back to the generic icon in the taskbar and Alt+Tab switcher.
     setNativeWindowsIcons(window);
+#endif
+}
+
+void clearMyRendererWindowIdentity(GLFWwindow* window) {
+#ifdef _WIN32
+    if (window == nullptr) {
+        return;
+    }
+    const HRESULT comResult = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
+    IPropertyStore* properties = nullptr;
+    if (SUCCEEDED(SHGetPropertyStoreForWindow(glfwGetWin32Window(window),
+                                             IID_PPV_ARGS(&properties)))) {
+        const PROPVARIANT empty{};
+        for (const PROPERTYKEY* key : {&PKEY_AppUserModel_ID,
+                                       &PKEY_AppUserModel_RelaunchCommand,
+                                       &PKEY_AppUserModel_RelaunchDisplayNameResource,
+                                       &PKEY_AppUserModel_RelaunchIconResource}) {
+            properties->SetValue(*key, empty);
+        }
+        properties->Release();
+    }
+    if (SUCCEEDED(comResult)) {
+        CoUninitialize();
+    }
+#else
+    (void)window;
 #endif
 }
