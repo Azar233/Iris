@@ -1,6 +1,0 @@
-interface:
-  display_name: "MyRenderer Build and Test"
-  short_description: "Choose proportionate CMake, CTest, and GPU checks"
-  default_prompt: "Use $myrenderer-build-and-test to build this change and run the smallest meaningful verification set."
-policy:
-  allow_implicit_invocation: true

@@ -7,6 +7,7 @@
 | `assets/environments/kloofendal_48d_partly_cloudy_puresky_4k.exr` | Poly Haven, “Kloofendal 48d Partly Cloudy (Pure Sky)”; see the adjacent README | CC0 1.0 |
 | `cube.obj`, `sphere.obj`, material/glass/prism/skinning regression fixtures and their textures | Created or procedurally generated for Iris | MIT, under the project license |
 | `assets/icons/iris-source.png`, `iris-icon.png`, `iris.ico` | AI-generated iris artwork, revised and selected for Iris; source and export instructions in `assets/icons/README.md` | Distributed under the project MIT license |
+| `assets/readme/*.png` | Captured from the Iris editor; the studio scene uses the CC0 Poly Haven models listed below | MIT, under the project license |
 | `assets/models/polyhaven/*` | Five 1K glTF showcase models from Poly Haven; authors and source URLs are recorded in the adjacent README | CC0 1.0 |
 | `shaders/ocean_snoise.glsl` | 3D Simplex noise distributed with [osgw](https://github.com/CaffeineViking/osgw), originally by Ashima Arts / Stefan Gustavson; license copies in `assets/licenses/` | MIT |
 
@@ -29,6 +30,6 @@ No rights beyond the original owners' terms are claimed for these reference
 models. Do not include them in a commercial or redistributable build until their
 provenance is replaced with a verifiable permissive source.
 
-SR-P1B's original procedural room (`src/pathtracer/AcceptanceScene.cpp`),
-`docs/reference-images/sr-p1b-diffuse.{hdr,png}`, and `emissive_test.*` fixtures
-were created for Iris and are covered by the project MIT license.
+The original procedural room (`src/pathtracer/AcceptanceScene.cpp`),
+`emissive_test.*` fixtures, and the retained regression resources in
+`tests/baselines/` were created for Iris and are covered by the project MIT license.

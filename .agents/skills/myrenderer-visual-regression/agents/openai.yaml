@@ -1,6 +1,0 @@
-interface:
-  display_name: "MyRenderer Visual Regression"
-  short_description: "Protect fixed images and renderer performance evidence"
-  default_prompt: "Use $myrenderer-visual-regression to reproduce and diagnose this rendering difference without rewriting approved baselines."
-policy:
-  allow_implicit_invocation: true

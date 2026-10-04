@@ -14,6 +14,28 @@
 # Local dependency/tool caches
 /.cache/
 
+# Local AI assistants, skills, planning and development notes
+/.agents/
+/.codex/
+/.claude/
+/agents/
+/agent/
+/skills/
+/skill/
+AGENTS.md
+SKILL.md
+/docs/
+/dictionary.md
+/todolist.md
+/TODO.md
+/PLAN.md
+/tools/CloudCaptureIllustration.py
+
+# Local generated previews, captures and experiment output
+/output/
+/*.obj
+/*-benchmark.json
+
 # IDE and editor state
 /.vs/
 /.vscode/

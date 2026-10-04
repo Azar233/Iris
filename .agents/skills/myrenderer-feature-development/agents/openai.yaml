@@ -1,6 +1,0 @@
-interface:
-  display_name: "MyRenderer Feature Development"
-  short_description: "Implement renderer features without breaking shared contracts"
-  default_prompt: "Use $myrenderer-feature-development to implement this MyRenderer change as a complete, compatible vertical slice."
-policy:
-  allow_implicit_invocation: true

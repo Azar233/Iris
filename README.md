@@ -9,16 +9,16 @@
 <p align="center">
   <a href="#快速开始">快速开始</a> ·
   <a href="#主要能力">主要能力</a> ·
-  <a href="#文档">文档</a>
+  <a href="#构建与测试">构建与测试</a>
 </p>
 
 Iris 是一个独立的图形学与渲染实验平台，将实时光栅化、CPU 路径追踪、场景编辑和批量渲染放在同一套工作流中。
 
 项目源于我在西安交通大学图形学课程框架 [Dandelion](https://github.com/XJTU-Graphics/dandelion) 中的学习经历。Iris（鸢尾花）延续植物命名，也呼应视觉、成像与光谱的探索。
 
-![Iris 最新编辑器：场景层级、实时视口、对象属性与资源浏览器](docs/media/iris-editor-scene-1600x900.png)
+![Iris 最新编辑器：场景层级、实时视口、对象属性与资源浏览器](assets/readme/iris-editor-scene-1600x900.png)
 
-*1600×900 工作区：Hierarchy 显示 9 个实体，Scene 预览室内模型，Inspector 展示 Object 属性，Project 浏览内置场景。[截图复现](docs/media/README.md#iris-首页截图)*
+*1600×900 工作区：Hierarchy 显示 9 个实体，Scene 预览室内模型，Inspector 展示 Object 属性，Project 浏览内置场景。[截图复现](assets/readme/README.md)*
 
 ## 主要能力
 
@@ -31,9 +31,9 @@ Iris 是一个独立的图形学与渲染实验平台，将实时光栅化、CPU
 <details>
 <summary>更多预览：海面与光照实验</summary>
 
-![Iris 海面实验：Renderer 属性与实时海面预览](docs/media/iris-editor-1600x900.png)
+![Iris 海面实验：Renderer 属性与实时海面预览](assets/readme/iris-editor-1600x900.png)
 
-*1600×900 工作区，Inspector 的 Renderer 页展示材质、PBR 与光照参数；Scene 显示程序化海面、天空和黄色方块。[截图复现](docs/media/README.md#iris-首页截图)*
+*1600×900 工作区，Inspector 的 Renderer 页展示材质、PBR 与光照参数；Scene 显示程序化海面、天空和黄色方块。[截图复现](assets/readme/README.md)*
 
 </details>
 
@@ -59,7 +59,17 @@ cmake --build build --config Release --parallel
 ctest --test-dir build -C Release --output-on-failure
 ```
 
-MinGW 构建、GPU smoke、发布打包及完整操作说明见[功能与开发指南](docs/project-guide.md)。
+## 构建与测试
+
+MinGW 用户可将配置命令改为 `cmake -S . -B build-mingw -G "MinGW Makefiles" -DCMAKE_BUILD_TYPE=Release`，然后运行 `cmake --build build-mingw --parallel`。
+
+以下目标分别验证真实 OpenGL 启动、运行固定图回归和生成可独立运行的 ZIP：
+
+```powershell
+cmake --build build --config Release --target gpu-smoke
+cmake --build build --config Release --target renderer-regression-suite
+cmake --build build --config Release --target package
+```
 
 ## 项目结构
 
@@ -69,20 +79,9 @@ shaders/   GLSL 渲染与后处理
 assets/    模型、场景、环境、图标与 Render Job
 tests/     自动化测试
 tools/     资产生成、验收、截图与性能工具
-docs/      实现说明、实验记录与可复现证据
 ```
 
-## 文档
-
-| 主题 | 入口 |
-| --- | --- |
-| 功能、操作与开发 | [完整指南](docs/project-guide.md) · [术语字典](dictionary.md) |
-| Editor 与 Runtime | [工作区](docs/editor-workspace-p1.md) · [模块](docs/module-runtime.md) · [批量渲染](docs/render-job-batch.md) |
-| CPU 路径追踪 | [算法与验收](docs/reference-path-tracer.md) · [编辑器渐进预览](docs/cpu-progressive-preview.md) |
-| 光学实验 | [棱镜与光谱](docs/prism-spectrum.md) · [玻璃与焦散](docs/glass4-validation.md) |
-| 大气与自然场景 | [天空](docs/atmosphere-sky.md) · [体积云](docs/cloud-offline-runtime.md) · [海面](docs/enscape-ocean-study.md) |
-
-Iris 仍在持续开发，实时与离线路径的支持范围并不完全相同；各主题文档记录了当前边界和验证结果。内部构建目标、环境变量和持久化标识保留旧名称以兼容已有项目，详见[开发兼容性说明](docs/project-guide.md#开发兼容性)。
+Iris 仍在持续开发，实时与离线路径的支持范围并不完全相同。内部 CMake target（`MyRenderer`、`MyRendererBatch`）、`MYRENDERER_*` 环境变量和持久化标识保留旧名称，以兼容已有项目。
 
 ## 许可与致谢
 

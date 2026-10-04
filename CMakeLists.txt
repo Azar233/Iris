@@ -675,7 +675,7 @@ if(BUILD_TESTING)
     set_tests_properties(path-tracing-denoising PROPERTIES TIMEOUT 30)
     add_custom_target(path-tracing-regression
         COMMAND MyRendererProgressiveTests
-            ${CMAKE_CURRENT_SOURCE_DIR}/docs/reference-images/sr-p1g-volume-glass
+            ${CMAKE_CURRENT_SOURCE_DIR}/tests/baselines/reference-images/sr-p1g-volume-glass
             ${CMAKE_CURRENT_BINARY_DIR}/path-tracing-acceptance/volume-glass
         DEPENDS path-tracing-acceptance MyRendererProgressiveTests
         COMMENT "Comparing Beauty and seven AOV HDR/PNG outputs against the fixed SAH volume-glass baseline"

@@ -6,7 +6,7 @@ file(MAKE_DIRECTORY "${OUTPUT_DIR}")
 
 function(compare_capture name)
     set(output "${OUTPUT_DIR}/${name}.png")
-    set(baseline "${SOURCE_DIR}/docs/images/${name}.png")
+    set(baseline "${SOURCE_DIR}/tests/baselines/images/${name}.png")
     if(UPDATE_BASELINES)
         file(COPY_FILE "${output}" "${baseline}" ONLY_IF_DIFFERENT)
         return()

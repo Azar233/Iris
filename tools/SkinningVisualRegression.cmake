@@ -6,7 +6,7 @@ file(MAKE_DIRECTORY "${OUTPUT_DIR}")
 
 function(capture_skinning name animation time debug_view)
     set(output "${OUTPUT_DIR}/${name}.png")
-    set(baseline "${SOURCE_DIR}/docs/images/${name}.png")
+    set(baseline "${SOURCE_DIR}/tests/baselines/images/${name}.png")
     execute_process(
         COMMAND "${CMAKE_COMMAND}" -E env
             MYRENDERER_SMOKE_TEST=1

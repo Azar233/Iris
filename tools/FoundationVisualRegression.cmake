@@ -6,7 +6,7 @@ file(MAKE_DIRECTORY "${OUTPUT_DIR}")
 
 function(capture_foundation name model scene_demo object_motion animation_demo animation_step taa_debug)
     set(output "${OUTPUT_DIR}/${name}.png")
-    set(baseline "${SOURCE_DIR}/docs/images/${name}.png")
+    set(baseline "${SOURCE_DIR}/tests/baselines/images/${name}.png")
     execute_process(
         COMMAND "${CMAKE_COMMAND}" -E env
             MYRENDERER_SMOKE_TEST=1
