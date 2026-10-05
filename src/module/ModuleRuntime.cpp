@@ -17,21 +17,26 @@ bool coerceValue(
 ) {
     coerced = value;
     coerced.type = descriptor.type;
+    // Scene overrides preserve their declared type; Job strings remain neutral Asset values.
+    if (value.type == descriptor.type && descriptor.type != ModuleParameterType::Enum) return true;
     switch (descriptor.type) {
         case ModuleParameterType::Bool:
-            coerced.boolean = value.boolean;
-            return true;
+            error = "parameter '" + descriptor.id + "' expects a bool, got "
+                + moduleParameterTypeName(value.type);
+            return false;
         case ModuleParameterType::Int:
             if (value.type == ModuleParameterType::Float) {
                 if (!std::isfinite(value.number)) {
                     error = "parameter '" + descriptor.id + "' must be a finite number";
                     return false;
                 }
-                coerced.integer = static_cast<int>(std::lround(value.number));
+                coerced.integer = static_cast<int>(std::lround(std::clamp(
+                    static_cast<double>(value.number), descriptor.minimum, descriptor.maximum)));
                 return true;
             }
-            coerced.integer = value.integer;
-            return true;
+            error = "parameter '" + descriptor.id + "' expects a number, got "
+                + moduleParameterTypeName(value.type);
+            return false;
         case ModuleParameterType::Float:
             if (value.type == ModuleParameterType::Int) {
                 coerced.number = static_cast<float>(value.integer);
@@ -53,12 +58,20 @@ bool coerceValue(
             coerced.color = value.color;
             return true;
         case ModuleParameterType::Enum:
-            if (value.type != ModuleParameterType::Asset) {
+            if (value.type != ModuleParameterType::Asset && value.type != ModuleParameterType::Enum) {
                 error = "parameter '" + descriptor.id + "' expects an enum label, got "
                     + moduleParameterTypeName(value.type);
                 return false;
             }
             coerced.text = value.text;
+            {
+                const auto label = std::find(descriptor.enumLabels.begin(), descriptor.enumLabels.end(), value.text);
+                if (label == descriptor.enumLabels.end()) {
+                    error = "parameter '" + descriptor.id + "' has unknown enum label '" + value.text + "'";
+                    return false;
+                }
+                coerced.integer = static_cast<int>(label - descriptor.enumLabels.begin());
+            }
             return true;
         case ModuleParameterType::Asset:
             if (value.type != ModuleParameterType::Asset) {

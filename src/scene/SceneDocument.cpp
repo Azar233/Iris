@@ -537,6 +537,22 @@ void readRendererSettings(const scene_json::Value& value, RendererSettings& sett
 }
 
 void validateDocument(const SceneDocument& document) {
+    if (document.moduleId.empty() && !document.moduleParameters.empty()) {
+        throw std::runtime_error("Module parameters require a module id");
+    }
+    std::unordered_set<std::string> parameterIds;
+    for (const auto& entry : document.moduleParameters) {
+        if (entry.id.empty() || !parameterIds.insert(entry.id).second) {
+            throw std::runtime_error("Module parameter IDs must be unique and non-empty");
+        }
+        const auto& value = entry.value;
+        if (value.type < ModuleParameterType::Bool || value.type > ModuleParameterType::Asset
+            || (value.type == ModuleParameterType::Float && !std::isfinite(value.number))
+            || (value.type == ModuleParameterType::Color && (!std::isfinite(value.color.x)
+                || !std::isfinite(value.color.y) || !std::isfinite(value.color.z)))) {
+            throw std::runtime_error("Invalid module parameter '" + entry.id + "'");
+        }
+    }
     std::unordered_map<SceneEntityId, SceneEntityId> parents;
     for (const SceneDocumentEntity& entity : document.entities) {
         if (entity.id == invalidSceneEntityId || !parents.emplace(entity.id, entity.parent).second) {
@@ -572,6 +588,31 @@ bool saveSceneDocument(
         writer.StartObject();
         writer.Key("format"); writer.String("MyRendererScene");
         writer.Key("version"); writer.Int(SceneDocument::currentVersion);
+        if (!document.moduleId.empty()) {
+            writer.Key("module"); writer.StartObject();
+            writer.Key("id"); writer.String(document.moduleId.c_str());
+            writer.Key("seed"); writer.Uint(document.moduleSeed);
+            writer.Key("parameters"); writer.StartArray();
+            for (const auto& entry : document.moduleParameters) {
+                writer.StartObject();
+                writer.Key("id"); writer.String(entry.id.c_str());
+                writer.Key("type"); writer.Int(static_cast<int>(entry.value.type));
+                writer.Key("value");
+                switch (entry.value.type) {
+                case ModuleParameterType::Bool: writer.Bool(entry.value.boolean); break;
+                case ModuleParameterType::Int: writer.Int(entry.value.integer); break;
+                case ModuleParameterType::Float: writer.Double(entry.value.number); break;
+                case ModuleParameterType::Color: writeVec3(writer, entry.value.color); break;
+                case ModuleParameterType::Enum: writer.String(entry.value.text.c_str()); break;
+                case ModuleParameterType::Asset: {
+                    const auto relative = makeSceneRelativeResource(entry.value.text, path);
+                    writer.String(relative.c_str()); break;
+                }
+                }
+                writer.EndObject();
+            }
+            writer.EndArray(); writer.EndObject();
+        }
         writer.Key("camera"); writer.StartObject();
         writer.Key("target"); writeVec3(writer, document.camera.target);
         writer.Key("yawDegrees"); writer.Double(document.camera.yawDegrees);
@@ -671,6 +712,55 @@ bool loadSceneDocument(
         }
 
         SceneDocument loaded;
+        if (const auto* module = optionalMember(root, "module")) {
+            if (version < 2 || !module->IsObject()) {
+                throw std::runtime_error("Scene module requires version 2 and an object");
+            }
+            loaded.moduleId = readString(*module, "id");
+            if (loaded.moduleId.empty()) throw std::runtime_error("Scene module id must not be empty");
+            const auto* seed = optionalMember(*module, "seed");
+            if (seed != nullptr) {
+                if (!seed->IsUint()) throw std::runtime_error("Scene module seed must be uint32");
+                loaded.moduleSeed = seed->GetUint();
+            }
+            if (const auto* parameters = optionalMember(*module, "parameters")) {
+                if (!parameters->IsArray()) throw std::runtime_error("Scene module parameters must be an array");
+                for (const auto& item : parameters->GetArray()) {
+                    if (!item.IsObject() || !item.HasMember("value"))
+                        throw std::runtime_error("Invalid scene module parameter object");
+                    ModuleParameterOverride entry;
+                    entry.id = readString(item, "id");
+                    entry.value.type = static_cast<ModuleParameterType>(readInt(item, "type", -1));
+                    const auto& value = item["value"];
+                    bool valid = false;
+                    switch (entry.value.type) {
+                    case ModuleParameterType::Bool:
+                        valid = value.IsBool(); if (valid) entry.value.boolean = value.GetBool(); break;
+                    case ModuleParameterType::Int:
+                        valid = value.IsInt(); if (valid) entry.value.integer = value.GetInt(); break;
+                    case ModuleParameterType::Float:
+                        valid = value.IsNumber(); if (valid) entry.value.number = value.GetFloat(); break;
+                    case ModuleParameterType::Color:
+                        valid = value.IsArray() && value.Size() == 3U
+                            && value[0].IsNumber() && value[1].IsNumber() && value[2].IsNumber();
+                        if (valid) entry.value.color = glm::vec3(value[0].GetFloat(), value[1].GetFloat(), value[2].GetFloat());
+                        break;
+                    case ModuleParameterType::Enum:
+                    case ModuleParameterType::Asset:
+                        valid = value.IsString();
+                        if (valid) {
+                            entry.value.text = value.GetString();
+                            if (entry.value.type == ModuleParameterType::Asset && !entry.value.text.empty()
+                                && entry.value.text.rfind("builtin:", 0U) != 0U)
+                                entry.value.text = resolveSceneResource(entry.value.text, path).generic_u8string();
+                        }
+                        break;
+                    }
+                    if (!valid) throw std::runtime_error("Invalid value for module parameter '" + entry.id + "'");
+                    loaded.moduleParameters.push_back(std::move(entry));
+                }
+            }
+        }
         if (const scene_json::Value* camera = optionalMember(root, "camera")) {
             loaded.camera.target = readVec3(*camera, "target", loaded.camera.target);
             loaded.camera.yawDegrees = readFloat(*camera, "yawDegrees", loaded.camera.yawDegrees);

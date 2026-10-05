@@ -1,6 +1,7 @@
 #include <cmath>
 #include <filesystem>
 #include <iostream>
+#include <fstream>
 #include <stdexcept>
 
 #include "scene/SceneDocument.h"
@@ -289,6 +290,64 @@ int main() {
         require(retained.renderer.atmosphere.cloudOfflineNoise
             && close(retained.renderer.atmosphere.cloudNoisePeriod,4)
             && retained.entities.size()==firstLoad.entities.size(),"failed offline load must preserve the previous scene");
+
+        // Typed overrides preserve enum/asset identity and scene-relative resources.
+        SceneDocument moduleScene = source;
+        moduleScene.moduleId = "myrenderer.core.turntable";
+        moduleScene.moduleSeed = 0xffffffffU;
+        for (int type = 0; type <= static_cast<int>(ModuleParameterType::Asset); ++type) {
+            ModuleParameterOverride entry;
+            entry.id = "parameter" + std::to_string(type);
+            entry.value.type = static_cast<ModuleParameterType>(type);
+            entry.value.boolean = true;
+            entry.value.integer = -17;
+            entry.value.number = 2.5f;
+            entry.value.color = glm::vec3(0.2f, 0.4f, 0.6f);
+            entry.value.text = type == static_cast<int>(ModuleParameterType::Asset)
+                ? modelPath.generic_u8string() : "Y";
+            moduleScene.moduleParameters.push_back(entry);
+        }
+        const auto modulePath = directory / "module.myscene";
+        require(saveSceneDocument(modulePath, moduleScene, error), error.c_str());
+        SceneDocument restoredModule;
+        require(loadSceneDocument(modulePath, restoredModule, error), error.c_str());
+        require(restoredModule.moduleId == moduleScene.moduleId
+            && restoredModule.moduleSeed == 0xffffffffU
+            && restoredModule.moduleParameters.size() == 6U, "module identity and uint32 seed round trip");
+        for (std::size_t index = 0; index < 6U; ++index) {
+            require(restoredModule.moduleParameters[index].value.type
+                == moduleScene.moduleParameters[index].value.type, "all six override types survive");
+        }
+        require(restoredModule.moduleParameters[0].value.boolean
+            && restoredModule.moduleParameters[1].value.integer == -17
+            && close(restoredModule.moduleParameters[2].value.number, 2.5f)
+            && close(restoredModule.moduleParameters[3].value.color.z, 0.6f)
+            && restoredModule.moduleParameters[4].value.text == "Y"
+            && std::filesystem::u8path(restoredModule.moduleParameters[5].value.text)
+                == modelPath.lexically_normal(), "override values and asset path survive");
+        require(saveSceneDocument(modulePath, restoredModule, error), error.c_str());
+        require(loadSceneDocument(modulePath, restoredModule, error), error.c_str());
+        require(restoredModule.moduleParameters[5].value.text == modelPath.generic_u8string(),
+            "asset path stays stable across repeated save/load");
+        const auto rejectedPath = directory / "invalid-module.myscene";
+        const auto rejectModule = [&](const std::string& json) {
+            std::ofstream stream(rejectedPath); stream << json; stream.close();
+            auto unchanged = restoredModule;
+            require(!loadSceneDocument(rejectedPath, unchanged, error), "invalid module input must fail");
+            require(unchanged.moduleId == restoredModule.moduleId
+                && unchanged.moduleSeed == restoredModule.moduleSeed
+                && unchanged.entities.size() == restoredModule.entities.size(),
+                "failed module parse must preserve destination scene");
+        };
+        rejectModule(R"({"format":"MyRendererScene","version":2,"module":{"id":"test","seed":-1},"entities":[]})");
+        rejectModule(R"({"format":"MyRendererScene","version":1,"module":{"id":"test"},"entities":[]})");
+        rejectModule(R"({"format":"MyRendererScene","version":2,"module":{"id":"test","parameters":[{"id":"x","type":0,"value":3}]},"entities":[]})");
+        rejectModule(R"({"format":"MyRendererScene","version":2,"module":{"id":"test","parameters":[{"id":"x","type":0,"value":true},{"id":"x","type":0,"value":false}]},"entities":[]})");
+        const auto legacyPath = directory / "legacy.myscene";
+        { std::ofstream stream(legacyPath); stream << R"({"format":"MyRendererScene","version":1,"entities":[]})"; }
+        require(loadSceneDocument(legacyPath, restoredModule, error), error.c_str());
+        require(restoredModule.moduleId.empty() && restoredModule.moduleParameters.empty(),
+            "loading a legacy scene clears previous module configuration");
 
         const std::filesystem::path examples =
             std::filesystem::path(MYRENDERER_SOURCE_DIR) / "assets" / "scenes";

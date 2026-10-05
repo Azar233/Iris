@@ -2406,6 +2406,12 @@ void Application::deleteSelectedEntity() {
 }
 
 void Application::newEmptyScene() {
+    activeModuleId_.clear();
+    moduleParameterOverrides_.clear();
+    moduleSeed_ = 20260919U;
+    moduleRuntime_.clear();
+    ++moduleInputRevision_;
+    moduleMessage_.clear();
     // In-flight CPU work may finish, but its result belongs to the old generation.
     ++sceneGeneration_;
     droppedModelPaths_.clear();
@@ -2448,6 +2454,12 @@ SceneDocument Application::captureSceneDocument() const {
     SceneDocument document;
     document.camera = camera_.orbitState();
     document.renderer = rendererSettings_;
+    document.moduleId = activeModuleId_;
+    document.moduleSeed = moduleSeed_;
+    document.moduleParameters = moduleRuntime_.active()
+        && moduleBuiltRevision_ == moduleInputRevision_
+        && moduleBuiltSceneGeneration_ == sceneGeneration_
+        ? moduleRuntime_.parameters().overrides() : moduleParameterOverrides_;
     document.playback.animationEnabled = animationEnabled_;
     document.playback.animationPlaying = animationPlaying_;
     document.playback.animationTimeSeconds = animationTimeSeconds_;
@@ -2562,6 +2574,13 @@ bool Application::openScene(const std::filesystem::path& path) {
         statusMessage_ = "Open scene failed: " + documentError;
         return false;
     }
+    // Validate against the same registry as Batch before replacing the edit scene.
+    ModuleRuntime preparedModule(moduleRegistry_);
+    if (!preparedModule.configure(document.moduleId, document.moduleParameters,
+            document.moduleSeed, documentError)) {
+        statusMessage_ = "Open scene failed; current scene preserved: " + documentError;
+        return false;
+    }
 
     struct PreparedModel {
         std::filesystem::path path;
@@ -2601,6 +2620,10 @@ bool Application::openScene(const std::filesystem::path& path) {
         loadedSceneDocument_ = true;
         emptySceneSession_ = false;
         rendererSettings_ = document.renderer;
+        activeModuleId_ = document.moduleId;
+        moduleSeed_ = document.moduleSeed;
+        moduleParameterOverrides_ = preparedModule.parameters().overrides();
+        ++moduleInputRevision_;
         camera_.setOrbitState(document.camera);
         animationEnabled_ = document.playback.animationEnabled;
         animationPlaying_ = document.playback.animationPlaying;
@@ -3264,6 +3287,36 @@ bool Application::editorInteractionRegression() {
             check(std::abs(viewportScene().find(first)->transform.rotationDegrees.y
                            - (baselineRotationY + 45.0f)) < 1.0e-3f,
                   "a module parameter command must change the previewed frame");
+            const auto savedModulePath = std::filesystem::temp_directory_path()
+                / "IrisModuleSceneAcceptance" / "module.myscene";
+            SceneDocument savedModule = captureSceneDocument();
+            std::string moduleSaveError;
+            check(saveSceneDocument(savedModulePath, savedModule, moduleSaveError),
+                "module scene serialization failed");
+            SceneDocument invalidModule = savedModule;
+            invalidModule.moduleId = "myrenderer.missing.module";
+            const auto invalidModulePath = savedModulePath.parent_path() / "unknown.myscene";
+            check(saveSceneDocument(invalidModulePath, invalidModule, moduleSaveError),
+                "unknown module fixture serialization failed");
+            check(!openScene(invalidModulePath)
+                    && activeModuleId_ == savedModule.moduleId
+                    && scene_.find(first) != nullptr,
+                "unknown module load must preserve current scene and module");
+            invalidModule = savedModule;
+            ModuleParameterOverride unknownParameter;
+            unknownParameter.id = "unknownParameter";
+            invalidModule.moduleParameters.push_back(unknownParameter);
+            check(saveSceneDocument(invalidModulePath, invalidModule, moduleSaveError),
+                "invalid parameter fixture serialization failed");
+            check(!openScene(invalidModulePath)
+                    && activeModuleId_ == savedModule.moduleId,
+                "invalid module parameter must preserve current scene");
+            check(openScene(savedModulePath), "saved module scene failed to reopen");
+            updateModulePreview();
+            check(activeModuleId_ == savedModule.moduleId && moduleSeed_ == savedModule.moduleSeed
+                    && std::abs(moduleRuntime_.parameters().floatValue("degreesPerFrame", 0.0f)
+                        - 45.0f) < 1.0e-4f,
+                "reopening must restore module seed and parameter overrides");
             editorSession_.request(EditorCommand{EditorCommandType::SetActiveModule});
             processEditorCommands();
             updateModulePreview();

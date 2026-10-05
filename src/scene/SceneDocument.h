@@ -1,6 +1,7 @@
 #pragma once
 
 #include <filesystem>
+#include <cstdint>
 #include <string>
 #include <vector>
 
@@ -8,6 +9,7 @@
 #include "render/Camera.h"
 #include "render/Renderer.h"
 #include "scene/Scene.h"
+#include "module/ParameterRegistry.h"
 
 inline constexpr const char* myRendererSceneExtension = ".myscene";
 inline constexpr const char* builtinGroundResource = "builtin:ground-plane";
@@ -38,11 +40,14 @@ struct ScenePlaybackSettings {
 };
 
 struct SceneDocument {
-    static constexpr int currentVersion = 1;
+    static constexpr int currentVersion = 2;
 
     CameraOrbitState camera;
     RendererSettings renderer;
     ScenePlaybackSettings playback;
+    std::string moduleId;
+    std::uint32_t moduleSeed{20260919U};
+    std::vector<ModuleParameterOverride> moduleParameters;
     std::vector<SceneDocumentEntity> entities;
 };
 

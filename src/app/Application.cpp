@@ -332,6 +332,14 @@ int Application::run(const std::filesystem::path& initialModel) {
     if (const char* value = std::getenv("MYRENDERER_CPU_PREVIEW_AOV")) {
         cpuPreviewOutput_ = std::clamp(std::atoi(value), 0, 7);
     }
+    if (const char* value = std::getenv("MYRENDERER_CPU_PREVIEW_POWER_LIGHTS"))
+        cpuPreviewPowerWeightedLights_ = std::atoi(value) != 0;
+    if (const char* value = std::getenv("MYRENDERER_CPU_PREVIEW_VNDF"))
+        cpuPreviewGgxVndf_ = std::atoi(value) != 0;
+    if (const char* value = std::getenv("MYRENDERER_CPU_PREVIEW_DENOISE"))
+        cpuPreviewDenoise_ = std::atoi(value) != 0;
+    if (const char* value = std::getenv("MYRENDERER_CPU_PREVIEW_EXPORT"))
+        pendingCpuPreviewExportPath_ = std::filesystem::absolute(value).lexically_normal();
     initializeWindow();
     initializeGui();
     initializeRenderer();
@@ -1234,6 +1242,7 @@ void Application::initializeWindow() {
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
     glfwWindowHint(GLFW_SAMPLES, 0);
     const bool hiddenWindow = std::getenv("MYRENDERER_SMOKE_TEST") != nullptr
+        || !pendingCpuPreviewExportPath_.empty()
         || benchmarkMode_ || prismReelMode_ || rasterSequenceMode_;
     // Configure icons and Shell identity before the taskbar sees the window.
     glfwWindowHint(GLFW_VISIBLE, GLFW_FALSE);
@@ -3261,6 +3270,17 @@ void Application::drawViewportPanel() {
         && !benchmarkMode_ && !prismReelMode_ && !referenceComparisonMode_;
     if (cpuPreviewVisible) {
         updateCpuPreview(width, height);
+        if (!pendingCpuPreviewExportPath_.empty()) {
+            const auto published = cpuPreviewTask_.progressSnapshot();
+            if (published && published->taskId == cpuPreviewTaskId_
+                && published->image.completedSamples >= static_cast<std::uint32_t>(cpuPreviewSamplesPerPixel_)) {
+                pathtracer::writeRenderOutput(published->image, pathtracer::RenderOutput::Beauty,
+                    pendingCpuPreviewExportPath_, {pathtracer::RenderFileFormat::Png});
+                std::cout << "CPU preview reference exported: " << pendingCpuPreviewExportPath_ << '\n';
+                pendingCpuPreviewExportPath_.clear();
+                glfwSetWindowShouldClose(window_, GLFW_TRUE);
+            }
+        }
     } else {
         renderer_->render(renderItems, previewCamera, previewSettings, width, height);
     }

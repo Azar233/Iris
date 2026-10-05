@@ -385,6 +385,19 @@ void testSimulationCache(SceneEntityId first, SceneEntityId second, SceneEntityI
     ModuleRegistry registry = createBuiltinModuleRegistry();
     std::string error;
     ModuleRuntime runtime(registry);
+    ModuleParameterOverride typedAxis;
+    typedAxis.id = "axis";
+    typedAxis.value.type = ModuleParameterType::Enum;
+    typedAxis.value.text = "Y";
+    require(runtime.configure(BuiltinModules::turntableId, {typedAxis}, 7U, error), error.c_str());
+    require(runtime.parameters().enumLabel("axis") == "Y", "typed scene enum must configure the runner");
+    typedAxis.value.type = ModuleParameterType::Asset;
+    typedAxis.value.text = "Z";
+    require(runtime.configure(BuiltinModules::turntableId, {typedAxis}, 7U, error), error.c_str());
+    require(runtime.parameters().enumLabel("axis") == "Z", "neutral Job strings remain compatible");
+    typedAxis.id = "enabled";
+    require(!runtime.configure(BuiltinModules::turntableId, {typedAxis}, 7U, error),
+        "a string must not silently become a bool");
     require(runtime.configure(BuiltinModules::turntableId, {}, 7U, error), error.c_str());
     SimulationCache cache;
     require(runtime.bakeSimulation(editScene, 0, 5, 24, cache, error), error.c_str());
