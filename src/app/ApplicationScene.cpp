@@ -21,6 +21,7 @@
 #include <filesystem>
 #include <fstream>
 #include <string>
+#include <thread>
 #include <unordered_map>
 
 #include <imgui.h>
@@ -29,6 +30,7 @@
 #include "app/EditorDomain.h"
 #include "module/BuiltinModules.h"
 #include "app/EditorUi.h"
+#include "pathtracer/SceneSnapshotCapture.h"
 
 #include "app/FileDialog.h"
 #include "render/GpuModel.h"
@@ -244,12 +246,87 @@ void Application::drawWorkspaceToolbar() {
 void Application::processEditorCommands() {
     for (const EditorCommand& command : editorSession_.takeCommands()) {
         switch (command.type) {
+            case EditorCommandType::NewScene:
+                if (pendingModelImport_) { statusMessage_ = "Wait for the current import before clearing the scene."; break; }
+                cpuPreviewTask_.cancel();
+                cpuPreviewTaskId_ = 0U;
+                cpuPreviewSingleFrameRefresh_ = false;
+                cpuPreviewRestartRequested_ = true;
+                editorSession_.requestActivity(EditorActivity::Edit);
+                newEmptyScene();
+                break;
+            case EditorCommandType::OpenSceneDialog:
+                openSceneFromDialog();
+                break;
+            case EditorCommandType::SaveScene:
+                if (pendingModelImport_) { statusMessage_ = "Wait for the current import before saving the scene."; break; }
+                if (command.text.empty()) saveCurrentScene();
+                else saveSceneTo(std::filesystem::u8path(command.text));
+                break;
+            case EditorCommandType::SaveSceneAs:
+                if (pendingModelImport_) { statusMessage_ = "Wait for the current import before saving the scene."; break; }
+                saveSceneAs();
+                break;
+            case EditorCommandType::ResetSceneModel:
+                if (currentScenePath_.empty() && !currentModelPath_.empty() && !pendingModelImport_)
+                    loadModel(currentModelPath_);
+                else statusMessage_ = "Reset model is unavailable for this scene.";
+                break;
+            case EditorCommandType::ApplyScenePreset: {
+                static constexpr const char* scenes[] = {
+                    "06_prism_spectrum.myscene", "04_volume_glass.myscene",
+                    "05_glass_caustics.myscene", "07_local_lights.myscene", "08_instancing_lod.myscene"
+                };
+                if (command.value >= std::size(scenes)) {
+                    statusMessage_ = "Unknown bundled Scene preset; current scene preserved.";
+                    break;
+                }
+                openScene(sourceRoot_ / "assets/scenes/fixtures" / scenes[command.value]);
+                break;
+            }
+            case EditorCommandType::SetCpuPreviewSettings: {
+                const auto& settings = command.cpuPreview;
+                if (settings.scaleMode < 0 || settings.scaleMode > 3
+                    || settings.samplesPerPixel < 1 || settings.samplesPerPixel > 4096
+                    || settings.maxDepth < 1 || settings.maxDepth > 32
+                    || settings.seed < 0 || settings.output < 0 || settings.output > 7
+                    || settings.atrousIterations < 1 || settings.atrousIterations > 6) {
+                    statusMessage_ = "CPU Preview rejected invalid settings.";
+                    break;
+                }
+                const auto previous = cpuPreviewInputSignature(1, 1);
+                cpuPreviewScaleMode_ = settings.scaleMode;
+                cpuPreviewSamplesPerPixel_ = settings.samplesPerPixel;
+                cpuPreviewMaxDepth_ = settings.maxDepth;
+                cpuPreviewSeed_ = settings.seed;
+                cpuPreviewOutput_ = settings.output;
+                cpuPreviewDenoise_ = settings.denoise;
+                cpuPreviewAtrousIterations_ = settings.atrousIterations;
+                cpuPreviewTemporalDenoise_ = settings.temporalDenoise;
+                cpuPreviewFireflyClamp_ = settings.fireflyClamp;
+                cpuPreviewPowerWeightedLights_ = settings.powerWeightedLights;
+                cpuPreviewGgxVndf_ = settings.ggxVndf;
+                if (previous != cpuPreviewInputSignature(1, 1)) {
+                    cpuPreviewTask_.cancel();
+                    cpuPreviewTaskId_ = 0U;
+                    cpuPreviewRestartRequested_ = true;
+                    cpuPreviewSingleFrameRefresh_ = false;
+                }
+                break;
+            }
+            case EditorCommandType::RestartCpuPreview:
+                cpuPreviewTask_.cancel();
+                cpuPreviewTaskId_ = 0U;
+                cpuPreviewRestartRequested_ = true;
+                cpuPreviewSingleFrameRefresh_ = viewportRenderMode_ == 1 && cpuPreviewPaused_;
+                break;
             case EditorCommandType::BackendChanged: {
                 const auto backend = static_cast<EditorRenderBackend>(command.value);
                 const int requested = backend == EditorRenderBackend::CpuPathTraced ? 1 : 0;
                 if (viewportRenderMode_ == requested) break;
                 viewportRenderMode_ = requested;
                 if (viewportRenderMode_ == 0) {
+                    cpuPreviewSingleFrameRefresh_ = false;
                     cpuPreviewTask_.cancel();
                     cpuPreviewTaskId_ = 0U;
                 } else {
@@ -260,11 +337,13 @@ void Application::processEditorCommands() {
             case EditorCommandType::ActivityChanged: {
                 const auto activity = static_cast<EditorActivity>(command.value);
                 if (activity == EditorActivity::Edit) {
+                    cpuPreviewSingleFrameRefresh_ = false;
                     cpuPreviewPaused_ = false;
                     cpuPreviewTask_.setPaused(false);
                     animationPlaying_ = false;
                     editorSession_.setTaskStatus("Idle");
                 } else if (activity == EditorActivity::Preview) {
+                    if (modulePreviewEnabled()) animationTimeSeconds_ = static_cast<float>(editorSession_.timeSeconds());
                     animationEnabled_ = true;
                     animationPlaying_ = true;
                     animationTimeFixed_ = false;
@@ -275,22 +354,28 @@ void Application::processEditorCommands() {
                 break;
             }
             case EditorCommandType::PauseChanged:
+                cpuPreviewSingleFrameRefresh_ = false;
                 cpuPreviewPaused_ = command.flag;
                 cpuPreviewTask_.setPaused(command.flag);
                 animationPlaying_ = !command.flag;
-                if (!command.flag) animationTimeFixed_ = false;
+                if (!command.flag) {
+                    animationTimeFixed_ = false;
+                    if (modulePreviewEnabled()) animationTimeSeconds_ = static_cast<float>(editorSession_.timeSeconds());
+                }
                 editorSession_.setTaskStatus(command.flag ? "Paused" : "Previewing");
                 break;
             case EditorCommandType::Step:
+                cpuPreviewSingleFrameRefresh_ = viewportRenderMode_ == 1;
                 animationPlaying_ = false;
-                animationTimeSeconds_ += static_cast<float>(editorSession_.timeline().fixedDeltaSeconds());
-                editorSession_.setFrame(static_cast<int>(std::lround(
-                    animationTimeSeconds_ * editorSession_.framesPerSecond())));
+                if (editorSession_.frame() < editorSession_.endFrame())
+                    editorSession_.setFrame(editorSession_.frame() + 1);
+                animationTimeSeconds_ = static_cast<float>(editorSession_.timeSeconds());
                 animationTimeFixed_ = true;
                 cpuPreviewRestartRequested_ = true;
                 editorSession_.setTaskStatus("Stepped");
                 break;
             case EditorCommandType::Reset:
+                cpuPreviewSingleFrameRefresh_ = viewportRenderMode_ == 1;
                 animationPlaying_ = false;
                 editorSession_.setFrame(editorSession_.startFrame());
                 animationTimeFixed_ = true;
@@ -311,7 +396,7 @@ void Application::processEditorCommands() {
                 submitRenderJob(std::filesystem::u8path(command.text));
                 break;
             case EditorCommandType::CancelRenderJob:
-                cancelRenderJob();
+                cancelRenderJob(command.entity);
                 break;
             case EditorCommandType::MoveRenderJobUp:
             case EditorCommandType::MoveRenderJobDown: {
@@ -357,6 +442,16 @@ void Application::processEditorCommands() {
                 loadModel(std::filesystem::u8path(command.text), true);
                 break;
             case EditorCommandType::SelectRenderJobAsset: {
+                RenderJob selectedJob;
+                std::string error;
+                if (!loadRenderJob(std::filesystem::u8path(command.text), selectedJob, error)
+                    || !validateQueueRenderJob(selectedJob, error)) {
+                    renderQueueMessage_ = "Render Job rejected: " + error;
+                    statusMessage_ = renderQueueMessage_;
+                    focusRenderQueueTab_ = true;
+                    assetsPanelOpen_ = true;
+                    break;
+                }
                 const std::string path = std::filesystem::u8path(command.text).string();
                 std::snprintf(renderJobPathBuffer_.data(), renderJobPathBuffer_.size(),
                               "%s", path.c_str());
@@ -1035,6 +1130,10 @@ void Application::processEditorCommands() {
             }
             case EditorCommandType::SetActiveModule: {
                 if (command.text == activeModuleId_) break;
+                if (!command.text.empty() && !moduleRegistry_.contains(command.text)) {
+                    statusMessage_ = "Module selection rejected: unknown module id: " + command.text;
+                    break;
+                }
                 activeModuleId_ = command.text;
                 moduleParameterOverrides_.clear();
                 moduleRuntime_.clear();
@@ -1054,6 +1153,10 @@ void Application::processEditorCommands() {
                 break;
             }
             case EditorCommandType::SetModuleParameter: {
+                if (activeModuleId_.empty()) {
+                    statusMessage_ = "Module parameter rejected: no active module.";
+                    break;
+                }
                 const auto& payload = command.moduleParameter;
                 if (payload.type < 0
                     || payload.type > static_cast<int>(ModuleParameterType::Asset)) {
@@ -1072,27 +1175,37 @@ void Application::processEditorCommands() {
                 // Replace the existing override for this parameter, or append it. Only
                 // overrides are stored, so a parameter left at its default stays out of
                 // the persisted set.
+                auto candidateOverrides = moduleParameterOverrides_;
                 bool replaced = false;
-                for (ModuleParameterOverride& entry : moduleParameterOverrides_) {
+                for (ModuleParameterOverride& entry : candidateOverrides) {
                     if (entry.id != command.text) continue;
                     entry.value = value;
                     replaced = true;
                     break;
                 }
                 if (!replaced) {
-                    moduleParameterOverrides_.push_back(
+                    candidateOverrides.push_back(
                         ModuleParameterOverride{command.text, value}
                     );
                 }
+                ModuleRuntime candidate(moduleRegistry_);
+                std::string error;
+                if (!candidate.configure(activeModuleId_, candidateOverrides, moduleSeed_, error)) {
+                    statusMessage_ = "Module parameter rejected: " + error;
+                    break;
+                }
+                moduleParameterOverrides_ = std::move(candidateOverrides);
                 ++moduleInputRevision_;
                 cpuPreviewRestartRequested_ = true;
                 if (renderer_ != nullptr) renderer_->invalidateTemporalHistory();
                 break;
             }
             case EditorCommandType::SetModuleSeed: {
-                const std::uint32_t seed = command.value > 0xFFFFFFFFULL
-                    ? 0U
-                    : static_cast<std::uint32_t>(command.value);
+                if (command.value > 0xFFFFFFFFULL) {
+                    statusMessage_ = "Module seed rejected: expected uint32.";
+                    break;
+                }
+                const std::uint32_t seed = static_cast<std::uint32_t>(command.value);
                 if (seed == moduleSeed_) break;
                 moduleSeed_ = seed;
                 ++moduleInputRevision_;
@@ -1191,9 +1304,9 @@ void Application::updateRenderQueue() {
         : renderQueueStatusName(queueEntries.back().status));
 }
 
-void Application::cancelRenderJob() {
+void Application::cancelRenderJob(std::uint64_t id) {
     std::string error;
-    if (!renderQueue_->cancelActive(error)) {
+    if (!(id == 0U ? renderQueue_->cancelActive(error) : renderQueue_->cancel(id, error))) {
         renderQueueMessage_ = error;
         statusMessage_ = renderQueueMessage_;
         return;
@@ -1523,11 +1636,11 @@ void Application::drawModulePanel() {
         ImGui::TextDisabled("%s @ %s", manifest->cmakeTarget.c_str(), manifest->sourceRoot.c_str());
     }
 
-    int seed = static_cast<int>(moduleSeed_);
+    std::uint32_t seed = moduleSeed_;
     ImGui::SetNextItemWidth(-FLT_MIN);
-    if (ImGui::InputInt("##ModuleSeed", &seed)) {
+    if (ImGui::InputScalar("##ModuleSeed", ImGuiDataType_U32, &seed)) {
         EditorCommand command{EditorCommandType::SetModuleSeed};
-        command.value = static_cast<std::uint64_t>(std::max(seed, 0));
+        command.value = seed;
         editorSession_.request(std::move(command));
     }
     EditorUi::tooltip("Module seed");
@@ -2120,6 +2233,7 @@ void Application::drawAssetsPanel() {
             ? ImGuiTabItemFlags_SetSelected
             : ImGuiTabItemFlags_None;
         if (ImGui::BeginTabItem("Render Queue", nullptr, renderQueueTabFlags)) {
+            ImGui::TextWrapped("Queue: CPU jobs, PNG / HDR / EXR, Beauty + AOVs, verified Resume and module Cache. Raster: CLI raster-sequence, Beauty PNG only; no Queue / Resume / Cache.");
             focusRenderQueueTab_ = false;
             ImGui::SetNextItemWidth(std::max(240.0f, ImGui::GetContentRegionAvail().x - 230.0f));
             ImGui::InputText("##RenderJobPath", renderJobPathBuffer_.data(), renderJobPathBuffer_.size());
@@ -2128,9 +2242,9 @@ void Application::drawAssetsPanel() {
                 std::string dialogError;
                 const auto selected = openRenderJobFileDialog(dialogError);
                 if (selected.has_value()) {
-                    const std::string selectedPath = selected->string();
-                    std::snprintf(renderJobPathBuffer_.data(), renderJobPathBuffer_.size(),
-                                  "%s", selectedPath.c_str());
+                    EditorCommand command{EditorCommandType::SelectRenderJobAsset};
+                    command.text = selected->generic_u8string();
+                    editorSession_.request(std::move(command));
                 } else if (!dialogError.empty()) {
                     renderQueueMessage_ = dialogError;
                 }
@@ -2862,13 +2976,14 @@ bool Application::editorInteractionRegression() {
         editorSession_.requestPause(true);
         processEditorCommands();
         check(!animationPlaying_ && editorSession_.paused(), "toolbar pause did not stop animation");
-        const float pausedTime = animationTimeSeconds_;
+        editorSession_.setFrameRange(0, 60);
+        editorSession_.setFrame(30);
         editorSession_.request(EditorCommand{EditorCommandType::Step});
         processEditorCommands();
         check(animationTimeFixed_ && !animationPlaying_
-              && std::abs(animationTimeSeconds_ - pausedTime
-                  - static_cast<float>(editorSession_.timeline().fixedDeltaSeconds())) < 1.0e-5f,
-              "toolbar step did not advance exactly one frame from the paused time");
+              && editorSession_.frame() == 31
+              && std::abs(animationTimeSeconds_ - 31.0f / editorSession_.framesPerSecond()) < 1.0e-5f,
+              "toolbar step must derive time from the next timeline frame");
         editorSession_.requestPause(false);
         processEditorCommands();
         check(animationPlaying_ && !animationTimeFixed_, "toolbar resume left time fixed");
@@ -3271,6 +3386,76 @@ bool Application::editorInteractionRegression() {
             check(std::abs(scene_.find(first)->transform.rotationDegrees.y - baselineRotationY)
                       < 1.0e-4f,
                   "the module must never write into the edit scene");
+            EditorCommand unknownModule{EditorCommandType::SetActiveModule};
+            unknownModule.text = "myrenderer.missing.module";
+            const auto validRevision = moduleInputRevision_;
+            editorSession_.request(std::move(unknownModule));
+            processEditorCommands();
+            check(activeModuleId_ == BuiltinModules::turntableId && moduleInputRevision_ == validRevision
+                    && moduleRuntime_.active(), "invalid module selection must preserve the working preview");
+            EditorCommand unknownParameterCommand{EditorCommandType::SetModuleParameter};
+            unknownParameterCommand.text = "missingParameter";
+            editorSession_.request(std::move(unknownParameterCommand));
+            processEditorCommands();
+            check(moduleInputRevision_ == validRevision && moduleParameterOverrides_.empty(),
+                "invalid parameter must not mutate overrides or restart the runtime");
+            EditorCommand invalidSeed{EditorCommandType::SetModuleSeed};
+            invalidSeed.value = 0x100000000ULL;
+            const auto validSeed = moduleSeed_;
+            editorSession_.request(std::move(invalidSeed));
+            processEditorCommands();
+            check(moduleSeed_ == validSeed && moduleInputRevision_ == validRevision,
+                "invalid seed must preserve configuration");
+            EditorCommand fullSeed{EditorCommandType::SetModuleSeed};
+            fullSeed.value = 0xFFFFFFFFULL;
+            editorSession_.request(std::move(fullSeed));
+            editorSession_.requestActivity(EditorActivity::Preview);
+            processEditorCommands();
+            animationTimeSeconds_ = 7.0f / editorSession_.framesPerSecond();
+            synchronizeModulePlayback();
+            updateModulePreview();
+            check(editorSession_.frame() == 7 && moduleSeed_ == 0xFFFFFFFFU
+                    && moduleRuntime_.report().lastFrame == 7,
+                "Preview playback must advance the module timeline and accept uint32 seed");
+            editorSession_.requestPause(true);
+            processEditorCommands();
+            animationTimeSeconds_ += 1.0f;
+            synchronizeModulePlayback();
+            check(editorSession_.frame() == 7, "Pause must freeze the module frame");
+            editorSession_.request(EditorCommand{EditorCommandType::Step});
+            processEditorCommands();
+            updateModulePreview();
+            check(editorSession_.paused() && cpuPreviewPaused_ && editorSession_.frame() == 8
+                    && moduleRuntime_.report().lastFrame == 8,
+                "Step must evaluate one frame and keep Raster/CPU playback paused");
+            editorSession_.request(EditorCommand{EditorCommandType::Reset});
+            processEditorCommands();
+            updateModulePreview();
+            check(editorSession_.frame() == 0 && editorSession_.paused()
+                    && moduleRuntime_.report().lastFrame == 0,
+                "Reset must reconstruct the module start frame while paused");
+            editorSession_.requestActivity(EditorActivity::Preview);
+            processEditorCommands();
+            check(animationPlaying_ && !cpuPreviewPaused_ && !editorSession_.paused(),
+                "Preview must resume paused Raster/CPU module playback");
+            animationTimeSeconds_ = 100.0f;
+            synchronizeModulePlayback();
+            processEditorCommands();
+            check(editorSession_.frame() == 23 && editorSession_.paused()
+                    && animationTimeSeconds_ == static_cast<float>(editorSession_.timeSeconds()),
+                "non-looping module playback must stop at the final frame");
+            editorSession_.request(EditorCommand{EditorCommandType::Step});
+            processEditorCommands();
+            check(editorSession_.frame() == 23
+                    && animationTimeSeconds_ == static_cast<float>(editorSession_.timeSeconds()),
+                "Step at the end must not accumulate time outside the frame range");
+            editorSession_.setFramesPerSecond(30);
+            updateModulePreview();
+            check(moduleRuntime_.timeline().framesPerSecond() == 30,
+                "FPS edits must rebuild module runtime timing");
+            editorSession_.setFramesPerSecond(24);
+            editorSession_.requestActivity(EditorActivity::Edit);
+            processEditorCommands();
             editorSession_.setFrame(0);
             updateModulePreview();
             check(std::abs(viewportScene().find(first)->transform.rotationDegrees.y
@@ -3287,6 +3472,195 @@ bool Application::editorInteractionRegression() {
             check(std::abs(viewportScene().find(first)->transform.rotationDegrees.y
                            - (baselineRotationY + 45.0f)) < 1.0e-3f,
                   "a module parameter command must change the previewed frame");
+            // A paused single-frame request must publish the new snapshot, keep
+            // playback paused, and reject publications from superseded tasks.
+            {
+                const auto originalCpuSettings = cpuPreviewSettings();
+                EditorCommand initialCpuSettings{EditorCommandType::SetCpuPreviewSettings};
+                initialCpuSettings.cpuPreview = originalCpuSettings;
+                initialCpuSettings.cpuPreview.samplesPerPixel = 2;
+                initialCpuSettings.cpuPreview.maxDepth = 2;
+                initialCpuSettings.cpuPreview.scaleMode = 3;
+                initialCpuSettings.cpuPreview.denoise = false;
+                editorSession_.request(initialCpuSettings);
+                editorSession_.requestBackend(EditorRenderBackend::CpuPathTraced);
+                processEditorCommands();
+                const auto awaitPausedImage = [&] {
+                    updateModulePreview();
+                    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(15);
+                    do {
+                        updateCpuPreview(32, 32);
+                        if (!cpuPreviewSingleFrameRefresh_ && cpuPreviewUploadedTaskId_ == cpuPreviewTaskId_
+                            && cpuPreviewTaskId_ != 0U) break;
+                        std::this_thread::sleep_for(std::chrono::milliseconds(2));
+                    } while (std::chrono::steady_clock::now() < deadline);
+                    const auto image = cpuPreviewTask_.progressSnapshot();
+                    check(image && image->taskId == cpuPreviewTaskId_
+                            && image->status == pathtracer::RenderStatus::Completed
+                            && image->image.completedSamples == 2 && !cpuPreviewSingleFrameRefresh_
+                            && cpuPreviewUploadedTaskId_ == cpuPreviewTaskId_
+                            && editorSession_.paused() && cpuPreviewPaused_,
+                        "paused Step/Reset must publish the requested frame and remain paused");
+                    pathtracer::RenderSettings settings;
+                    settings.width = settings.height = 32;
+                    settings.samplesPerPixel = 2;
+                    settings.maxDepth = 2;
+                    settings.seed = static_cast<std::uint32_t>(cpuPreviewSeed_);
+                    settings.lightSelectionStrategy = cpuPreviewPowerWeightedLights_
+                        ? pathtracer::LightSelectionStrategy::PowerWeighted : pathtracer::LightSelectionStrategy::Uniform;
+                    settings.ggxSamplingStrategy = cpuPreviewGgxVndf_
+                        ? pathtracer::GgxSamplingStrategy::VisibleNormals : pathtracer::GgxSamplingStrategy::Distribution;
+                    pathtracer::ProgressiveRenderer reference(pathtracer::captureSceneSnapshot(
+                        viewportScene(), camera_, 1.0f, rendererSettings_), settings);
+                    while (reference.renderPass()) {}
+                    check(image->image.sum == reference.image().sum,
+                        "paused publication must match the current module frame reference");
+                };
+                editorSession_.request(EditorCommand{EditorCommandType::Step});
+                processEditorCommands();
+                awaitPausedImage();
+                // Settings are transactional, and an unchanged payload must keep the task.
+                const auto completedTask = cpuPreviewTaskId_;
+                EditorCommand configure{EditorCommandType::SetCpuPreviewSettings};
+                configure.cpuPreview = cpuPreviewSettings();
+                editorSession_.request(configure);
+                processEditorCommands();
+                check(cpuPreviewTaskId_ == completedTask && !cpuPreviewRestartRequested_,
+                      "identical CPU settings must preserve the completed task");
+                for (int invalid = 0; invalid < 7; ++invalid) {
+                    auto rejected = configure;
+                    switch (invalid) {
+                        case 0: rejected.cpuPreview.scaleMode = 4; break;
+                        case 1: rejected.cpuPreview.samplesPerPixel = 0; break;
+                        case 2: rejected.cpuPreview.samplesPerPixel = 4097; break;
+                        case 3: rejected.cpuPreview.maxDepth = 33; break;
+                        case 4: rejected.cpuPreview.seed = -1; break;
+                        case 5: rejected.cpuPreview.output = 8; break;
+                        case 6: rejected.cpuPreview.atrousIterations = 7; break;
+                    }
+                    const auto signature = cpuPreviewInputSignature(32, 32);
+                    editorSession_.request(rejected);
+                    processEditorCommands();
+                    check(cpuPreviewInputSignature(32, 32) == signature
+                          && cpuPreviewTaskId_ == completedTask && editorSession_.paused(),
+                          "invalid CPU settings must retain settings, task and pause state");
+                }
+                configure.cpuPreview.seed += 1;
+                configure.cpuPreview.output = 4;
+                configure.cpuPreview.denoise = true;
+                configure.cpuPreview.atrousIterations = 2;
+                configure.cpuPreview.temporalDenoise = false;
+                configure.cpuPreview.fireflyClamp = true;
+                configure.cpuPreview.powerWeightedLights = false;
+                configure.cpuPreview.ggxVndf = false;
+                const int unchangedFrame = editorSession_.frame();
+                editorSession_.request(configure);
+                processEditorCommands();
+                check(cpuPreviewTaskId_ == 0U && cpuPreviewRestartRequested_
+                      && editorSession_.paused() && cpuPreviewPaused_
+                      && cpuPreviewSettings().output == 4 && cpuPreviewSettings().seed == configure.cpuPreview.seed,
+                      "CPU settings must invalidate stale output without resuming playback");
+                // Restore reference sampling, then restart without advancing the timeline.
+                configure.cpuPreview.output = 0;
+                configure.cpuPreview.denoise = false;
+                configure.cpuPreview.fireflyClamp = false;
+                configure.cpuPreview.powerWeightedLights = true;
+                configure.cpuPreview.ggxVndf = true;
+                editorSession_.request(configure);
+                editorSession_.request(EditorCommand{EditorCommandType::RestartCpuPreview});
+                processEditorCommands();
+                awaitPausedImage();
+                check(editorSession_.frame() == unchangedFrame && cpuPreviewTaskId_ != completedTask,
+                      "paused Restart must render the same frame with the new settings");
+                const auto firstPausedTask = cpuPreviewTaskId_;
+                editorSession_.request(EditorCommand{EditorCommandType::Reset});
+                processEditorCommands();
+                awaitPausedImage();
+                check(editorSession_.frame() == 0 && cpuPreviewTaskId_ != firstPausedTask,
+                    "Reset must replace the completed Step task");
+                editorSession_.request(EditorCommand{EditorCommandType::Step});
+                processEditorCommands();
+                updateModulePreview();
+                updateCpuPreview(32, 32);
+                const auto supersededTask = cpuPreviewTaskId_;
+                editorSession_.request(EditorCommand{EditorCommandType::Step});
+                processEditorCommands();
+                awaitPausedImage();
+                check(editorSession_.frame() == 2 && supersededTask != cpuPreviewTaskId_,
+                    "rapid Step must discard the older publication");
+                editorSession_.requestBackend(EditorRenderBackend::Raster);
+                processEditorCommands();
+                EditorCommand restoreCpuSettings{EditorCommandType::SetCpuPreviewSettings};
+                restoreCpuSettings.cpuPreview = originalCpuSettings;
+                editorSession_.request(restoreCpuSettings);
+                processEditorCommands();
+            }
+            // Use an isolated queue so this test never cancels a user's job.
+            {
+                auto previousQueue = std::move(renderQueue_);
+                renderQueue_ = std::make_unique<RenderQueue>();
+                renderQueue_->setModuleRegistry(&moduleRegistry_);
+                try {
+                    const auto root = sourceRoot_ / "build-ci-msvc/m1-gui-cancel"
+                        / std::to_string(std::chrono::steady_clock::now().time_since_epoch().count());
+                    std::filesystem::create_directories(root);
+                    const auto jobPath = root / "cancel.renderjob";
+                    const auto writeJob = [&](int samples) {
+                        std::ofstream job(jobPath);
+                        job << "{\"format\":\"MyRendererRenderJob\",\"schemaVersion\":1,\"scene\":\""
+                            << (sourceRoot_ / "assets/scenes/fixtures/01_multi_model_hierarchy.myscene").generic_u8string()
+                            << "\",\"renderer\":\"cpu-path-traced\",\"resolution\":[32,32],\"sampling\":{\"spp\":"
+                            << samples << ",\"maxDepth\":2,\"seed\":19},\"frames\":{\"start\":0,\"end\":0,\"fps\":24},"
+                            << "\"aovs\":[\"beauty\"],\"output\":{\"formats\":[\"png\"],\"path\":\""
+                            << (root / "cancel-output").generic_u8string() << "\"}}";
+                        check(bool(job), "GUI cancellation fixture write failed");
+                    };
+                    writeJob(65536);
+                    const auto beforeCancel = scene_.find(first)->transform.rotationDegrees;
+                    EditorCommand submit{EditorCommandType::SubmitRenderJob};
+                    submit.text = jobPath.u8string();
+                    editorSession_.request(std::move(submit));
+                    processEditorCommands();
+                    processEditorCommands();
+                    updateRenderQueue();
+                    const auto id = renderQueue_->activeId();
+                    check(id != 0U, "GUI submitted job must become active");
+                    editorSession_.request(EditorCommand{EditorCommandType::CancelRenderJob, id + 1U});
+                    processEditorCommands();
+                    check(renderQueue_->entries()[0].status == RenderQueueStatus::Running,
+                        "stale cancellation id must not cancel another active job");
+                    editorSession_.request(EditorCommand{EditorCommandType::CancelRenderJob, id});
+                    processEditorCommands();
+                    const auto waitQueue = [&] {
+                        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(20);
+                        do {
+                            updateRenderQueue();
+                            if (!renderQueue_->hasActiveJob()) break;
+                            std::this_thread::sleep_for(std::chrono::milliseconds(2));
+                        } while (std::chrono::steady_clock::now() < deadline);
+                        check(!renderQueue_->hasActiveJob(), "GUI cancellation/retry timed out");
+                    };
+                    waitQueue();
+                    check(renderQueue_->entries()[0].status == RenderQueueStatus::Cancelled
+                            && renderQueue_->entries()[0].outputCount == 0U
+                            && scene_.find(first)->transform.rotationDegrees == beforeCancel
+                            && activeModuleId_ == BuiltinModules::turntableId,
+                        "cancelled GUI job must preserve the editable scene and module");
+                    writeJob(1);
+                    editorSession_.request(EditorCommand{EditorCommandType::RetryRenderJob, id});
+                    processEditorCommands();
+                    updateRenderQueue();
+                    waitQueue();
+                    check(renderQueue_->entries()[0].status == RenderQueueStatus::Complete,
+                        "cancelled job must remain retryable through GUI commands");
+                } catch (...) {
+                    renderQueue_ = std::move(previousQueue);
+                    throw;
+                }
+                renderQueue_ = std::move(previousQueue);
+                editorSession_.requestActivity(EditorActivity::Edit);
+                processEditorCommands();
+            }
             const auto savedModulePath = std::filesystem::temp_directory_path()
                 / "IrisModuleSceneAcceptance" / "module.myscene";
             SceneDocument savedModule = captureSceneDocument();
@@ -3406,6 +3780,52 @@ bool Application::editorInteractionRegression() {
 
         camera_.reset();
         check(pickEntity(scene_.buildRenderItems(), 400, 300, 200, 150) == first, "viewport picks visible geometry");
+        // Compare opaque guide pixels with/without geometry at the same camera.
+        // This catches both depth occlusion and an overlay drawn before scene color.
+        camera_.setOrbitPose(glm::vec3(0.0f), 35.0f, 20.0f, 8.0f, 45.0f);
+        for (RenderPath path : {RenderPath::Forward, RenderPath::Deferred}) {
+            for (int samples : {1, 4}) {
+                RendererSettings settings;
+                settings.renderPath = path;
+                settings.msaaSamples = samples;
+                settings.skyboxEnabled = false;
+                settings.bloom = true;
+                settings.temporalAaEnabled = true;
+                settings.showGrid = false;
+                settings.showAxes = true;
+                const auto captureAxes = [&](const std::vector<RenderItem>& items) {
+                    renderer_->invalidateTemporalHistory();
+                    renderer_->render(items, camera_, settings, 400, 300);
+                    std::vector<unsigned char> pixels(400U * 300U * 4U);
+                    glActiveTexture(GL_TEXTURE0);
+                    glBindTexture(GL_TEXTURE_2D, renderer_->colorTexture());
+                    glGetTexImage(GL_TEXTURE_2D, 0, GL_RGBA, GL_UNSIGNED_BYTE, pixels.data());
+                    return pixels;
+                };
+                const auto guides = captureAxes({});
+                const auto covered = captureAxes(scene_.buildRenderItems());
+                std::size_t guidePixels = 0;
+                for (std::size_t i = 0; i < guides.size(); i += 4) {
+                    const bool axisColor = (guides[i] > 250 && guides[i + 1] < 40 && guides[i + 2] < 60)
+                        || (guides[i] < 40 && guides[i + 1] > 250 && guides[i + 2] < 80)
+                        || (guides[i] < 40 && guides[i + 1] < 110 && guides[i + 2] > 250);
+                    if (!axisColor) continue;
+                    ++guidePixels;
+                    for (std::size_t channel = 0; channel < 3; ++channel)
+                        check(std::abs(int(guides[i + channel]) - int(covered[i + channel])) <= 1,
+                            "world axes remain visible over geometry after postprocessing");
+                }
+                check(guidePixels > 100, "world axes fixture contains visible colored guides");
+                if (path == RenderPath::Forward && samples == 1) {
+                    if (const char* capture = std::getenv("MYRENDERER_AXES_CAPTURE")) {
+                        std::string error;
+                        check(renderer_->saveScreenshot(std::filesystem::u8path(capture), error),
+                            "axes overlay regression screenshot");
+                    }
+                }
+            }
+        }
+        camera_.reset();
         std::vector<unsigned char> lastOutlinePixels;
         const auto outlinePixels = [&](SceneEntityId selected, int width, int height) {
             RendererSettings settings;
@@ -3498,6 +3918,56 @@ bool Application::editorInteractionRegression() {
         check(scene_.size() == 1 && !glassVolumeDemoEnabled_ && !showComparisonObject_, "ordinary import does not activate fixture preset");
         newEmptyScene();
         check(scene_.size() == 0 && rendererSettings_.localLights.empty(), "new scene clears all content");
+        for (std::uint64_t preset = 0U; preset < 5U; ++preset) {
+            editorSession_.request(EditorCommand{EditorCommandType::ApplyScenePreset, 0U, preset});
+            processEditorCommands();
+            processEditorCommands();
+            check(!currentScenePath_.empty() && !scene_.entities().empty() && activeModuleId_.empty(),
+                  "bundled Scene preset must load transactionally and clear the previous module");
+        }
+        const auto presetPath = currentScenePath_;
+        const auto presetGeneration = sceneGeneration_;
+        editorSession_.request(EditorCommand{EditorCommandType::ApplyScenePreset, 0U, 99U});
+        EditorCommand missingScene{EditorCommandType::OpenSceneAsset};
+        missingScene.text = (sourceRoot_ / "assets/scenes/does-not-exist.myscene").generic_u8string();
+        editorSession_.request(missingScene);
+        processEditorCommands();
+        check(currentScenePath_ == presetPath && sceneGeneration_ == presetGeneration,
+              "unknown presets and missing scenes must preserve the current scene");
+        const std::string droppedScene = (sourceRoot_ / "assets/scenes/fixtures/26_module_workflow.myscene").generic_u8string();
+        const char* droppedScenePath = droppedScene.c_str();
+        queueDroppedFiles(1, &droppedScenePath);
+        processEditorCommands();
+        processEditorCommands();
+        check(activeModuleId_ == BuiltinModules::turntableId && moduleSeed_ == 20260919U,
+              "native Scene drop must use the shared command and restore module settings");
+        const std::string droppedJob = (sourceRoot_ / "assets/renderjobs/05_module_workflow.renderjob").generic_u8string();
+        const char* droppedJobPath = droppedJob.c_str();
+        queueDroppedFiles(1, &droppedJobPath);
+        processEditorCommands();
+        const auto selectedJob = std::string(renderJobPathBuffer_.data());
+        check(selectedJob == droppedJob, "native Job drop must select the Queue resource");
+        EditorCommand unsupportedJob{EditorCommandType::SelectRenderJobAsset};
+        unsupportedJob.text = (sourceRoot_ / "assets/renderjobs/04_coastal_sequence.renderjob").generic_u8string();
+        editorSession_.request(unsupportedJob);
+        processEditorCommands();
+        check(std::string(renderJobPathBuffer_.data()) == selectedJob
+              && statusMessage_.find("raster-sequence") != std::string::npos,
+              "unsupported Job selection must retain the previous selection and explain the CLI");
+        editorSession_.request(EditorCommand{EditorCommandType::NewScene});
+        processEditorCommands();
+        processEditorCommands();
+        check(scene_.size() == 0 && activeModuleId_.empty()
+              && editorSession_.activity() == EditorActivity::Edit && cpuPreviewTaskId_ == 0U,
+              "New Scene command must clear the module and stale CPU task and return to Edit");
+        EditorCommand importResource{EditorCommandType::ImportModelAsset};
+        importResource.text = cube.generic_u8string();
+        editorSession_.request(importResource);
+        processEditorCommands();
+        check(pendingModelImport_.has_value(), "Model resource command must start the shared importer");
+        pendingModelImport_->future.wait();
+        updateModelLoad();
+        check(scene_.size() == 1, "Model resource command must append exactly one entity");
         check(glGetError() == GL_NO_ERROR, "picking leaves no OpenGL errors");
         std::cout << "Editor interaction validation: PASS\n";
         return true;

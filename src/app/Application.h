@@ -66,7 +66,7 @@ private:
     void processEditorCommands();
     void submitRenderJob(const std::filesystem::path& path);
     void updateRenderQueue();
-    void cancelRenderJob();
+    void cancelRenderJob(std::uint64_t id = 0U);
     void applyVsync(bool enabled);
     void drawScenePanel();
     void drawAssetsPanel();
@@ -96,6 +96,7 @@ private:
     // Drives the active module against the discardable runtime scene for the current
     // frame and keeps the Viewport on that scene. Never writes back to the edit scene.
     void updateModulePreview();
+    void synchronizeModulePlayback();
     bool modulePreviewEnabled() const { return !activeModuleId_.empty(); }
     const Scene& viewportScene() const;
     // Automation entry point for the module preview: `MYRENDERER_MODULE`,
@@ -105,6 +106,7 @@ private:
     void updateCpuPreview(int width, int height);
     void uploadCpuPreviewTexture();
     void exportCpuPreview();
+    EditorCpuPreviewSettingsPayload cpuPreviewSettings() const;
     void captureReferenceComparison(int width, int height);
     void drawOrientationGizmo();
     void drawAboutPopup();
@@ -330,6 +332,7 @@ private:
     bool cpuPreviewPowerWeightedLights_{true};
     bool cpuPreviewGgxVndf_{true};
     bool cpuPreviewPaused_{false};
+    bool cpuPreviewSingleFrameRefresh_{false};
     bool cpuPreviewRestartRequested_{true};
 
     bool showAbout_{false};

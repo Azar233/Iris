@@ -158,6 +158,7 @@ bool RenderQueue::enqueue(const std::filesystem::path& jobPath, std::uint64_t& i
                           std::string& error) {
     RenderJob job;
     if (!loadRenderJob(jobPath, job, error)) return false;
+    if (!validateQueueRenderJob(job, error)) return false;
 
     auto entry = std::make_unique<Entry>();
     entry->id = nextId_++;
@@ -242,6 +243,7 @@ bool RenderQueue::retry(std::uint64_t id, std::string& error) {
     }
     RenderJob refreshed;
     if (!loadRenderJob(entry->jobPath, refreshed, error)) return false;
+    if (!validateQueueRenderJob(refreshed, error)) return false;
     entry->job = std::move(refreshed);
     entry->status = RenderQueueStatus::Pending;
     entry->currentFrame = entry->job.startFrame;
@@ -508,7 +510,8 @@ bool RenderQueue::restore(std::string& error) {
                 const RenderQueueStatus persistedStatus = statusFromName(value["status"].GetString());
                 entry->status = persistedStatus;
                 std::string jobError;
-                if (!loadRenderJob(entry->jobPath, entry->job, jobError)) {
+                if (!loadRenderJob(entry->jobPath, entry->job, jobError)
+                    || !validateQueueRenderJob(entry->job, jobError)) {
                     entry->status = RenderQueueStatus::Failed;
                     entry->message = "Recovered Job is invalid: " + jobError;
                 } else {

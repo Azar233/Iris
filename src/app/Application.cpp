@@ -172,6 +172,16 @@ int Application::runRasterSequence(const RenderJob& job) {
         std::cerr << "raster-sequence requires a Render Job with renderer 'raster'\n";
         return 65;
     }
+    SceneDocument authoredScene;
+    std::string sceneError;
+    if (!loadSceneDocument(job.scenePath, authoredScene, sceneError)) {
+        std::cerr << "Raster Scene invalid: " << sceneError << '\n';
+        return 66;
+    }
+    if (job.module.id.empty() && !authoredScene.moduleId.empty()) {
+        std::cerr << "Scene has a module; Raster requires explicit Render Job module configuration (id, seed, parameters)\n";
+        return 65;
+    }
     capture::InputManifest inputManifest;
     if(!job.sourcePath.empty()) {
         inputManifest.record(job.sourcePath);
@@ -315,29 +325,34 @@ int Application::run(const std::filesystem::path& initialModel) {
         renderHeightOverride_ = 720;
     }
     if (const char* value = std::getenv("MYRENDERER_CPU_PREVIEW")) {
-        viewportRenderMode_ = std::atoi(value) != 0 ? 1 : 0;
+        editorSession_.requestBackend(std::atoi(value) != 0
+            ? EditorRenderBackend::CpuPathTraced : EditorRenderBackend::Raster);
     }
+    auto startupCpuSettings = cpuPreviewSettings();
     if (const char* value = std::getenv("MYRENDERER_CPU_PREVIEW_SCALE")) {
-        cpuPreviewScaleMode_ = std::clamp(std::atoi(value), 0, 3);
+        startupCpuSettings.scaleMode = std::clamp(std::atoi(value), 0, 3);
     }
     if (const char* value = std::getenv("MYRENDERER_CPU_PREVIEW_SPP")) {
-        cpuPreviewSamplesPerPixel_ = std::clamp(std::atoi(value), 1, 4096);
+        startupCpuSettings.samplesPerPixel = std::clamp(std::atoi(value), 1, 4096);
     }
     if (const char* value = std::getenv("MYRENDERER_CPU_PREVIEW_DEPTH")) {
-        cpuPreviewMaxDepth_ = std::clamp(std::atoi(value), 1, 32);
+        startupCpuSettings.maxDepth = std::clamp(std::atoi(value), 1, 32);
     }
     if (const char* value = std::getenv("MYRENDERER_CPU_PREVIEW_SEED")) {
-        cpuPreviewSeed_ = std::max(std::atoi(value), 0);
+        startupCpuSettings.seed = std::max(std::atoi(value), 0);
     }
     if (const char* value = std::getenv("MYRENDERER_CPU_PREVIEW_AOV")) {
-        cpuPreviewOutput_ = std::clamp(std::atoi(value), 0, 7);
+        startupCpuSettings.output = std::clamp(std::atoi(value), 0, 7);
     }
     if (const char* value = std::getenv("MYRENDERER_CPU_PREVIEW_POWER_LIGHTS"))
-        cpuPreviewPowerWeightedLights_ = std::atoi(value) != 0;
+        startupCpuSettings.powerWeightedLights = std::atoi(value) != 0;
     if (const char* value = std::getenv("MYRENDERER_CPU_PREVIEW_VNDF"))
-        cpuPreviewGgxVndf_ = std::atoi(value) != 0;
+        startupCpuSettings.ggxVndf = std::atoi(value) != 0;
     if (const char* value = std::getenv("MYRENDERER_CPU_PREVIEW_DENOISE"))
-        cpuPreviewDenoise_ = std::atoi(value) != 0;
+        startupCpuSettings.denoise = std::atoi(value) != 0;
+    EditorCommand startupCpuCommand{EditorCommandType::SetCpuPreviewSettings};
+    startupCpuCommand.cpuPreview = startupCpuSettings;
+    editorSession_.request(std::move(startupCpuCommand));
     if (const char* value = std::getenv("MYRENDERER_CPU_PREVIEW_EXPORT"))
         pendingCpuPreviewExportPath_ = std::filesystem::absolute(value).lexically_normal();
     initializeWindow();
@@ -970,14 +985,43 @@ int Application::run(const std::filesystem::path& initialModel) {
         droppedModelPaths_.push_back(std::filesystem::u8path(extra));
     }
     previousFrameTime_ = glfwGetTime();
+    // Scene loading queues activity commands. Apply those before explicit capture
+    // overrides so the first UI frame cannot resume a requested fixed frame.
+    processEditorCommands();
     applyModuleEnvironmentOverrides();
+    if (const char* destination = std::getenv("MYRENDERER_SCENE_ROUNDTRIP")) {
+        const auto path = std::filesystem::absolute(std::filesystem::u8path(destination)).lexically_normal();
+        EditorCommand save{EditorCommandType::SaveScene};
+        save.text = path.generic_u8string();
+        editorSession_.request(save);
+        processEditorCommands();
+        if (currentScenePath_ != path) throw std::runtime_error("Scene roundtrip save failed: " + statusMessage_);
+        editorSession_.request(EditorCommand{EditorCommandType::NewScene});
+        processEditorCommands();
+        processEditorCommands();
+        EditorCommand reopen{EditorCommandType::OpenSceneAsset};
+        reopen.text = path.generic_u8string();
+        editorSession_.request(reopen);
+        processEditorCommands();
+        processEditorCommands();
+        if (currentScenePath_ != path) throw std::runtime_error("Scene roundtrip reopen failed: " + statusMessage_);
+        applyModuleEnvironmentOverrides();
+        std::cout << "GUI Scene save / reopen: PASS\n";
+    }
+    if (std::getenv("MYRENDERER_CPU_PREVIEW_STEP")) {
+        editorSession_.request(EditorCommand{EditorCommandType::Step});
+        processEditorCommands();
+    }
     while (!glfwWindowShouldClose(window_)) {
         const double cpuFrameStart = glfwGetTime();
         glfwPollEvents();
         if (!droppedModelPaths_.empty() && !pendingModelImport_.has_value()) {
             const std::filesystem::path dropped = std::move(droppedModelPaths_.front());
             droppedModelPaths_.pop_front();
-            loadModel(dropped, true);
+            EditorCommand command{EditorCommandType::ImportModelAsset};
+            command.text = dropped.generic_u8string();
+            editorSession_.request(std::move(command));
+            processEditorCommands();
         }
         updateModelLoad();
         updateRenderQueue();
@@ -1006,12 +1050,14 @@ int Application::run(const std::filesystem::path& initialModel) {
         }
         if (animationEnabled_ && (rendererSettings_.water.enabled
             || rendererSettings_.enscapeCubeShaderEnabled
+            || modulePreviewEnabled()
             || (model_ != nullptr && model_->hasSkinning()))) {
             if (animationFrameStep_ > 0.0f) {
                 animationTimeSeconds_ = static_cast<float>(animationDemoFrame_++) * animationFrameStep_;
             } else if (animationPlaying_ && !animationTimeFixed_) {
                 animationTimeSeconds_ += deltaTime * animationSpeed_;
             }
+            synchronizeModulePlayback();
         }
         if (model_ != nullptr && model_->hasSkinning()) {
             model_->updateAnimation(
@@ -1079,10 +1125,12 @@ int Application::run(const std::filesystem::path& initialModel) {
         const bool thumbnailReady = std::any_of(uploadedThumbnails_.begin(), uploadedThumbnails_.end(),
             [](const auto& entry) { return entry.second.texture != 0U; });
         if (!pendingEditorScreenshotPath_.empty() && !pendingModelImport_.has_value()
+            && !cpuPreviewSingleFrameRefresh_
             && (!thumbnailAcceptance || thumbnailReady)
             && pendingEditorScreenshotWarmupFrames_ > 0) {
             --pendingEditorScreenshotWarmupFrames_;
         } else if (!pendingEditorScreenshotPath_.empty() && !pendingModelImport_.has_value()
+                   && !cpuPreviewSingleFrameRefresh_
                    && (!thumbnailAcceptance || thumbnailReady)) {
             std::string screenshotError;
             if (renderer_->saveEditorScreenshot(
@@ -1487,17 +1535,17 @@ void Application::drawMainMenu() {
         return;
     }
     if (!ImGui::GetIO().WantTextInput && ImGui::GetIO().KeyCtrl) {
-        if (ImGui::IsKeyPressed(ImGuiKey_N, false)) newEmptyScene();
-        if (ImGui::IsKeyPressed(ImGuiKey_O, false)) openSceneFromDialog();
+        if (ImGui::IsKeyPressed(ImGuiKey_N, false)) editorSession_.request(EditorCommand{EditorCommandType::NewScene});
+        if (ImGui::IsKeyPressed(ImGuiKey_O, false)) editorSession_.request(EditorCommand{EditorCommandType::OpenSceneDialog});
         if (ImGui::IsKeyPressed(ImGuiKey_S, false)) {
-            if (ImGui::GetIO().KeyShift) saveSceneAs(); else saveCurrentScene();
+            if (ImGui::GetIO().KeyShift) editorSession_.request(EditorCommand{EditorCommandType::SaveSceneAs}); else editorSession_.request(EditorCommand{EditorCommandType::SaveScene});
         }
     }
     if (ImGui::BeginMenu(EditorUi::label("File"))) {
-        if (ImGui::MenuItem(EditorUi::label("New empty scene"), "Ctrl+N")) newEmptyScene();
+        if (ImGui::MenuItem(EditorUi::label("New empty scene"), "Ctrl+N")) editorSession_.request(EditorCommand{EditorCommandType::NewScene});
         ImGui::Separator();
         if (ImGui::MenuItem(EditorUi::label("Open scene..."), "Ctrl+O", false, !pendingModelImport_.has_value())) {
-            openSceneFromDialog();
+            editorSession_.request(EditorCommand{EditorCommandType::OpenSceneDialog});
         }
         const std::filesystem::path recent = recentScenePath();
         if (ImGui::MenuItem(
@@ -1506,26 +1554,34 @@ void Application::drawMainMenu() {
                 false,
                 !recent.empty() && std::filesystem::exists(recent) && !pendingModelImport_.has_value()
             )) {
-            openScene(recent);
+            EditorCommand command{EditorCommandType::OpenSceneAsset};
+            command.text = recent.generic_u8string();
+            editorSession_.request(std::move(command));
         }
         if (ImGui::BeginMenu(EditorUi::label("Open bundled scene"), !availableScenes_.empty())) {
             for (const auto& path : availableScenes_) {
-                if (ImGui::MenuItem(path.stem().string().c_str())) openScene(path);
+                if (ImGui::MenuItem(path.stem().string().c_str())) {
+                    EditorCommand command{EditorCommandType::OpenSceneAsset};
+                    command.text = path.generic_u8string();
+                    editorSession_.request(std::move(command));
+                }
             }
             ImGui::EndMenu();
         }
         if (ImGui::MenuItem(EditorUi::label("Save scene"), "Ctrl+S", false, !pendingModelImport_.has_value())) {
-            saveCurrentScene();
+            editorSession_.request(EditorCommand{EditorCommandType::SaveScene});
         }
         if (ImGui::MenuItem(EditorUi::label("Save scene as..."), "Ctrl+Shift+S", false, !pendingModelImport_.has_value())) {
-            saveSceneAs();
+            editorSession_.request(EditorCommand{EditorCommandType::SaveSceneAs});
         }
         ImGui::Separator();
         if (ImGui::MenuItem(EditorUi::label("Open model..."), nullptr, false, !pendingModelImport_.has_value())) {
             std::string dialogError;
             const auto selected = openModelFileDialog(dialogError);
             if (selected.has_value()) {
-                loadModel(*selected, true);
+                EditorCommand command{EditorCommandType::ImportModelAsset};
+                command.text = selected->generic_u8string();
+                editorSession_.request(std::move(command));
             } else if (!dialogError.empty()) {
                 statusMessage_ = "Open failed: " + dialogError;
             }
@@ -1533,7 +1589,9 @@ void Application::drawMainMenu() {
         if (ImGui::BeginMenu(EditorUi::label("Open bundled model"))) {
             for (const auto& path : availableModels_) {
                 if (ImGui::MenuItem(path.filename().string().c_str())) {
-                    loadModel(path, true);
+                    EditorCommand command{EditorCommandType::ImportModelAsset};
+                    command.text = path.generic_u8string();
+                    editorSession_.request(std::move(command));
                 }
             }
             ImGui::EndMenu();
@@ -1544,7 +1602,7 @@ void Application::drawMainMenu() {
             false,
             currentScenePath_.empty() && !currentModelPath_.empty() && !pendingModelImport_.has_value()
         )) {
-            loadModel(currentModelPath_);
+            editorSession_.request(EditorCommand{EditorCommandType::ResetSceneModel});
         }
         if (ImGui::MenuItem(EditorUi::label("Save viewport PNG"), nullptr, false, !scene_.entities().empty())) {
             pendingScreenshotPath_ = nextScreenshotPath();
@@ -1560,21 +1618,19 @@ void Application::drawMainMenu() {
             camera_.reset();
         }
         if (ImGui::MenuItem("Prism spectrum preset")) {
-            activatePrismDemoPreset(true);
+            editorSession_.request(EditorCommand{EditorCommandType::ApplyScenePreset, 0U, 0U});
         }
         if (ImGui::MenuItem("Volume glass preset")) {
-            glassCausticsDemoEnabled_ = false;
-            volumeGlassPreset_ = VolumeGlassPreset::Olive;
-            loadModel(sourceRoot_ / "assets" / "models" / "glass_volume_sphere.gltf");
+            editorSession_.request(EditorCommand{EditorCommandType::ApplyScenePreset, 0U, 1U});
         }
         if (ImGui::MenuItem("Glass caustics preset")) {
-            activateGlassCausticsPreset();
+            editorSession_.request(EditorCommand{EditorCommandType::ApplyScenePreset, 0U, 2U});
         }
         if (ImGui::MenuItem("Local light stress preset")) {
-            activateLightStressPreset(true);
+            editorSession_.request(EditorCommand{EditorCommandType::ApplyScenePreset, 0U, 3U});
         }
         if (ImGui::MenuItem("Instance / culling / LOD stress preset")) {
-            activateInstanceStressPreset(true);
+            editorSession_.request(EditorCommand{EditorCommandType::ApplyScenePreset, 0U, 4U});
         }
         ImGui::MenuItem(EditorUi::label("Wireframe"), nullptr, &rendererSettings_.wireframe);
         ImGui::MenuItem(EditorUi::label("Back-face culling"), nullptr, &rendererSettings_.cullBackFaces);
@@ -2741,6 +2797,22 @@ void Application::drawInspectorPanel() {
     ImGui::End();
 }
 
+EditorCpuPreviewSettingsPayload Application::cpuPreviewSettings() const {
+    EditorCpuPreviewSettingsPayload settings;
+    settings.scaleMode = cpuPreviewScaleMode_;
+    settings.samplesPerPixel = cpuPreviewSamplesPerPixel_;
+    settings.maxDepth = cpuPreviewMaxDepth_;
+    settings.seed = cpuPreviewSeed_;
+    settings.output = cpuPreviewOutput_;
+    settings.denoise = cpuPreviewDenoise_;
+    settings.atrousIterations = cpuPreviewAtrousIterations_;
+    settings.temporalDenoise = cpuPreviewTemporalDenoise_;
+    settings.fireflyClamp = cpuPreviewFireflyClamp_;
+    settings.powerWeightedLights = cpuPreviewPowerWeightedLights_;
+    settings.ggxVndf = cpuPreviewGgxVndf_;
+    return settings;
+}
+
 std::uint64_t Application::cpuPreviewInputSignature(int width, int height) const {
     std::uint64_t hash = 1469598103934665603ULL;
     hashValue(hash, sceneGeneration_);
@@ -2839,13 +2911,25 @@ void Application::updateCpuPreview(int width, int height) {
         cpuPreviewTask_.cancel();
         cpuPreviewLastInputChange_ = now - std::chrono::milliseconds(100);
     }
-    if (cpuPreviewPaused_) return;
+    if (cpuPreviewSingleFrameRefresh_) {
+        const auto publication = cpuPreviewTask_.progressSnapshot();
+        if (publication && publication->taskId == cpuPreviewTaskId_
+            && (publication->status == pathtracer::RenderStatus::Completed
+                || publication->status == pathtracer::RenderStatus::Failed)) {
+            cpuPreviewSingleFrameRefresh_ = false;
+            cpuPreviewTask_.setPaused(cpuPreviewPaused_);
+        }
+    }
+    if (cpuPreviewPaused_ && !cpuPreviewSingleFrameRefresh_) {
+        uploadCpuPreviewTexture();
+        return;
+    }
 
     const auto idle = now - cpuPreviewLastInputChange_;
     if (idle < std::chrono::milliseconds(75)) return;
 
     int divisor = 1;
-    if (cpuPreviewScaleMode_ == 0) {
+    if (cpuPreviewScaleMode_ == 0 && !cpuPreviewSingleFrameRefresh_) {
         divisor = idle < std::chrono::milliseconds(450)
             ? 4
             : (idle < std::chrono::milliseconds(1200) ? 2 : 1);
@@ -2896,6 +2980,7 @@ void Application::updateCpuPreview(int width, int height) {
         cpuPreviewUploadedSamples_ = 0U;
         cpuPreviewProgress_ = cpuPreviewTask_.progressSnapshot();
     } catch (const std::exception& error) {
+        cpuPreviewSingleFrameRefresh_ = false;
         cpuPreviewTaskId_ = 0U;
         cpuPreviewTaskSignature_ = 0U;
         statusMessage_ = std::string("CPU preview failed: ") + error.what();
@@ -2994,6 +3079,11 @@ void Application::applyModuleEnvironmentOverrides() {
     }
     if (const char* frame = std::getenv("MYRENDERER_TIMELINE_FRAME")) {
         editorSession_.setFrame(std::atoi(frame));
+        // Explicit capture frames must remain deterministic even if the loaded
+        // scene requested Preview. Stop animation without pausing CPU sampling.
+        animationTimeSeconds_ = static_cast<float>(editorSession_.timeSeconds());
+        animationTimeFixed_ = true;
+        animationPlaying_ = false;
     }
 }
 
@@ -3003,12 +3093,35 @@ const Scene& Application::viewportScene() const {
     return moduleRuntime_.runtimeScene().scene();
 }
 
+void Application::synchronizeModulePlayback() {
+    if (!modulePreviewEnabled() || !animationPlaying_ || animationTimeFixed_) return;
+    const auto& timeline = editorSession_.timeline();
+    const double requested = std::floor(double(animationTimeSeconds_) * timeline.framesPerSecond() + 1.0e-5);
+    if (requested > timeline.endFrame() && timeline.loop()) {
+        const double wrapped = std::fmod(double(animationTimeSeconds_) * timeline.framesPerSecond()
+            - timeline.startFrame(), double(timeline.frameCount()));
+        editorSession_.setFrame(timeline.startFrame() + static_cast<int>(wrapped));
+        animationTimeSeconds_ = static_cast<float>((timeline.startFrame() + wrapped) / timeline.framesPerSecond());
+    } else if (requested >= timeline.endFrame() && !timeline.loop()) {
+        editorSession_.setFrame(timeline.endFrame());
+        animationTimeSeconds_ = static_cast<float>(editorSession_.timeSeconds());
+        animationPlaying_ = false;
+        animationTimeFixed_ = true;
+        editorSession_.requestPause(true);
+    } else {
+        editorSession_.setFrame(static_cast<int>(std::max(requested, double(timeline.startFrame()))));
+    }
+}
+
 void Application::updateModulePreview() {
     if (!modulePreviewEnabled()) return;
 
     const bool inputsChanged = moduleBuiltRevision_ != moduleInputRevision_
         || moduleBuiltSceneGeneration_ != sceneGeneration_
-        || moduleBuiltEntityCount_ != scene_.size();
+        || moduleBuiltEntityCount_ != scene_.size()
+        || moduleRuntime_.timeline().startFrame() != editorSession_.startFrame()
+        || moduleRuntime_.timeline().endFrame() != editorSession_.endFrame()
+        || moduleRuntime_.timeline().framesPerSecond() != editorSession_.framesPerSecond();
     std::string error;
     if (inputsChanged) {
         if (!moduleRuntime_.configure(
@@ -3082,40 +3195,49 @@ void Application::drawViewportPanel() {
         ImGui::SameLine();
         if (ImGui::SmallButton(cpuPreviewPaused_ ? "Resume" : "Pause")) {
             editorSession_.requestPause(!cpuPreviewPaused_);
-            if (cpuPreviewPaused_ && cpuPreviewTaskId_ == 0U) {
-                cpuPreviewRestartRequested_ = true;
-            }
         }
         ImGui::SameLine();
-        if (ImGui::SmallButton("Restart")) cpuPreviewRestartRequested_ = true;
+        if (ImGui::SmallButton("Restart"))
+            editorSession_.request(EditorCommand{EditorCommandType::RestartCpuPreview});
         ImGui::SameLine();
-        if (ImGui::SmallButton("CPU Settings")) ImGui::OpenPopup("CpuPreviewSettings");
+        if (ImGui::SmallButton("CPU Settings")
+            || std::getenv("MYRENDERER_EDITOR_CPU_SETTINGS"))
+            ImGui::OpenPopup("CpuPreviewSettings");
+        ImGui::SetNextWindowSize(ImVec2(460.0f, 0.0f), ImGuiCond_Appearing);
         if (ImGui::BeginPopup("CpuPreviewSettings")) {
+            auto settings = cpuPreviewSettings();
+            bool changed = false;
             const char* scaleNames[] = {"Auto (1/4 -> 1/2 -> Full)", "1/4", "1/2", "Full"};
-            ImGui::SetNextItemWidth(210.0f);
-            ImGui::Combo("Preview resolution", &cpuPreviewScaleMode_, scaleNames, 4);
-            ImGui::SliderInt("Target SPP", &cpuPreviewSamplesPerPixel_, 1, 4096,
+            changed |= EditorUi::Combo("Preview resolution", &settings.scaleMode, scaleNames, 4);
+            changed |= EditorUi::SliderInt("Target SPP", &settings.samplesPerPixel, 1, 4096,
                              "%d", ImGuiSliderFlags_Logarithmic);
-            ImGui::SliderInt("Max depth", &cpuPreviewMaxDepth_, 1, 32);
-            ImGui::InputInt("Seed", &cpuPreviewSeed_);
-            cpuPreviewSeed_ = std::max(cpuPreviewSeed_, 0);
+            changed |= EditorUi::SliderInt("Max depth", &settings.maxDepth, 1, 32);
+            changed |= EditorUi::propertyRow("Seed", [&](const char* id) {
+                return ImGui::InputInt(id, &settings.seed);
+            });
+            settings.seed = std::max(settings.seed, 0);
             const char* outputNames[] = {
                 "Beauty", "Albedo", "Normal", "Depth", "Direct", "Indirect",
                 "Sample Count", "Variance"
             };
-            ImGui::Combo("AOV", &cpuPreviewOutput_, outputNames, 8);
+            changed |= EditorUi::Combo("AOV", &settings.output, outputNames, 8);
             ImGui::SeparatorText("P0-D sampling / denoising");
-            ImGui::Checkbox("AOV A-Trous denoiser", &cpuPreviewDenoise_);
-            ImGui::BeginDisabled(!cpuPreviewDenoise_);
-            ImGui::SliderInt("A-Trous passes", &cpuPreviewAtrousIterations_, 1, 6);
-            ImGui::Checkbox("Temporal reprojection", &cpuPreviewTemporalDenoise_);
-            ImGui::Checkbox("Firefly clamp (biased)", &cpuPreviewFireflyClamp_);
+            changed |= EditorUi::Checkbox("AOV A-Trous denoiser", &settings.denoise);
+            ImGui::BeginDisabled(!settings.denoise);
+            changed |= EditorUi::SliderInt("A-Trous passes", &settings.atrousIterations, 1, 6);
+            changed |= EditorUi::Checkbox("Temporal reprojection", &settings.temporalDenoise);
+            changed |= EditorUi::Checkbox("Firefly clamp (biased)", &settings.fireflyClamp);
             if (ImGui::IsItemHovered())
                 ImGui::SetTooltip("Optional biased preview mode; never used for reference images.");
             ImGui::EndDisabled();
-            ImGui::Checkbox("Power-weighted lights", &cpuPreviewPowerWeightedLights_);
-            ImGui::Checkbox("GGX visible normals (VNDF)", &cpuPreviewGgxVndf_);
+            changed |= EditorUi::Checkbox("Power-weighted lights", &settings.powerWeightedLights);
+            changed |= EditorUi::Checkbox("GGX visible normals (VNDF)", &settings.ggxVndf);
             ImGui::TextDisabled("Camera/scene/light/settings changes cancel stale work.");
+            if (changed) {
+                EditorCommand command{EditorCommandType::SetCpuPreviewSettings};
+                command.cpuPreview = settings;
+                editorSession_.request(std::move(command));
+            }
             ImGui::EndPopup();
         }
     }
@@ -3277,6 +3399,19 @@ void Application::drawViewportPanel() {
                 pathtracer::writeRenderOutput(published->image, pathtracer::RenderOutput::Beauty,
                     pendingCpuPreviewExportPath_, {pathtracer::RenderFileFormat::Png});
                 std::cout << "CPU preview reference exported: " << pendingCpuPreviewExportPath_ << '\n';
+                if (const char* destination = std::getenv("MYRENDERER_MODULE_REPORT")) {
+                    const auto& report = moduleRuntime_.report();
+                    std::ofstream output(std::filesystem::u8path(destination));
+                    output << "{\"module\":{\"id\":" << std::quoted(report.moduleId)
+                           << ",\"buildId\":" << std::quoted(report.buildId)
+                           << ",\"apiVersion\":" << report.apiVersion
+                           << ",\"seed\":" << report.seed << ",\"lastFrame\":" << report.lastFrame
+                           << ",\"contentHash\":" << report.contentHash << "},\"fps\":"
+                           << report.framesPerSecond << ",\"parameterFingerprint\":"
+                           << moduleRuntime_.parameters().fingerprint() << "}\n";
+                    output.close();
+                    if (!output) throw std::runtime_error("Cannot write GUI module acceptance report");
+                }
                 pendingCpuPreviewExportPath_.clear();
                 glfwSetWindowShouldClose(window_, GLFW_TRUE);
             }
@@ -3371,7 +3506,7 @@ void Application::drawViewportPanel() {
             "Beauty", "Albedo", "Normal", "Depth", "Direct", "Indirect",
             "Sample Count", "Variance"
         };
-        const char* state = cpuPreviewPaused_
+        const char* state = cpuPreviewSingleFrameRefresh_ ? "Refreshing frame" : cpuPreviewPaused_
             ? "Paused"
             : (!current || cpuPreviewTaskId_ == 0U
                 ? "Restarting"
@@ -3595,21 +3730,36 @@ void Application::drawOrientationGizmo() {
     ImDrawList* drawList = ImGui::GetWindowDrawList();
     const ImVec2 center(imageMin.x + 58.0f, imageMax.y - 58.0f);
     constexpr float radius = 38.0f;
-    drawList->AddCircleFilled(center, 49.0f, IM_COL32(15, 16, 18, 205), 32);
-    drawList->AddCircle(center, 49.0f, IM_COL32(92, 96, 104, 190), 32, 1.0f);
+    drawList->AddCircleFilled(center, 49.0f, IM_COL32(15, 16, 18, 110), 48);
+    drawList->AddCircle(center, 49.0f, IM_COL32(130, 140, 155, 80), 48, 1.0f);
     for (const AxisGuide& axis : axes) {
         const ImVec2 endpoint(
             center.x + axis.cameraDirection.x * radius,
             center.y - axis.cameraDirection.y * radius
         );
-        drawList->AddLine(center, endpoint, axis.color, 3.5f);
-        drawList->AddCircleFilled(endpoint, 5.0f, axis.color, 12);
+        const float dx = endpoint.x - center.x;
+        const float dy = endpoint.y - center.y;
+        const float projectedLength = std::sqrt(dx * dx + dy * dy);
+        // A view-aligned axis collapses to the origin; never normalize it or
+        // fabricate an arrow pointing in an unrelated screen direction.
+        if (projectedLength > 1.0f) {
+            const float ux = dx / projectedLength;
+            const float uy = dy / projectedLength;
+            const float headLength = std::min(9.0f, projectedLength * 0.45f);
+            const float headWidth = headLength * 0.45f;
+            const ImVec2 base(endpoint.x - ux * headLength, endpoint.y - uy * headLength);
+            drawList->AddLine(center, endpoint, axis.color, 2.0f);
+            drawList->AddLine(endpoint,
+                {base.x - uy * headWidth, base.y + ux * headWidth}, axis.color, 2.0f);
+            drawList->AddLine(endpoint,
+                {base.x + uy * headWidth, base.y - ux * headWidth}, axis.color, 2.0f);
+        }
         const ImVec2 textSize = ImGui::CalcTextSize(axis.label);
         const float offsetX = endpoint.x >= center.x ? 7.0f : -textSize.x - 7.0f;
         const float offsetY = endpoint.y >= center.y ? 4.0f : -textSize.y - 4.0f;
         drawList->AddText({endpoint.x + offsetX, endpoint.y + offsetY}, axis.color, axis.label);
     }
-    drawList->AddCircleFilled(center, 3.5f, IM_COL32(230, 235, 245, 255), 12);
+    drawList->AddCircleFilled(center, 2.5f, IM_COL32(230, 235, 245, 255), 12);
 }
 
 void Application::drawDiagnostics() {
@@ -4093,11 +4243,17 @@ void Application::queueDroppedFiles(int count, const char** paths) {
     }
     for (int index = 0; index < count; ++index) {
         const std::filesystem::path candidate = std::filesystem::u8path(paths[index]);
-        if (findImporter(candidate) != nullptr) {
+        const auto extension = lowercase(candidate.extension().string());
+        if (extension == ".myscene" || extension == ".renderjob") {
+            EditorCommand command{extension == ".myscene"
+                ? EditorCommandType::OpenSceneAsset : EditorCommandType::SelectRenderJobAsset};
+            command.text = candidate.generic_u8string();
+            editorSession_.request(std::move(command));
+        } else if (findImporter(candidate) != nullptr) {
             droppedModelPaths_.push_back(candidate);
         }
     }
-    statusMessage_ = "Queued " + std::to_string(droppedModelPaths_.size()) + " model(s) for import.";
+    statusMessage_ = "Dropped resources queued for shared Scene / Model / Job commands.";
 }
 
 const ModelImporter* Application::findImporter(const std::filesystem::path& path) const {

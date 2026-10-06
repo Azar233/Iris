@@ -46,11 +46,28 @@ int main() {
         require(rasterJob.renderer == "raster", "coastal fixture must select the raster backend");
         const ModuleRegistry rasterModules = createBuiltinModuleRegistry();
         require(validateRenderJobAssets(rasterJob, error, &rasterModules), error.c_str());
+        RenderJob implicitModule = job;
+        implicitModule.scenePath = sourceRoot / "assets/scenes/fixtures/26_module_workflow.myscene";
+        require(!validateRenderJobAssets(implicitModule, error, &rasterModules)
+                    && error.find("explicit Render Job module") != std::string::npos,
+                "Batch must diagnose a Scene module without explicit Job configuration");
         BatchFrameResult wrongBackend;
         require(!runRenderJobFrame(rasterJob, 0, wrongBackend, error),
                 "CPU Batch must reject raster frames explicitly");
         require(error.find("raster-sequence") != std::string::npos,
                 "raster backend rejection must name its command");
+        require(!validateQueueRenderJob(rasterJob, error)
+                    && error.find("raster-sequence") != std::string::npos,
+                "Queue support validation must reject Raster with an actionable diagnostic");
+        RenderJob unsupportedFormat = rasterJob;
+        unsupportedFormat.outputFormats = {pathtracer::RenderFileFormat::OpenExr};
+        require(!validateRenderJob(unsupportedFormat, error), "Raster EXR must be rejected");
+        RenderJob unsupportedCache = rasterJob;
+        unsupportedCache.simulationCache = "missing-cache.json";
+        require(!validateRenderJob(unsupportedCache, error), "Raster cache must be rejected");
+        unsupportedCache = job;
+        unsupportedCache.simulationCache = "missing-cache.json";
+        require(!validateRenderJob(unsupportedCache, error), "CPU cache without explicit module must be rejected");
         rasterJob.resume = true;
         require(!validateRenderJob(rasterJob, error),
                 "raster resume must be rejected until output manifests are implemented");

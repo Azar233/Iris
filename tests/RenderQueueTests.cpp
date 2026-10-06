@@ -121,6 +121,16 @@ int main() {
         const std::filesystem::path outputStem = root / "output" / "frame_{frame:04}";
         writeJob(jobPath, scene, outputStem);
 
+        {
+            RenderQueue unsupported;
+            std::uint64_t unchangedId = 91U;
+            std::string rejection;
+            require(!unsupported.enqueue(sourceRoot / "assets/renderjobs/04_coastal_sequence.renderjob",
+                        unchangedId, rejection), "Queue must reject Raster before inserting an entry");
+            require(unchangedId == 91U && unsupported.entries().empty()
+                        && rejection.find("raster-sequence") != std::string::npos,
+                    "unsupported Queue submission must preserve entries and name the Raster CLI");
+        }
         RenderJob directJob;
         std::string error;
         require(loadRenderJob(jobPath, directJob, error), error);

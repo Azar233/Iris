@@ -253,6 +253,15 @@ bool loadRenderJob(const std::filesystem::path& path, RenderJob& job, std::strin
     }
 }
 
+bool validateQueueRenderJob(const RenderJob& job, std::string& error) {
+    if (!validateRenderJob(job, error)) return false;
+    if (job.renderer != "cpu-path-traced") {
+        error = "Render Queue supports CPU jobs only; run Raster jobs with Iris raster-sequence <job.renderjob>";
+        return false;
+    }
+    return true;
+}
+
 bool validateRenderJob(const RenderJob& job, std::string& error) {
     if (job.schemaVersion < RenderJob::minimumSchemaVersion
         || job.schemaVersion > RenderJob::currentSchemaVersion) {
@@ -272,6 +281,8 @@ bool validateRenderJob(const RenderJob& job, std::string& error) {
         error = "Raster Render Job resume is unavailable until output manifests are verified";
     } else if (job.renderer == "raster" && !job.simulationCache.empty()) {
         error = "Raster Render Job does not consume a simulation cache";
+    } else if (!job.simulationCache.empty() && job.module.id.empty()) {
+        error = "A simulation cache requires an explicit Render Job module";
     } else if (job.rasterWarmupFrames < 0 || job.rasterWarmupFrames > 240) {
         error = "Raster warmupFrames must be within 0..240";
     } else if (job.renderer == "raster" && job.rasterDeterminism && job.rasterTemporalAccumulation) {

@@ -163,7 +163,13 @@ bool applyJobModule(
     ModuleApplication& applied,
     std::string& error
 ) {
-    if (job.module.id.empty()) return true;
+    if (job.module.id.empty()) {
+        if (!document.moduleId.empty()) {
+            error = "Scene has a module; Batch requires explicit Render Job module configuration (id, seed, parameters)";
+            return false;
+        }
+        return true;
+    }
     if (modules == nullptr) {
         error = "Render Job requires module '" + job.module.id
             + "' but no module registry is available";
@@ -678,6 +684,8 @@ bool validateRenderJobAssets(const RenderJob& job, std::string& error,
         if (!loadSceneDocument(job.scenePath, document, loadError)) {
             throw std::runtime_error(loadError);
         }
+        if (job.module.id.empty() && !document.moduleId.empty())
+            throw std::runtime_error("Scene has a module; Batch requires explicit Render Job module configuration (id, seed, parameters)");
         (void)loadSnapshot(job, document);
         if (!job.module.id.empty()) {
             if (modules == nullptr) {

@@ -277,6 +277,29 @@ int main() {
 
         session.requestActivity(EditorActivity::Edit);
         require(!session.paused(), "returning to Edit must clear the runtime pause state");
+        session.takeCommands();
+        session.requestActivity(EditorActivity::Preview);
+        session.takeCommands();
+        session.request(EditorCommand{EditorCommandType::Step});
+        require(session.paused(), "Step must pause shared playback");
+        auto playbackCommands = session.takeCommands();
+        require(playbackCommands.size() == 2
+                && playbackCommands[0].type == EditorCommandType::PauseChanged
+                && playbackCommands[1].type == EditorCommandType::Step,
+                "Step must stop playback before advancing the frame");
+        session.requestActivity(EditorActivity::Preview);
+        require(!session.paused(), "Preview must resume an already selected paused activity");
+        playbackCommands = session.takeCommands();
+        require(playbackCommands.size() == 1
+                && playbackCommands[0].type == EditorCommandType::PauseChanged
+                && !playbackCommands[0].flag, "Preview must send the resume command");
+        session.request(EditorCommand{EditorCommandType::Reset});
+        require(session.paused(), "Reset must pause shared playback");
+        playbackCommands = session.takeCommands();
+        require(playbackCommands.size() == 2
+                && playbackCommands[0].type == EditorCommandType::PauseChanged
+                && playbackCommands[1].type == EditorCommandType::Reset,
+                "Reset must stop playback before restoring the start frame");
         std::cout << "Editor session command and timeline tests passed\n";
         return 0;
     } catch (const std::exception& error) {

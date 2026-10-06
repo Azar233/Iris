@@ -1036,6 +1036,19 @@ if(BUILD_TESTING)
         COMMENT "Accepting module simulate/bake, cache reuse, stale rejection, and reproducible sequences"
     )
 
+    add_custom_target(workflow-acceptance
+        COMMAND ${CMAKE_COMMAND}
+                -DBATCH=$<TARGET_FILE:MyRendererBatch>
+                -DRENDERER=$<TARGET_FILE:MyRenderer>
+                -DCOMPARATOR=$<TARGET_FILE:MyRendererImageComparison>
+                -DSOURCE_DIR=${CMAKE_CURRENT_SOURCE_DIR}
+                -DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/workflow-acceptance
+                -P ${CMAKE_CURRENT_SOURCE_DIR}/tools/WorkflowAcceptance.cmake
+        DEPENDS MyRendererBatch MyRendererImageComparison MyRenderer
+        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+        COMMENT "Accepting GUI Scene save/reopen and explicit module Job parity"
+    )
+
     add_custom_target(stylized-acceptance
         COMMAND ${CMAKE_COMMAND}
                 -DRENDERER=$<TARGET_FILE:MyRenderer>

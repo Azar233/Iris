@@ -59,6 +59,29 @@ cmake --build build --config Release --parallel
 ctest --test-dir build -C Release --output-on-failure
 ```
 
+## 工作流与 Job 支持范围
+
+File 菜单、快捷键与资源浏览器通过共享命令执行新建、保存、场景打开与模型导入；窗口可直接接收 `.myscene`、`.renderjob` 和模型文件拖放。View 菜单的五个展示 Preset 打开对应的完整场景。CPU Settings 的设置变化取消旧任务；暂停时 Restart 重算当前帧并保持暂停。
+
+| 能力 | CPU Job / IrisBatch / GUI Queue | Raster Job / Iris raster-sequence |
+| --- | --- | --- |
+| 格式 | PNG、Radiance HDR、OpenEXR，可组合 | Beauty PNG |
+| AOV | Beauty、Albedo、Normal、Depth、Direct、Indirect、Sample Count、Variance | Beauty |
+| Resume | 按已验证输出报告恢复完整帧 | 不支持，执行前拒绝 |
+| Simulation Cache | 显式配置 Module 的 Job；Hit/Missing/Stale 均有诊断 | 不支持，执行前拒绝 |
+| GUI Queue | 支持提交、取消、重试与恢复 | 入队及重试时拒绝，使用 CLI |
+| Module 参数 | `.renderjob.module` 明确定义并优先于 Scene 配置 | `.renderjob.module` 明确定义 |
+
+`.myscene.module` 用于编辑器保存和恢复。CPU Batch 不自动继承这份模块配置：带 Module 的 Scene 必须搭配显式配置 Module 的 Job，避免保存配置被静默忽略。Scene 保存的是参数与 Seed，执行范围和 FPS 由 Timeline / Job 明确定义；示例采用 0～23 帧、24 FPS。
+
+固定示例：[模块场景](assets/scenes/fixtures/26_module_workflow.myscene)与[对应 Job](assets/renderjobs/05_module_workflow.renderjob)，使用 Turntable、22.5 度/帧、Z 轴和 Seed 20260919。可在 GUI 保存重开并预览，再由 Batch 输出；自动验收核对两者的第 12 帧图像、参数、FPS、Seed、API 与 Build ID。
+
+```powershell
+.\build\Release\Iris.exe assets/scenes/fixtures/26_module_workflow.myscene
+.\build\Release\IrisBatch.exe render-frame assets/renderjobs/05_module_workflow.renderjob 12
+cmake --build build --config Release --target workflow-acceptance
+```
+
 ## 构建与测试
 
 MinGW 用户可将配置命令改为 `cmake -S . -B build-mingw -G "MinGW Makefiles" -DCMAKE_BUILD_TYPE=Release`，然后运行 `cmake --build build-mingw --parallel`。

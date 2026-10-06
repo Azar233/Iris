@@ -1,0 +1,41 @@
+{
+  "format": "MyRendererRenderJob",
+  "schemaVersion": 2,
+  "scene": "../scenes/fixtures/26_module_workflow.myscene",
+  "renderer": "cpu-path-traced",
+  "camera": "scene",
+  "resolution": [
+    64,
+    64
+  ],
+  "frames": {
+    "start": 0,
+    "end": 23,
+    "fps": 24
+  },
+  "sampling": {
+    "spp": 4,
+    "maxDepth": 4,
+    "seed": 20260919
+  },
+  "aovs": [
+    "beauty",
+    "depth"
+  ],
+  "output": {
+    "path": "../../build-ci-msvc/render-jobs/05_module_workflow/frame_{frame:04}",
+    "formats": [
+      "png"
+    ],
+    "resume": true
+  },
+  "module": {
+    "id": "myrenderer.core.turntable",
+    "seed": 20260919,
+    "parameters": {
+      "degreesPerFrame": 22.5,
+      "axis": "Z"
+    }
+  },
+  "failurePolicy": "stop"
+}

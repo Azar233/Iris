@@ -12,6 +12,7 @@ void EditorSession::requestBackend(EditorRenderBackend backend) {
 }
 
 void EditorSession::requestActivity(EditorActivity activity) {
+    if (activity == EditorActivity::Preview) requestPause(false);
     if (activity_ == activity) return;
     activity_ = activity;
     if (activity_ == EditorActivity::Edit) paused_ = false;
@@ -27,6 +28,8 @@ void EditorSession::requestPause(bool paused) {
 }
 
 void EditorSession::request(EditorCommand command) {
+    if (command.type == EditorCommandType::Step || command.type == EditorCommandType::Reset)
+        requestPause(true);
     commands_.push_back(command);
 }
 

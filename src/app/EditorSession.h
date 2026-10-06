@@ -52,6 +52,14 @@ enum class EditorCommandType {
     SetRasterizationSettings,
     SetCameraSettings,
     SetRuntimeSettings,
+    SetCpuPreviewSettings,
+    RestartCpuPreview,
+    NewScene,
+    OpenSceneDialog,
+    SaveScene,
+    SaveSceneAs,
+    ResetSceneModel,
+    ApplyScenePreset,
     SetGlassSettings,
     SetCausticsSettings,
     SetInstanceSettings,
@@ -217,6 +225,21 @@ struct EditorRuntimeSettingsPayload {
     bool shaderHotReloadEnabled{true};
 };
 
+// Preview task configuration; these settings are not part of a saved Scene.
+struct EditorCpuPreviewSettingsPayload {
+    int scaleMode{0};
+    int samplesPerPixel{64};
+    int maxDepth{6};
+    int seed{1};
+    int output{0};
+    bool denoise{true};
+    int atrousIterations{4};
+    bool temporalDenoise{true};
+    bool fireflyClamp{false};
+    bool powerWeightedLights{true};
+    bool ggxVndf{true};
+};
+
 struct EditorGlassSettingsPayload {
     bool transmissionEnabled{true};
     bool dispersionEnabled{true};
@@ -350,6 +373,7 @@ struct EditorCommand {
     EditorRasterizationSettingsPayload rasterization;
     EditorCameraSettingsPayload camera;
     EditorRuntimeSettingsPayload runtime;
+    EditorCpuPreviewSettingsPayload cpuPreview;
     EditorGlassSettingsPayload glass;
     EditorCausticsSettingsPayload caustics;
     EditorInstanceSettingsPayload instance;

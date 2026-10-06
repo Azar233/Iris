@@ -55,6 +55,7 @@ struct RenderJob {
 
 bool loadRenderJob(const std::filesystem::path& path, RenderJob& job, std::string& error);
 bool validateRenderJob(const RenderJob& job, std::string& error);
+bool validateQueueRenderJob(const RenderJob& job, std::string& error);
 bool applyRenderJobOutputOverride(RenderJob& job, const std::filesystem::path& outputStemPattern,
                                   std::string& error);
 std::filesystem::path renderJobFrameStem(const RenderJob& job, int frame);
