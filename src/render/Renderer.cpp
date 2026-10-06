@@ -372,6 +372,7 @@ void Renderer::render(
     glm::mat4 projection = camera.projectionMatrix(
         static_cast<float>(width) / static_cast<float>(height)
     );
+    const glm::mat4 overlayProjection = projection;
     const bool temporalAaActive = settings.temporalAaEnabled && !gBufferDebugActive;
     if (temporalAaActive) {
         const std::size_t sample = temporalFrameIndex_ % 8U + 1U;
@@ -1064,15 +1065,14 @@ sequence.add("Shadow maps", [&] {
             ++drawCallCount_;
             glEnable(GL_DEPTH_TEST);
         }
-        if (settings.showGrid || settings.showAxes) {
+        if (settings.showGrid) {
         glDisable(GL_CULL_FACE);
         glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
         glDepthMask(GL_FALSE);
         glEnable(GL_BLEND);
         glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-        debugGrid_->draw(view, projection, settings.showGrid, settings.showAxes);
-        drawCallCount_ += (settings.showGrid ? 1U : 0U)
-            + (settings.showAxes ? 1U : 0U);
+        debugGrid_->draw(view, projection, true, false);
+        ++drawCallCount_;
         glDisable(GL_BLEND);
         glDepthMask(GL_TRUE);
         }
@@ -1275,14 +1275,13 @@ deferredLightingShader_->setVec3("uCameraPosition", camera.position());
             glBindVertexArray(0);
             ++drawCallCount_;
 
-            if (!gBufferDebugActive && (settings.showGrid || settings.showAxes)) {
+            if (!gBufferDebugActive && settings.showGrid) {
                 glEnable(GL_DEPTH_TEST);
                 glDepthMask(GL_FALSE);
                 glEnable(GL_BLEND);
                 glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-                debugGrid_->draw(view, projection, settings.showGrid, settings.showAxes);
-                drawCallCount_ += (settings.showGrid ? 1U : 0U)
-                    + (settings.showAxes ? 1U : 0U);
+                debugGrid_->draw(view, projection, true, false);
+                ++drawCallCount_;
                 glDisable(GL_BLEND);
                 glDepthMask(GL_TRUE);
             }
@@ -1664,6 +1663,27 @@ deferredLightingShader_->setVec3("uCameraPosition", camera.position());
         drawCallCount_ += (!gBufferDebugActive && settings.bloom ? 10U : 1U)
             + (temporalAaActive ? 1U : 0U);
     });
+    if (settings.showAxes && !gBufferDebugActive) {
+        // Editor guides belong to the display overlay: geometry, transparency and
+        // postprocessing must not occlude, refract or accumulate them in TAA.
+        RenderPassContext axesContext("World axes overlay");
+        axesContext.inputs = {"Camera"};
+        axesContext.outputs = {"Final display color"};
+        axesContext.viewportWidth = width;
+        axesContext.viewportHeight = height;
+        axesContext.state.depthTest = false;
+        axesContext.state.depthWrite = false;
+        axesContext.state.blend = true;
+        axesContext.state.blendSourceRgb = GL_SRC_ALPHA;
+        axesContext.state.blendDestinationRgb = GL_ONE_MINUS_SRC_ALPHA;
+        axesContext.state.blendSourceAlpha = GL_ONE;
+        axesContext.state.blendDestinationAlpha = GL_ONE_MINUS_SRC_ALPHA;
+        sequence.add(std::move(axesContext), [&] {
+            renderTarget_->bindFinal();
+            debugGrid_->draw(view, overlayProjection, false, true);
+            ++drawCallCount_;
+        });
+    }
     activePassNames_ = sequence.names();
     activePassContexts_ = sequence.contexts();
     std::array<std::size_t, maxProfiledPasses_> activePassQuerySlots{};

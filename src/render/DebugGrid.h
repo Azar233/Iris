@@ -31,6 +31,4 @@ private:
     std::unique_ptr<Shader> infiniteShader_;
     unsigned int vao_{0};
     unsigned int vbo_{0};
-    std::size_t axesFirstVertex_{0};
-    std::size_t axesVertexCount_{0};
 };
