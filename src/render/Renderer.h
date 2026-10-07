@@ -27,7 +27,7 @@ class GodRaysRenderer;
 class DebugGrid;
 class SelectionOutline;
 class EnvironmentMap;
-class EnscapeCubeRenderer;
+namespace iris { class RenderPlugin; }
 class GBuffer;
 class GpuModel;
 class OpticalPathDebugRenderer;
@@ -378,7 +378,7 @@ private:
     std::unique_ptr<DebugGrid> debugGrid_;
     std::unique_ptr<SelectionOutline> selectionOutline_;
     std::unique_ptr<EnvironmentMap> environmentMap_;
-    std::unique_ptr<EnscapeCubeRenderer> enscapeCubeRenderer_;
+    std::unique_ptr<iris::RenderPlugin> enscapeCubeRenderer_;
     std::unique_ptr<GBuffer> gBuffer_;
     std::unique_ptr<OpticalPathDebugRenderer> opticalPathDebugRenderer_;
     std::unique_ptr<ShadowMap> shadowMap_;

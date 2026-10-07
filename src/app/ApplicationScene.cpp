@@ -36,6 +36,7 @@
 #include "render/GpuModel.h"
 #include "render/Renderer.h"
 #include "scene/SceneDocument.h"
+#include "plugin/RenderPluginRegistry.h"
 
 namespace {
 
@@ -2694,6 +2695,12 @@ bool Application::openScene(const std::filesystem::path& path) {
     std::string documentError;
     if (!loadSceneDocument(absolute, document, documentError)) {
         statusMessage_ = "Open scene failed: " + documentError;
+        return false;
+    }
+    if (document.renderer.enscapeCubeShaderEnabled
+        && !iris::builtinRenderPlugins().contains(iris::enscapePluginId)) {
+        statusMessage_ = "Open scene failed; current scene preserved: Render plugin unavailable: "
+            + std::string(iris::enscapePluginId);
         return false;
     }
     // Validate against the same registry as Batch before replacing the edit scene.

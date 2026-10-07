@@ -21,7 +21,7 @@
 #include "render/DebugGrid.h"
 #include "render/SelectionOutline.h"
 #include "render/EnvironmentMap.h"
-#include "render/EnscapeCubeRenderer.h"
+#include "plugin/RenderPluginRegistry.h"
 #include "render/GBuffer.h"
 #include "render/GpuModel.h"
 #include "render/OpticalPathDebugRenderer.h"
@@ -233,23 +233,23 @@ void Renderer::render(
         enscapeCubeActive_ = true;
         if (gBuffer_->framebuffer() != 0U) gBuffer_->destroy();
         if (!enscapeCubeRenderer_) {
-            enscapeCubeRenderer_ = std::make_unique<EnscapeCubeRenderer>(
-                shaderDirectory_);
+            enscapeCubeRenderer_ = iris::builtinRenderPlugins().create(
+                iris::enscapePluginId, {iris::openGlFullscreenService}, shaderDirectory_);
         }
-        enscapeCubeRenderer_->render(*renderTarget_, camera, settings, width, height,
-            settings.water.timeSeconds, fullscreenVertexArray_);
-        activePassNames_ = {"Enscape Cube: ocean and clouds", "Enscape Cube: bloom and tone map",
-            "Enscape Cube: TAA", "Enscape Cube: final image"};
+        enscapeCubeRenderer_->renderFrame({*renderTarget_, camera, settings, width, height,
+            settings.water.timeSeconds, fullscreenVertexArray_});
+        const auto pluginFrame = enscapeCubeRenderer_->frameInfo();
+        activePassNames_ = pluginFrame.passNames;
         activePassContexts_.clear();
         gpuPassTimings_.clear();
-        hasGpuFrameTime_ = enscapeCubeRenderer_->hasGpuFrameTime();
-        gpuFrameTimeMilliseconds_ = enscapeCubeRenderer_->gpuFrameMilliseconds();
-        if (enscapeCubeRenderer_->gpuFrameTimeUpdated()) {
+        hasGpuFrameTime_ = pluginFrame.gpuTimeValid;
+        gpuFrameTimeMilliseconds_ = pluginFrame.gpuMilliseconds;
+        if (pluginFrame.gpuTimeUpdated) {
             latestGpuFrameMeasurementMilliseconds_ = gpuFrameTimeMilliseconds_;
             ++gpuFrameMeasurementSerial_;
         }
         activeRenderPath_ = RenderPath::Forward;
-        drawCallCount_ = 4U;
+        drawCallCount_ = pluginFrame.drawCalls;
         submittedInstanceCount_ = 0U;
         visibleInstanceCount_ = 0U;
         culledInstanceCount_ = 0U;

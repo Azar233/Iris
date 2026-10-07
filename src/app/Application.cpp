@@ -56,6 +56,7 @@
 #include "render/OpenGlDebug.h"
 #include "render/Renderer.h"
 #include "scene/SceneDocument.h"
+#include "plugin/RenderPluginRegistry.h"
 
 namespace {
 
@@ -176,6 +177,11 @@ int Application::runRasterSequence(const RenderJob& job) {
     std::string sceneError;
     if (!loadSceneDocument(job.scenePath, authoredScene, sceneError)) {
         std::cerr << "Raster Scene invalid: " << sceneError << '\n';
+        return 66;
+    }
+    if (authoredScene.renderer.enscapeCubeShaderEnabled
+        && !iris::builtinRenderPlugins().contains(iris::enscapePluginId)) {
+        std::cerr << "Raster Scene requires unavailable render plugin: " << iris::enscapePluginId << '\n';
         return 66;
     }
     if (job.module.id.empty() && !authoredScene.moduleId.empty()) {
@@ -2114,8 +2120,14 @@ void Application::drawInspectorPanel() {
                 ImGui::EndDisabled();
             }
             if (EditorUi::section("Lighting & environment", true)) {
+            const bool enscapeAvailable = iris::builtinRenderPlugins().contains(iris::enscapePluginId);
+            ImGui::BeginDisabled(!enscapeAvailable);
             if (EditorUi::Checkbox((EditorUi::chinese ? "GLSL 云海" : "GLSL ocean and clouds"), &rendererSettings_.enscapeCubeShaderEnabled)) {
                 renderer_->invalidateTemporalHistory();
+            }
+            ImGui::EndDisabled();
+            if (!enscapeAvailable) {
+                ImGui::TextWrapped("Render plugin unavailable: %s", iris::enscapePluginId);
             }
             if (rendererSettings_.enscapeCubeShaderEnabled) {
                 // Tab activation and dock layout settle over the first few frames.

@@ -255,6 +255,28 @@ else()
     target_compile_options(MyRendererPathTracing PRIVATE -Wall -Wextra -Wpedantic)
 endif()
 
+option(IRIS_ENABLE_ENSCAPE_PLUGIN "Build the optional Enscape render plugin" ON)
+add_library(IrisRenderPluginHost STATIC
+    src/plugin/RenderPluginRegistry.cpp src/plugin/BuiltinRenderPlugins.cpp)
+target_include_directories(IrisRenderPluginHost PUBLIC src)
+target_compile_definitions(IrisRenderPluginHost PRIVATE
+    IRIS_ENABLE_ENSCAPE_PLUGIN=$<BOOL:${IRIS_ENABLE_ENSCAPE_PLUGIN}>)
+if(IRIS_ENABLE_ENSCAPE_PLUGIN)
+    add_library(IrisEnscapePlugin STATIC plugins/enscape/EnscapeCubeRenderer.cpp)
+    target_include_directories(IrisEnscapePlugin PUBLIC plugins/enscape PRIVATE src)
+    target_link_libraries(IrisEnscapePlugin PUBLIC glm::glm PRIVATE glad_gl_core_33)
+    target_link_libraries(IrisRenderPluginHost PRIVATE IrisEnscapePlugin)
+endif()
+foreach(pluginTarget IrisRenderPluginHost IrisEnscapePlugin)
+    if(TARGET ${pluginTarget})
+        if(MSVC)
+            target_compile_options(${pluginTarget} PRIVATE /W4 /permissive- /utf-8)
+        else()
+            target_compile_options(${pluginTarget} PRIVATE -Wall -Wextra -Wpedantic)
+        endif()
+    endif()
+endforeach()
+
 add_executable(MyRenderer
     src/main.cpp
     src/app/AppIcon.cpp
@@ -291,7 +313,6 @@ add_executable(MyRenderer
     src/render/PostProcessor.cpp
     src/render/RenderTarget.cpp
     src/render/Renderer.cpp
-    src/render/EnscapeCubeRenderer.cpp
     src/render/SceneDrawList.cpp
     src/render/Shader.cpp
     src/render/ShadowMap.cpp
@@ -341,6 +362,7 @@ target_link_libraries(MyRenderer PRIVATE
     MyRendererPathTracing
     MyRendererBatchRuntime
     MyRendererModules
+    IrisRenderPluginHost
 )
 
 if(BUILD_TESTING)
@@ -386,6 +408,31 @@ add_custom_command(TARGET MyRenderer POST_BUILD
 
 if(BUILD_TESTING)
     add_executable(MyRendererRenderJobTests tests/RenderJobTests.cpp)
+    add_executable(IrisRenderPluginRegistryTests tests/RenderPluginRegistryTests.cpp)
+    target_link_libraries(IrisRenderPluginRegistryTests PRIVATE IrisRenderPluginHost)
+    add_test(NAME render-plugin-registry COMMAND IrisRenderPluginRegistryTests)
+    if(IRIS_ENABLE_ENSCAPE_PLUGIN)
+        add_executable(IrisRenderPluginGpuTests tests/RenderPluginGpuTests.cpp
+            src/render/Camera.cpp src/render/RenderTarget.cpp src/render/Shader.cpp)
+        target_include_directories(IrisRenderPluginGpuTests PRIVATE src
+            ${assimp_SOURCE_DIR}/contrib/zlib ${assimp_BINARY_DIR}/contrib/zlib)
+        target_link_libraries(IrisRenderPluginGpuTests PRIVATE IrisRenderPluginHost glad_gl_core_33 glfw glm::glm zlibstatic)
+        target_compile_definitions(IrisRenderPluginGpuTests PRIVATE
+            GLFW_INCLUDE_NONE MYRENDERER_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}"
+            MYRENDERER_PLUGIN_OUTPUT="${CMAKE_CURRENT_BINARY_DIR}/plugin-validation")
+        file(MAKE_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/plugin-validation")
+        add_custom_target(render-plugin-gpu-acceptance COMMAND IrisRenderPluginGpuTests
+            DEPENDS IrisRenderPluginGpuTests COMMENT "Validating real render plugin resource and history lifecycle")
+    endif()
+    foreach(pluginTestTarget IrisRenderPluginRegistryTests IrisRenderPluginGpuTests)
+        if(TARGET ${pluginTestTarget})
+            if(MSVC)
+                target_compile_options(${pluginTestTarget} PRIVATE /W4 /permissive- /utf-8)
+            else()
+                target_compile_options(${pluginTestTarget} PRIVATE -Wall -Wextra -Wpedantic)
+            endif()
+        endif()
+    endforeach()
     target_link_libraries(MyRendererRenderJobTests PRIVATE MyRendererBatchRuntime MyRendererModules)
     target_compile_definitions(MyRendererRenderJobTests PRIVATE
         MYRENDERER_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}"
@@ -1599,7 +1646,7 @@ install(
     PATTERN "models/textures/spot*" EXCLUDE
     PATTERN "models/textures/hmap.jpg" EXCLUDE
 )
-install(FILES README.md LICENSE THIRD_PARTY_NOTICES.md ASSET_LICENSES.md DESTINATION . COMPONENT Runtime)
+install(FILES README.md ARCHITECTURE_ROADMAP.md LICENSE THIRD_PARTY_NOTICES.md ASSET_LICENSES.md DESTINATION . COMPONENT Runtime)
 install(FILES ${glfw_SOURCE_DIR}/LICENSE.md DESTINATION licenses RENAME GLFW-LICENSE.md COMPONENT Runtime)
 install(FILES ${glm_SOURCE_DIR}/copying.txt DESTINATION licenses RENAME GLM-LICENSE.txt COMPONENT Runtime)
 install(FILES ${MYRENDERER_GLAD_FETCH_SOURCE_DIR}/LICENSE DESTINATION licenses RENAME GLAD-LICENSE.txt COMPONENT Runtime)

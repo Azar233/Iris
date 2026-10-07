@@ -4,6 +4,8 @@
 
 <h1 align="center">Iris</h1>
 
+当前研发转向可扩展引擎架构，暂停场景画质扩展；计划和验证状态见 [插件架构路线](ARCHITECTURE_ROADMAP.md)。实验分支不自动合并 `main`。现有图像与场景保留作展示和迁移回归输入。
+
 <p align="center">A C++17 real-time and offline rendering playground.</p>
 
 <p align="center">

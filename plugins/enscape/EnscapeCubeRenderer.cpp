@@ -1,4 +1,4 @@
-#include "render/EnscapeCubeRenderer.h"
+#include "EnscapeCubeRenderer.h"
 
 #include <algorithm>
 #include <cmath>
@@ -52,6 +52,17 @@ EnscapeCubeRenderer::EnscapeCubeRenderer(const std::filesystem::path& shaderDire
     shaders_[3] = std::make_unique<Shader>(vertex, directory / "pass_image.frag");
     makeNoiseTextures();
     glGenQueries(static_cast<GLsizei>(timingQueries_.size()), timingQueries_.data());
+}
+
+void EnscapeCubeRenderer::renderFrame(const iris::RenderPluginFrame& frame) {
+    render(frame.target, frame.camera, frame.settings, frame.width, frame.height,
+        frame.timeSeconds, frame.fullscreenVertexArray);
+}
+
+iris::RenderPluginFrameInfo EnscapeCubeRenderer::frameInfo() const {
+    return {{"Enscape Cube: ocean and clouds", "Enscape Cube: bloom and tone map",
+        "Enscape Cube: TAA", "Enscape Cube: final image"},
+        4U, gpuTimeValid_, gpuTimeUpdated_, gpuTimeMilliseconds_};
 }
 
 EnscapeCubeRenderer::~EnscapeCubeRenderer() {
