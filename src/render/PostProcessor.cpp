@@ -346,6 +346,9 @@ void PostProcessor::process(RenderTarget& target, const PostProcessSettings& set
         "uAerialHorizonColor", glm::max(settings.aerialPerspectiveHorizonColor, glm::vec3(0.0f))
     );
     compositeShader_->setBool("uUnderwaterFogEnabled", settings.underwaterFog);
+    compositeShader_->setBool("uWaterSurfaceOptics", settings.waterSurfaceOptics);
+    compositeShader_->setFloat("uWaterSurfaceHeight", settings.waterSurfaceHeight);
+    compositeShader_->setInt("uOpaqueDepth", 9);
     compositeShader_->setVec3("uUnderwaterAbsorption", settings.underwaterAbsorption);
     compositeShader_->setVec3("uUnderwaterColor", settings.underwaterColor);
     compositeShader_->setBool("uColorGradingEnabled", settings.colorGrading);
@@ -393,6 +396,8 @@ void PostProcessor::process(RenderTarget& target, const PostProcessSettings& set
     glBindTexture(GL_TEXTURE_2D, settings.cloudDepthTexture);
     glActiveTexture(GL_TEXTURE8);
     glBindTexture(GL_TEXTURE_2D, settings.godRaysTexture);
+    glActiveTexture(GL_TEXTURE9);
+    glBindTexture(GL_TEXTURE_2D, settings.opaqueDepthTexture);
     drawFullscreen();
     target.unbind();
 }

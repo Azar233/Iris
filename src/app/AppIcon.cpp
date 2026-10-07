@@ -25,7 +25,7 @@
 #include <GLFW/glfw3.h>
 #endif
 
-#include <stb_image.h>
+#include "asset/StbImageCompat.h"
 
 namespace {
 

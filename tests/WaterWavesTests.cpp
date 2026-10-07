@@ -81,6 +81,19 @@ int main() {
     require(glm::length(diverseVelocity - diverseSample.velocity) < 0.003f,
         "diverse waves must preserve analytic motion velocity");
 
+    settings.surfaceOptics = true;
+    settings.quality = WaterQuality::Low;
+    require(water::activeComponentCount(settings) == 8,
+        "filtered optics Low must preserve the same wave spectrum with mesh-footprint filtering");
+    for (auto preset : {WaterPreset::Calm, WaterPreset::Windy, WaterPreset::Storm}) {
+        water::applyPreset(settings, preset);
+        for (int i = 0; i < 24; ++i) {
+            const auto displaced = water::evaluate(settings, glm::vec2(i * 0.61f - 7.0f, i * -0.37f + 4.0f));
+            const float height = water::surfaceHeight(settings, glm::vec2(displaced.position.x, displaced.position.z));
+            require(std::abs(height - displaced.position.y) < 0.0002f,
+                "world-space height query must invert horizontal displacement across sea states");
+        }
+    }
     settings.amplitude = 0.0f;
     const WaterSample flat = water::evaluate(settings, point);
     require(glm::length(flat.position - glm::vec3(point.x, settings.level, point.y)) < 1.0e-6f

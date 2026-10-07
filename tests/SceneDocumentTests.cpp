@@ -36,6 +36,8 @@ int main() {
         source.camera.fieldOfViewDegrees = 39.0f;
         source.renderer.renderPath = RenderPath::Deferred;
         source.renderer.enscapeCubeShaderEnabled = true;
+        source.renderer.enscapeCube.cubeEnabled = false;
+        source.renderer.enscapeCube.noiseReduction = true;
         source.renderer.enscapeCube.waveHeight = 0.93f;
         source.renderer.enscapeCube.waveFrequency = 0.22f;
         source.renderer.enscapeCube.waveChoppiness = 5.2f;
@@ -94,10 +96,14 @@ int main() {
         source.renderer.water.deepWaterStrength = 0.7f;
         source.renderer.water.waveDiversity = 0.6f;
         source.renderer.water.nearMeshFocus = 0.8f;
+        source.renderer.water.surfaceOptics = true;
+        source.renderer.water.cloudReflectionStrength = 0.75f;
         source.renderer.water.windDirection = {0.4f, -0.7f};
         source.camera.farPlane = 1500.0f;
         source.renderer.atmosphere.nightSkyEnabled = true;
         source.renderer.atmosphere.cloudHalfResolution = true;
+        source.renderer.atmosphere.cloudHeightLighting = true;
+        source.renderer.atmosphere.cloudShapeBlend = 0.72f;
         source.renderer.atmosphere.cloudTemporalEnabled = true;
         source.renderer.atmosphere.cloudShadowsEnabled = true;
         source.renderer.atmosphere.cloudGodRaysEnabled = true;
@@ -175,6 +181,8 @@ int main() {
                 && close(firstLoad.renderer.water.deepWaterStrength, 0.7f)
                 && close(firstLoad.renderer.water.waveDiversity, 0.6f)
                 && close(firstLoad.renderer.water.nearMeshFocus, 0.8f)
+                && firstLoad.renderer.water.surfaceOptics
+                && close(firstLoad.renderer.water.cloudReflectionStrength, 0.75f)
                 && close(firstLoad.renderer.water.windDirection.x, 0.4f)
                 && close(firstLoad.renderer.water.windDirection.y, -0.7f),
                 "water settings survive first load");
@@ -185,6 +193,8 @@ int main() {
                 && close(firstLoad.renderer.atmosphere.starIntensity, 0.7f),
                 "night sky settings survive first load");
         require(firstLoad.renderer.atmosphere.cloudHalfResolution
+                && firstLoad.renderer.atmosphere.cloudHeightLighting
+                && close(firstLoad.renderer.atmosphere.cloudShapeBlend, 0.72f)
                 && firstLoad.renderer.atmosphere.cloudTemporalEnabled
                 && firstLoad.renderer.atmosphere.cloudShadowsEnabled
                 && firstLoad.renderer.atmosphere.cloudGodRaysEnabled
@@ -229,7 +239,9 @@ int main() {
             "GLSL study mode survives first load");
         const auto sameOceanSettings = [](const EnscapeCubeSettings& a,
             const EnscapeCubeSettings& b) {
-            return close(a.waveHeight, b.waveHeight)
+            return a.noiseReduction == b.noiseReduction
+                && a.cubeEnabled == b.cubeEnabled
+                && close(a.waveHeight, b.waveHeight)
                 && close(a.waveFrequency, b.waveFrequency)
                 && close(a.waveChoppiness, b.waveChoppiness)
                 && close(a.waveSpeed, b.waveSpeed)
@@ -346,6 +358,9 @@ int main() {
         const auto legacyPath = directory / "legacy.myscene";
         { std::ofstream stream(legacyPath); stream << R"({"format":"MyRendererScene","version":1,"entities":[]})"; }
         require(loadSceneDocument(legacyPath, restoredModule, error), error.c_str());
+        require(!restoredModule.renderer.water.surfaceOptics
+            && restoredModule.renderer.water.cloudReflectionStrength == 0.0f,
+            "legacy scenes retain water defaults without cloud reflections");
         require(restoredModule.moduleId.empty() && restoredModule.moduleParameters.empty(),
             "loading a legacy scene clears previous module configuration");
 
@@ -367,17 +382,28 @@ int main() {
                 require(!example.entities.empty()
                     || (example.renderer.water.enabled && example.renderer.skyboxEnabled),
                     "bundled scene must contain entities or a renderable water/skybox environment");
-                if (entry.path().filename() == "02_ocean_weather_hero.myscene") {
+                if (entry.path().filename() == "01_ocean_clouds_hero.myscene") {
                     require(example.entities.empty()
-                        && example.renderer.environmentPreset == 1
+                        && example.renderer.atmosphere.enabled
+                        && example.renderer.atmosphere.cloudsEnabled
+                        && example.renderer.water.enabled
+                        && example.renderer.enscapeCubeShaderEnabled
+                        && !example.renderer.enscapeCube.cubeEnabled
+                        && example.renderer.enscapeCube.noiseReduction
+                        && example.moduleId.empty()
+                        && example.moduleParameters.empty()
+                        && example.playback.animationEnabled
+                        && example.playback.animationPlaying
                         && close(example.renderer.water.deepWaterStrength, 1.0f)
                         && close(example.renderer.water.waveDiversity, 1.0f)
                         && close(example.renderer.water.nearMeshFocus, 1.0f),
-                        "open-ocean hero must render without a seabed entity");
+                        "merged hero must run clouds/water live with an unowned camera and no seabed");
                 }
                 if (entry.path().filename() == "03_enscape_ocean_study.myscene") {
                     require(example.entities.empty()
                         && example.renderer.enscapeCubeShaderEnabled
+                        && example.renderer.enscapeCube.cubeEnabled
+                        && !example.renderer.enscapeCube.noiseReduction
                         && close(example.camera.target.x, -2.28f)
                         && close(example.camera.target.z, -0.64f)
                         && close(example.camera.fieldOfViewDegrees, 71.0753556f)
@@ -393,7 +419,9 @@ int main() {
                         && !example.renderer.atmosphere.cloudGodRaysEnabled
                         && close(example.renderer.atmosphere.cloudGodRaysStrength, 0.08f)
                         && !example.renderer.atmosphere.cloudDeterministic
-                        && !example.renderer.atmosphere.cloudOfflineNoise,
+                        && !example.renderer.atmosphere.cloudOfflineNoise
+                        && !example.renderer.atmosphere.cloudHeightLighting
+                        && example.renderer.atmosphere.cloudShapeBlend == 0.0f,
                         "older scenes must retain full-resolution deterministic cloud defaults");
                 }
                 for (const SceneDocumentEntity& entity : example.entities) {
@@ -414,8 +442,11 @@ int main() {
         };
         verifySceneDirectory(examples, visibleSceneCount);
         verifySceneDirectory(fixtures, fixtureCount);
-        require(visibleSceneCount == 3U,
-            "the cloud lab and two ocean scenes should be user-visible");
+        require(visibleSceneCount == 2U,
+            "only the merged native cloud/ocean hero and the separate GLSL study should be user-visible");
+        require(!std::filesystem::exists(examples / "01_volumetric_cloud_lab.myscene")
+                && !std::filesystem::exists(examples / "02_ocean_weather_hero.myscene"),
+            "superseded visible scenes must not remain in the asset catalog");
         require(fixtureCount >= 22U, "all major feature scenes should remain as fixtures");
         require(foundPathTracingPbr && foundPathTracingLights && foundPathTracingVolume,
             "dedicated path-tracing scene fixtures should be bundled");

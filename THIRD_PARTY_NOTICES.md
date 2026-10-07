@@ -25,3 +25,9 @@ Asset provenance and redistribution scope are recorded separately in
 `ASSET_LICENSES.md`. The project's MIT license does not relicense third-party
 assets.
 The copied ocean shader's license texts ship in `assets/licenses/`.
+
+MSVC-built Windows packages also include the compiler-provided release CRT
+redistributable DLLs discovered by CMake's `InstallRequiredSystemLibraries`.
+These Microsoft runtime components are not covered by the project's MIT license.
+Windows system libraries and the OpenGL driver are supplied by the operating
+system and GPU installation, rather than copied from the development machine.

@@ -4,6 +4,7 @@
 #include <fstream>
 #include <iostream>
 #include <stdexcept>
+#include <string>
 #include <vector>
 #include <glad/gl.h>
 #include <GLFW/glfw3.h>
@@ -39,7 +40,7 @@ void save(const std::filesystem::path& path, const std::vector<float>& pixels, i
     require(static_cast<bool>(file), "could not write cloud acceptance image");
 }
 void exercise(const std::filesystem::path& root, const std::filesystem::path& output,
-    atmosphere::CloudQualityTier tier) {
+    atmosphere::CloudQualityTier tier, bool heightLighting) {
     constexpr int width = 192, height = 128;
     atmosphere::AtmosphereParameters parameters;
     parameters.enabled = true;
@@ -49,6 +50,8 @@ void exercise(const std::filesystem::path& root, const std::filesystem::path& ou
     parameters.cloudQuality = tier;
     parameters.cloudFeatureScale = 2400.0f;
     parameters.cloudHorizonFadeDegrees = 0;
+    parameters.cloudHeightLighting = heightLighting;
+    parameters.cloudShapeBlend = parameters.cloudHeightLighting ? 0.85f : 0.0f;
     Camera camera;
     camera.setOrbitPose(glm::vec3(0), -35, -35, 6, 55);
     cloud::MarchSettings settings;
@@ -133,6 +136,10 @@ void exercise(const std::filesystem::path& root, const std::filesystem::path& ou
     require(layer.lastHistoryReused(),"unchanged offline asset should reuse cloud history");
     parameters.cloudOfflineNoise=false;
     draw(); fresh();
+    parameters.cloudHeightLighting = !parameters.cloudHeightLighting;
+    draw(); fresh();
+    parameters.cloudShapeBlend = parameters.cloudShapeBlend == 0.0f ? 0.85f : 0.0f;
+    draw(); fresh();
     parameters.cloudCoverage = 0;
     parameters.cloudCoverageVariation = 0;
     draw(); fresh();
@@ -174,7 +181,7 @@ void exercise(const std::filesystem::path& root, const std::filesystem::path& ou
 }
 }
 int main(int argc, char** argv) {
-    if (argc != 2 || glfwInit() != GLFW_TRUE) return 1;
+    if ((argc != 2 && argc != 3) || glfwInit() != GLFW_TRUE) return 1;
     glfwWindowHint(GLFW_VISIBLE, GLFW_FALSE);
     glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
@@ -187,7 +194,8 @@ int main(int argc, char** argv) {
     try {
         std::filesystem::create_directories(argv[1]);
         for (auto tier : {atmosphere::CloudQualityTier::Low, atmosphere::CloudQualityTier::High})
-            exercise(MYRENDERER_SOURCE_DIR, argv[1], tier);
+            exercise(MYRENDERER_SOURCE_DIR, argv[1], tier,
+                argc == 3 && std::string(argv[2]) == "--height-lighting");
         std::cout << "Cloud temporal acceptance: PASS\n";
     } catch (const std::exception& error) { std::cerr << error.what() << '\n'; result = 1; }
     glfwDestroyWindow(window);

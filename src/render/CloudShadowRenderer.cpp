@@ -23,6 +23,7 @@ glm::vec3 CloudShadowRenderer::texelRayOrigin(int x, int y) const {
 }
 void CloudShadowRenderer::render(const atmosphere::AtmosphereParameters& p,
     const glm::vec3& cameraPosition, float extent, float extinction) {
+    updatedThisFrame_ = false;
     const glm::vec3 sun = atmosphere::sunDirection(p);
     active_ = p.enabled && p.cloudsEnabled && p.cloudShadowsEnabled && sun.y > 0.02f;
     if (!active_) return;
@@ -30,6 +31,7 @@ void CloudShadowRenderer::render(const atmosphere::AtmosphereParameters& p,
     const int resolution = high ? 256 : 128;
     steps_ = high ? 48 : 24;
     if (resolution_ != resolution) {
+        cacheValid_ = false;
         glDeleteTextures(1, &texture_);
         glGenTextures(1, &texture_);
         glBindTexture(GL_TEXTURE_2D, texture_);
@@ -57,6 +59,23 @@ void CloudShadowRenderer::render(const atmosphere::AtmosphereParameters& p,
         std::round(glm::dot(cameraPosition, axisY_) / texel)) * texel;
     cloudBase_ = p.cloudBaseHeight;
     shader_->use();
+    noiseTexture_.bindCanonical(*shader_,p.cloudOfflineNoise,
+        static_cast<int>(std::lround(p.cloudNoisePeriod)),4);
+    int program = 0;
+    glGetIntegerv(GL_CURRENT_PROGRAM, &program);
+    const std::array<float, 26> inputs{
+        p.cloudBaseHeight, p.cloudTopHeight, p.cloudFeatureScale, p.cloudNoisePeriod,
+        p.cloudOfflineNoise ? 1.0f : 0.0f, p.cloudWindOffsetX, p.cloudWindOffsetZ,
+        p.cloudCoverage, p.cloudDensity, p.cloudWeatherScale, p.cloudCoverageVariation,
+        p.cloudType, p.cloudTypeVariation, p.cloudHeightVariation,
+        p.cloudDetailStrength, p.cloudDetailEdge, p.cloudShapeBlend, extent_, center_.x, center_.y,
+        sun.x, sun.y, sun.z, std::max(extinction, 0.0f),
+        static_cast<float>(steps_), static_cast<float>(resolution_)};
+    // The snapped orthographic map depends only on these shader inputs. Keep
+    // canonical resource binding/manifest validation above the reuse branch.
+    // A new program after transactional hot reload also invalidates the map.
+    if (cacheValid_ && cachedInputs_ == inputs && cachedProgram_ == program
+        && cachedNoiseFingerprint_ == noiseTexture_.fingerprint()) return;
     shader_->setVec3("uAxisX", axisX_);
     shader_->setVec3("uAxisY", axisY_);
     shader_->setVec3("uSunDirection", sun);
@@ -69,8 +88,6 @@ void CloudShadowRenderer::render(const atmosphere::AtmosphereParameters& p,
     shader_->setFloat("uLayer.featureScale", p.cloudFeatureScale);
     shader_->setInt("uLayer.noisePeriod", std::clamp(static_cast<int>(std::lround(p.cloudNoisePeriod)), 1, 16));
     shader_->setBool("uLayer.offlineNoise",p.cloudOfflineNoise);
-    noiseTexture_.bindCanonical(*shader_,p.cloudOfflineNoise,
-        static_cast<int>(std::lround(p.cloudNoisePeriod)),4);
     shader_->setFloat("uLayer.windX", p.cloudWindOffsetX);
     shader_->setFloat("uLayer.windZ", p.cloudWindOffsetZ);
     shader_->setFloat("uLayer.coverage", p.cloudCoverage);
@@ -82,6 +99,7 @@ void CloudShadowRenderer::render(const atmosphere::AtmosphereParameters& p,
     shader_->setFloat("uLayer.heightVariation", p.cloudHeightVariation);
     shader_->setFloat("uLayer.detailStrength", p.cloudDetailStrength);
     shader_->setFloat("uLayer.detailEdge", p.cloudDetailEdge);
+    shader_->setFloat("uLayer.shapeBlend", p.cloudShapeBlend);
     glBindFramebuffer(GL_FRAMEBUFFER, framebuffer_);
     glViewport(0, 0, resolution_, resolution_);
     glDisable(GL_DEPTH_TEST);
@@ -91,6 +109,11 @@ void CloudShadowRenderer::render(const atmosphere::AtmosphereParameters& p,
     glDrawArrays(GL_TRIANGLES, 0, 3);
     glBindVertexArray(0);
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    cachedInputs_ = inputs;
+    cachedProgram_ = program;
+    cachedNoiseFingerprint_ = noiseTexture_.fingerprint();
+    cacheValid_ = true;
+    updatedThisFrame_ = true;
 }
 void CloudShadowRenderer::bind(Shader& shader, unsigned int unit, bool enabled) const {
     shader.setBool("uCloudShadowEnabled", enabled && active_);

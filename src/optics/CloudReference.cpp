@@ -53,10 +53,17 @@ float sunOpticalDepth(
     const float stepLength = span.length / static_cast<float>(steps);
     float depth = 0.0f;
     for (int step = 0; step < steps; ++step) {
-        const float distance = span.start
-            + (static_cast<float>(step) + 0.5f) * stepLength;
+        const float nearFraction = myrenderer_cloud_light_fraction(
+            static_cast<float>(step) / steps, parameters.cloudHeightLighting);
+        const float farFraction = myrenderer_cloud_light_fraction(
+            static_cast<float>(step + 1) / steps, parameters.cloudHeightLighting);
+        const float intervalLength = span.length * (farFraction - nearFraction);
+        const float distance = parameters.cloudHeightLighting
+            ? span.start + span.length * (nearFraction + farFraction) * 0.5f
+            : span.start + (static_cast<float>(step) + 0.5f) * stepLength;
         const glm::vec3 sample = position + sunDirection * distance;
-        depth += densityAt(sample, parameters) * stepLength;
+        depth += densityAt(sample, parameters)
+            * (parameters.cloudHeightLighting ? intervalLength : stepLength);
         ++sampleCounter;
     }
     return depth;
@@ -73,9 +80,16 @@ MarchLighting marchLighting(const atmosphere::AtmosphereParameters& parameters) 
         * std::max(parameters.cloudVolumetricAmbientScale, 0.0f);
     // The key light's spectrum carrying its intensity. The march applies the phase function and the
     // light march itself, so this is the unmodulated source.
-    lighting.sun = atmosphere::skyLightColor(parameters)
+    lighting.sun = (parameters.cloudHeightLighting
+            ? atmosphere::sunTransmittance(parameters) : atmosphere::skyLightColor(parameters))
         * std::max(parameters.sunIntensity, 0.0f)
         * std::max(parameters.cloudVolumetricSunScale, 0.0f);
+    if (parameters.cloudHeightLighting) {
+        // The flat ground blocks a source below the horizon. Preserve the solar
+        // spectrum AND its energy instead of normalizing sunset extinction away.
+        const float visible = std::clamp(parameters.sunElevationDegrees / 2.0f, 0.0f, 1.0f);
+        lighting.sun *= visible * visible * (3.0f - 2.0f * visible);
+    }
     return lighting;
 }
 
@@ -192,7 +206,8 @@ MarchResult march(
         const float fillTransmittance = transmission(sunDepth * multiWeight, parameters.cloudOfflineNoise);
         const float powder = settings.powder
             ? myrenderer_cloud_powder(density, stepLength) : 1.0f;
-        const glm::vec3 scatter = settings.ambientRadiance
+        const glm::vec3 scatter = settings.ambientRadiance * myrenderer_cloud_ambient_weight(
+            position.y, parameters.cloudBaseHeight, parameters.cloudTopHeight, parameters.cloudHeightLighting)
             + settings.sunRadiance * ((1.0f - multiWeight) * singlePhase * sunTransmittance
                 + multiWeight * multiPhase * fillTransmittance);
         const float stepTransmittance = transmission(sampleOpticalDepth * extinction, parameters.cloudOfflineNoise);

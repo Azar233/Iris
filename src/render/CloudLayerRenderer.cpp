@@ -201,6 +201,8 @@ void CloudLayerRenderer::render(
     shader_->setFloat("uMultiScatterAttenuation", marchSettings.multiScatterAttenuation);
     shader_->setFloat("uMultiScatterEccentricity", marchSettings.multiScatterEccentricity);
     shader_->setBool("uPowder", marchSettings.powder);
+    shader_->setBool("uHeightLighting", parameters.cloudHeightLighting);
+    shader_->setFloat("uShapeBlend", parameters.cloudShapeBlend);
     shader_->setInt("uDepth", 0);
 
     glBindFramebuffer(GL_FRAMEBUFFER, framebuffer_);

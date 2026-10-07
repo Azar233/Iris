@@ -95,6 +95,8 @@ inline EditorWaterSettingsPayload captureWaterSettings(const RendererSettings& s
     snapshot.deepWaterStrength = std::clamp(settings.water.deepWaterStrength, 0.0f, 1.0f);
     snapshot.waveDiversity = std::clamp(settings.water.waveDiversity, 0.0f, 1.0f);
     snapshot.nearMeshFocus = std::clamp(settings.water.nearMeshFocus, 0.0f, 1.0f);
+    snapshot.surfaceOptics = settings.water.surfaceOptics;
+    snapshot.cloudReflectionStrength = std::clamp(settings.water.cloudReflectionStrength, 0.0f, 1.0f);
     snapshot.windX = std::clamp(settings.water.windDirection.x, -1.0f, 1.0f);
     snapshot.windZ = std::clamp(settings.water.windDirection.y, -1.0f, 1.0f);
     return snapshot;
@@ -288,6 +290,8 @@ inline EditorAtmosphereSettingsPayload captureAtmosphereSettings(const RendererS
     snapshot.cloudHeightVariation = std::clamp(settings.atmosphere.cloudHeightVariation, 0.0f, 1.0f);
     snapshot.cloudDetailStrength = std::clamp(settings.atmosphere.cloudDetailStrength, 0.0f, 1.0f);
     snapshot.cloudDetailEdge = std::clamp(settings.atmosphere.cloudDetailEdge, 0.0f, 1.0f);
+    snapshot.cloudHeightLighting = settings.atmosphere.cloudHeightLighting;
+    snapshot.cloudShapeBlend = std::clamp(settings.atmosphere.cloudShapeBlend, 0.0f, 1.0f);
     snapshot.cloudHalfResolution = settings.atmosphere.cloudHalfResolution;
     snapshot.cloudTemporalEnabled = settings.atmosphere.cloudTemporalEnabled;
     snapshot.cloudShadowsEnabled = settings.atmosphere.cloudShadowsEnabled;
@@ -339,6 +343,8 @@ inline void applyCloudPreset(
     snapshot.cloudHeightVariation = std::clamp(parameters.cloudHeightVariation, 0.0f, 1.0f);
     snapshot.cloudDetailStrength = std::clamp(parameters.cloudDetailStrength, 0.0f, 1.0f);
     snapshot.cloudDetailEdge = std::clamp(parameters.cloudDetailEdge, 0.0f, 1.0f);
+    snapshot.cloudHeightLighting = parameters.cloudHeightLighting;
+    snapshot.cloudShapeBlend = std::clamp(parameters.cloudShapeBlend, 0.0f, 1.0f);
 }
 
 } // namespace EditorDomain

@@ -3,6 +3,8 @@
 
 #include <chrono>
 #include <functional>
+#include <future>
+#include <thread>
 
 #include "optics/Atmosphere.h"
 
@@ -14,9 +16,10 @@
 
 #include <glad/gl.h>
 #include <glm/geometric.hpp>
+#include <glm/trigonometric.hpp>
 #include <glm/vec2.hpp>
 #include <glm/vec3.hpp>
-#include <stb_image.h>
+#include "asset/StbImageCompat.h"
 #include <tinyexr.h>
 
 #include "render/Shader.h"
@@ -24,6 +27,28 @@
 namespace {
 
 constexpr float pi = 3.14159265359f;
+
+// Each row owns disjoint CPU storage. Keep a texel's sample reduction serial so
+// scheduling cannot change floating point sums; no worker may call OpenGL.
+// Futures join during unwinding as well, keeping captured buffers alive on errors.
+template<class Function>
+void parallelRows(int rows, unsigned int workerCount, const Function& function) {
+    workerCount = std::min(workerCount, static_cast<unsigned int>(rows));
+    if (workerCount <= 1U) {
+        for (int row = 0; row < rows; ++row) function(row);
+        return;
+    }
+    std::vector<std::future<void>> workers;
+    workers.reserve(workerCount);
+    for (unsigned int worker = 0; worker < workerCount; ++worker) {
+        workers.push_back(std::async(std::launch::async, [&, worker, workerCount] {
+            for (int row = static_cast<int>(worker); row < rows;
+                 row += static_cast<int>(workerCount)) function(row);
+        }));
+    }
+    for (auto& worker : workers) worker.get();
+}
+
 
 bool loadRadianceImage(
     const std::filesystem::path& path,
@@ -281,7 +306,7 @@ EnvironmentMap::EnvironmentMap(
     glGenVertexArrays(1, &vertexArray_);
 }
 
-void EnvironmentMap::useAtmosphere(const atmosphere::AtmosphereParameters& parameters) {
+void EnvironmentMap::useAtmosphere(const atmosphere::AtmosphereParameters& parameters, bool separateWaterSun) {
     const auto start = std::chrono::steady_clock::now();
     // The lower hemisphere is one view-independent value, so it is resolved once here instead of
     // being recomputed for every sample of the cubemap, irradiance and prefilter passes (that is
@@ -310,17 +335,25 @@ void EnvironmentMap::useAtmosphere(const atmosphere::AtmosphereParameters& param
         return sky + atmosphere::sunDiskRadiance(direction, parameters);
     };
     build(
-        skyAndDisk,
+        separateWaterSun ? std::function<glm::vec3(const glm::vec3&)>(skyOnly)
+                         : std::function<glm::vec3(const glm::vec3&)>(skyAndDisk),
         // The BRDF LUT depends only on roughness and view angle, so a sun change keeps it.
         false,
-        skyOnly
+        skyOnly,
+        separateWaterSun ? std::function<glm::vec3(const glm::vec3&)>(skyOnly)
+                         : std::function<glm::vec3(const glm::vec3&)>{},
+        skyAndDisk
     );
+    analyticSun_ = separateWaterSun;
+    visibleSunDirection_ = atmosphere::sunDirection(parameters);
+    visibleSunRadiance_ = atmosphere::sunDiskRadiance(visibleSunDirection_, parameters);
     lastBuildMilliseconds_ = std::chrono::duration<double, std::milli>(
         std::chrono::steady_clock::now() - start
     ).count();
 }
 
 void EnvironmentMap::useHdrSource(int preset) {
+    analyticSun_ = false;
     const auto start = std::chrono::steady_clock::now();
     const EquirectangularHdr& source = preset == 1 && overcastSource_.valid()
         ? overcastSource_ : preset == 2 && clearSource_.valid()
@@ -337,27 +370,47 @@ void EnvironmentMap::useHdrSource(int preset) {
 void EnvironmentMap::build(
     const std::function<glm::vec3(const glm::vec3&)>& radiance,
     bool buildBrdfLut,
-    const std::function<glm::vec3(const glm::vec3&)>& diffuseRadiance
+    const std::function<glm::vec3(const glm::vec3&)>& diffuseRadiance,
+    const std::function<glm::vec3(const glm::vec3&)>& waterRadiance,
+    const std::function<glm::vec3(const glm::vec3&)>& specularRadiance
 ) {
     const std::function<glm::vec3(const glm::vec3&)>& irradianceSource =
         diffuseRadiance ? diffuseRadiance : radiance;
+    const unsigned int available = std::max(std::thread::hardware_concurrency(), 1U);
+    unsigned int workerCount = std::min(available, 8U);
+    // Acceptance override: one worker exercises the original serial math, with
+    // identical resolutions/samples. Do not oversubscribe low-core machines.
+    const char* value = nullptr;
+#ifdef _MSC_VER
+    char workerSetting[16]{};
+    std::size_t required = 0U;
+    if (getenv_s(&required, workerSetting, sizeof(workerSetting),
+        "MYRENDERER_ENVIRONMENT_WORKERS") == 0 && required > 0U)
+        value = workerSetting;
+#else
+    value = std::getenv("MYRENDERER_ENVIRONMENT_WORKERS");
+#endif
+    if (value != nullptr)
+        workerCount = std::min(available, static_cast<unsigned int>(std::clamp(std::atoi(value), 1, 8)));
     const int size = radianceFaceSize_;
     maximumMipLevel_ = static_cast<int>(std::log2(prefilteredFaceSize_));
     if (texture_ == 0U) glGenTextures(1, &texture_);
     glBindTexture(GL_TEXTURE_CUBE_MAP, texture_);
-    std::vector<float> pixels(static_cast<std::size_t>(size * size * 3));
-    for (int face = 0; face < 6; ++face) {
-        for (int y = 0; y < size; ++y) {
-            for (int x = 0; x < size; ++x) {
-                const float u = (2.0f * (static_cast<float>(x) + 0.5f) / size) - 1.0f;
-                const float v = (2.0f * (static_cast<float>(y) + 0.5f) / size) - 1.0f;
-                const glm::vec3 color = radiance(faceDirection(face, u, v));
-                const std::size_t offset = static_cast<std::size_t>((y * size + x) * 3);
-                pixels[offset] = color.r;
-                pixels[offset + 1U] = color.g;
-                pixels[offset + 2U] = color.b;
-            }
+    std::vector<float> pixels(static_cast<std::size_t>(6 * size * size * 3));
+    parallelRows(6 * size, workerCount, [&](int row) {
+        const int face = row / size;
+        const int y = row % size;
+        for (int x = 0; x < size; ++x) {
+            const float u = (2.0f * (static_cast<float>(x) + 0.5f) / size) - 1.0f;
+            const float v = (2.0f * (static_cast<float>(y) + 0.5f) / size) - 1.0f;
+            const glm::vec3 color = radiance(faceDirection(face, u, v));
+            const std::size_t offset = static_cast<std::size_t>(((face * size + y) * size + x) * 3);
+            pixels[offset] = color.r;
+            pixels[offset + 1U] = color.g;
+            pixels[offset + 2U] = color.b;
         }
+    });
+    for (int face = 0; face < 6; ++face) {
         glTexImage2D(
             GL_TEXTURE_CUBE_MAP_POSITIVE_X + face,
             0,
@@ -369,7 +422,7 @@ void EnvironmentMap::build(
             0,
             GL_RGB,
             GL_FLOAT,
-            pixels.data()
+            pixels.data() + static_cast<std::size_t>(face * size * size * 3)
         );
     }
     glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
@@ -384,28 +437,30 @@ void EnvironmentMap::build(
     if (irradianceTexture_ == 0U) glGenTextures(1, &irradianceTexture_);
     glBindTexture(GL_TEXTURE_CUBE_MAP, irradianceTexture_);
     std::vector<float> irradiancePixels(
-        static_cast<std::size_t>(irradianceSize * irradianceSize * 3)
+        static_cast<std::size_t>(6 * irradianceSize * irradianceSize * 3)
     );
-    for (int face = 0; face < 6; ++face) {
-        for (int y = 0; y < irradianceSize; ++y) {
-            for (int x = 0; x < irradianceSize; ++x) {
-                const float u = 2.0f * (static_cast<float>(x) + 0.5f) / irradianceSize - 1.0f;
-                const float v = 2.0f * (static_cast<float>(y) + 0.5f) / irradianceSize - 1.0f;
-                const glm::vec3 normal = faceDirection(face, u, v);
-                glm::vec3 sum(0.0f);
-                for (std::uint32_t sample = 0; sample < irradianceSamples; ++sample) {
-                    sum += irradianceSource(cosineSampleHemisphere(
-                        hammersley(sample, irradianceSamples),
-                        normal
-                    ));
-                }
-                const glm::vec3 color = sum / static_cast<float>(irradianceSamples);
-                const std::size_t offset = static_cast<std::size_t>((y * irradianceSize + x) * 3);
-                irradiancePixels[offset] = color.r;
-                irradiancePixels[offset + 1U] = color.g;
-                irradiancePixels[offset + 2U] = color.b;
+    parallelRows(6 * irradianceSize, workerCount, [&](int row) {
+        const int face = row / irradianceSize;
+        const int y = row % irradianceSize;
+        for (int x = 0; x < irradianceSize; ++x) {
+            const float u = 2.0f * (static_cast<float>(x) + 0.5f) / irradianceSize - 1.0f;
+            const float v = 2.0f * (static_cast<float>(y) + 0.5f) / irradianceSize - 1.0f;
+            const glm::vec3 normal = faceDirection(face, u, v);
+            glm::vec3 sum(0.0f);
+            for (std::uint32_t sample = 0; sample < irradianceSamples; ++sample) {
+                sum += irradianceSource(cosineSampleHemisphere(
+                    hammersley(sample, irradianceSamples),
+                    normal
+                ));
             }
+            const glm::vec3 color = sum / static_cast<float>(irradianceSamples);
+            const std::size_t offset = static_cast<std::size_t>(((face * irradianceSize + y) * irradianceSize + x) * 3);
+            irradiancePixels[offset] = color.r;
+            irradiancePixels[offset + 1U] = color.g;
+            irradiancePixels[offset + 2U] = color.b;
         }
+    });
+    for (int face = 0; face < 6; ++face) {
         glTexImage2D(
             GL_TEXTURE_CUBE_MAP_POSITIVE_X + face,
             0,
@@ -415,7 +470,7 @@ void EnvironmentMap::build(
             0,
             GL_RGB,
             GL_FLOAT,
-            irradiancePixels.data()
+            irradiancePixels.data() + static_cast<std::size_t>(face * irradianceSize * irradianceSize * 3)
         );
     }
     glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
@@ -425,16 +480,19 @@ void EnvironmentMap::build(
     glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE);
 
     constexpr std::uint32_t prefilterSamples = 96U;
-    if (prefilteredTexture_ == 0U) glGenTextures(1, &prefilteredTexture_);
-    glBindTexture(GL_TEXTURE_CUBE_MAP, prefilteredTexture_);
-    for (int mip = 0; mip <= maximumMipLevel_; ++mip) {
-        const int mipSize = std::max(prefilteredFaceSize_ >> mip, 1);
-        const float roughness = maximumMipLevel_ > 0
-            ? static_cast<float>(mip) / static_cast<float>(maximumMipLevel_)
-            : 0.0f;
-        std::vector<float> mipPixels(static_cast<std::size_t>(mipSize * mipSize * 3));
-        for (int face = 0; face < 6; ++face) {
-            for (int y = 0; y < mipSize; ++y) {
+    const auto buildPrefilter = [&](unsigned int& destination,
+        const std::function<glm::vec3(const glm::vec3&)>& source) {
+        if (destination == 0U) glGenTextures(1, &destination);
+        glBindTexture(GL_TEXTURE_CUBE_MAP, destination);
+        for (int mip = 0; mip <= maximumMipLevel_; ++mip) {
+            const int mipSize = std::max(prefilteredFaceSize_ >> mip, 1);
+            const float roughness = maximumMipLevel_ > 0
+                ? static_cast<float>(mip) / static_cast<float>(maximumMipLevel_)
+                : 0.0f;
+            std::vector<float> mipPixels(static_cast<std::size_t>(6 * mipSize * mipSize * 3));
+            parallelRows(6 * mipSize, workerCount, [&](int row) {
+                const int face = row / mipSize;
+                const int y = row % mipSize;
                 for (int x = 0; x < mipSize; ++x) {
                     const float u = 2.0f * (static_cast<float>(x) + 0.5f) / mipSize - 1.0f;
                     const float v = 2.0f * (static_cast<float>(y) + 0.5f) / mipSize - 1.0f;
@@ -452,36 +510,44 @@ void EnvironmentMap::build(
                         );
                         const float nDotL = std::max(glm::dot(normal, light), 0.0f);
                         if (nDotL > 0.0f) {
-                            sum += radiance(light) * nDotL;
+                            sum += source(light) * nDotL;
                             weight += nDotL;
                         }
                     }
                     const glm::vec3 color = sum / std::max(weight, 0.0001f);
-                    const std::size_t offset = static_cast<std::size_t>((y * mipSize + x) * 3);
+                    const std::size_t offset = static_cast<std::size_t>(((face * mipSize + y) * mipSize + x) * 3);
                     mipPixels[offset] = color.r;
                     mipPixels[offset + 1U] = color.g;
                     mipPixels[offset + 2U] = color.b;
                 }
+            });
+            for (int face = 0; face < 6; ++face) {
+                glTexImage2D(
+                    GL_TEXTURE_CUBE_MAP_POSITIVE_X + face,
+                    mip,
+                    GL_RGB32F,
+                    mipSize,
+                    mipSize,
+                    0,
+                    GL_RGB,
+                    GL_FLOAT,
+                    mipPixels.data() + static_cast<std::size_t>(face * mipSize * mipSize * 3)
+                );
             }
-            glTexImage2D(
-                GL_TEXTURE_CUBE_MAP_POSITIVE_X + face,
-                mip,
-                GL_RGB32F,
-                mipSize,
-                mipSize,
-                0,
-                GL_RGB,
-                GL_FLOAT,
-                mipPixels.data()
-            );
         }
+        glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+        glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MAX_LEVEL, maximumMipLevel_);
+    };
+    buildPrefilter(prefilteredTexture_, specularRadiance ? specularRadiance : radiance);
+    if (waterRadiance) buildPrefilter(waterPrefilteredTexture_, waterRadiance);
+    else if (waterPrefilteredTexture_ != 0U) {
+        glDeleteTextures(1, &waterPrefilteredTexture_);
+        waterPrefilteredTexture_ = 0U;
     }
-    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
-    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE);
-    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MAX_LEVEL, maximumMipLevel_);
 
     if (!buildBrdfLut) return;
     constexpr int brdfSize = 64;
@@ -542,13 +608,15 @@ std::size_t EnvironmentMap::estimatedBytes() const {
     ) * rgb32fBytesPerTexel;
     const std::size_t irradiance = 16U * 16U * 6U * rgb16fBytesPerTexel;
     const std::size_t brdf = 64U * 64U * 4U;
-    return radiance + prefiltered + irradiance + brdf;
+    return radiance + prefiltered + irradiance + brdf
+        + (waterPrefilteredTexture_ != 0U ? prefiltered : 0U);
 }
 
 EnvironmentMap::~EnvironmentMap() {
     if (vertexArray_ != 0U) glDeleteVertexArrays(1, &vertexArray_);
     if (brdfLutTexture_ != 0U) glDeleteTextures(1, &brdfLutTexture_);
     if (prefilteredTexture_ != 0U) glDeleteTextures(1, &prefilteredTexture_);
+    if (waterPrefilteredTexture_ != 0U) glDeleteTextures(1, &waterPrefilteredTexture_);
     if (irradianceTexture_ != 0U) glDeleteTextures(1, &irradianceTexture_);
     if (texture_ != 0U) glDeleteTextures(1, &texture_);
 }
@@ -568,6 +636,12 @@ void EnvironmentMap::bindPrefiltered(unsigned int unit) const {
     glBindTexture(GL_TEXTURE_CUBE_MAP, prefilteredTexture_);
 }
 
+void EnvironmentMap::bindWaterPrefiltered(unsigned int unit) const {
+    glActiveTexture(GL_TEXTURE0 + unit);
+    glBindTexture(GL_TEXTURE_CUBE_MAP, waterPrefilteredTexture_ != 0U
+        ? waterPrefilteredTexture_ : prefilteredTexture_);
+}
+
 void EnvironmentMap::bindBrdfLut(unsigned int unit) const {
     glActiveTexture(GL_TEXTURE0 + unit);
     glBindTexture(GL_TEXTURE_2D, brdfLutTexture_);
@@ -582,6 +656,10 @@ void EnvironmentMap::draw(
     shader_->setMat4("uInverseViewProjection", inverseViewProjection);
     shader_->setVec3("uCameraPosition", cameraPosition);
     shader_->setFloat("uEnvironmentIntensity", intensity);
+    shader_->setBool("uAnalyticSun", analyticSun_);
+    shader_->setVec3("uSunDirection", visibleSunDirection_);
+    shader_->setVec3("uSunRadiance", visibleSunRadiance_);
+    shader_->setFloat("uSunAngularRadius", glm::radians(atmosphere::sunAngularRadiusDegrees()));
     shader_->setInt("uEnvironmentMap", 0);
     bind(0U);
     glBindVertexArray(vertexArray_);

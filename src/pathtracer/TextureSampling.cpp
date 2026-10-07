@@ -23,7 +23,7 @@
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wunused-function"
 #endif
-#include <stb_image.h>
+#include "asset/StbImageCompat.h"
 #if defined(__GNUC__)
 #pragma GCC diagnostic pop
 #endif

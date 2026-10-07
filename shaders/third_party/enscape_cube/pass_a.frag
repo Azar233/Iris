@@ -1,4 +1,5 @@
 #version 330 core
+uniform bool uNoiseReduction;
 uniform vec3 iResolution;
 uniform float iTime;
 uniform vec3 uCameraPosition;
@@ -7,6 +8,7 @@ uniform vec3 uCameraRight;
 uniform vec3 uCameraUp;
 uniform float uCameraTanHalfFov;
 uniform float uCameraNear;
+uniform bool uCubeEnabled;
 uniform float uWaveHeight;
 uniform float uWaveFrequency;
 uniform float uWaveChoppiness;

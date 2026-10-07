@@ -7,7 +7,7 @@
 #include <thread>
 
 #define STB_IMAGE_IMPLEMENTATION
-#include <stb_image.h>
+#include "asset/StbImageCompat.h"
 
 namespace {
 

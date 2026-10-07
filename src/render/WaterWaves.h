@@ -27,6 +27,8 @@ struct WaterSettings {
     float deepWaterStrength{0.0f};
     float waveDiversity{0.0f};
     float nearMeshFocus{0.0f};
+    bool surfaceOptics{false};
+    float cloudReflectionStrength{0.0f};
     glm::vec2 windDirection{0.9f, 0.3f};
     float timeSeconds{0.0f};
 };
@@ -48,6 +50,7 @@ void applyPreset(WaterSettings& settings, WaterPreset preset);
 int activeComponentCount(const WaterSettings& settings);
 std::array<glm::vec4, componentCount> components(const WaterSettings& settings);
 WaterSample evaluate(const WaterSettings& settings, const glm::vec2& position);
+float surfaceHeight(const WaterSettings& settings, const glm::vec2& worldPosition);
 float gridCoordinate(float logicalCoordinate, float extent, float nearMeshFocus = 0.0f);
 
 } // namespace water

@@ -90,6 +90,7 @@ constexpr float typeVariation = 0.50f;
 constexpr float heightVariation = 0.30f;
 constexpr float detailStrength = 0.45f;
 constexpr float detailEdge = 0.15f;
+float shapeBlend = 0.0f;
 
 // The layer struct is built the same way on both sides. `cloud::makeCloudParams` is the CPU half;
 // this is the same field-by-field assignment the shader performs from its uniforms, kept here rather
@@ -111,6 +112,7 @@ MyRendererCloudParams cpuLayer() {
     layer.heightVariation = heightVariation;
     layer.detailStrength = detailStrength;
     layer.detailEdge = detailEdge;
+    layer.shapeBlend = shapeBlend;
     return layer;
 }
 
@@ -218,7 +220,8 @@ std::vector<float> readTexture(unsigned int texture, int width, int height) {
 
 } // namespace
 
-int main() {
+int main(int argc, char** argv) {
+    shapeBlend = argc >= 2 && std::string(argv[1]) == "--shape" ? 0.85f : 0.0f;
     if (glfwInit() != GLFW_TRUE) {
         std::cerr << "GLFW initialization failed\n";
         return 1;
@@ -269,6 +272,7 @@ int main() {
         shader.setFloat("uHeightVariation", heightVariation);
         shader.setFloat("uDetailStrength", detailStrength);
         shader.setFloat("uDetailEdge", detailEdge);
+        shader.setFloat("uShapeBlend", shapeBlend);
 
         // Three float attachments, so the comparison reads the shader's exact output rather than a
         // display-encoded version of it.

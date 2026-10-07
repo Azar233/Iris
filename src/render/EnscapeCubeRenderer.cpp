@@ -51,9 +51,11 @@ EnscapeCubeRenderer::EnscapeCubeRenderer(const std::filesystem::path& shaderDire
     shaders_[2] = std::make_unique<Shader>(vertex, directory / "pass_c.frag");
     shaders_[3] = std::make_unique<Shader>(vertex, directory / "pass_image.frag");
     makeNoiseTextures();
+    glGenQueries(static_cast<GLsizei>(timingQueries_.size()), timingQueries_.data());
 }
 
 EnscapeCubeRenderer::~EnscapeCubeRenderer() {
+    glDeleteQueries(static_cast<GLsizei>(timingQueries_.size()), timingQueries_.data());
     glDeleteFramebuffers(static_cast<GLsizei>(framebuffers_.size()), framebuffers_.data());
     glDeleteTextures(static_cast<GLsizei>(textures_.size()), textures_.data());
     if (weatherTexture_ != 0U) glDeleteTextures(1, &weatherTexture_);
@@ -146,6 +148,8 @@ void EnscapeCubeRenderer::draw(Shader& shader, unsigned int framebuffer,
     shader.setFloat("uCameraTanHalfFov",
         std::tan(camera.fieldOfView() * 0.008726646259971648f));
     shader.setFloat("uCameraNear", camera.nearPlane());
+    shader.setBool("uCubeEnabled", parameters.cubeEnabled);
+    shader.setBool("uNoiseReduction", parameters.noiseReduction);
     shader.setFloat("uWaveHeight", parameters.waveHeight);
     shader.setFloat("uWaveFrequency", parameters.waveFrequency);
     shader.setFloat("uWaveChoppiness", parameters.waveChoppiness);
@@ -185,13 +189,36 @@ void EnscapeCubeRenderer::render(RenderTarget& target, const Camera& camera,
         }
     }
     const auto& parameters = settings.enscapeCube;
-    const std::array<float, 11> parameterKey{parameters.waveHeight,
+    const std::array<float, 13> parameterKey{parameters.cubeEnabled ? 1.0f : 0.0f,
+        parameters.noiseReduction ? 1.0f : 0.0f, parameters.waveHeight,
         parameters.waveFrequency, parameters.waveChoppiness, parameters.waveSpeed,
         parameters.cloudCoverage, parameters.reflectionStrength, parameters.underwaterClarity,
         parameters.sunAzimuthDegrees, parameters.sunElevationDegrees,
         parameters.bloomStrength, parameters.exposure};
     if (!parametersValid_ || parameterKey != previousParameters_) historyValid_ = false;
     if (std::abs(timeSeconds - previousTime_) > 0.25f) historyValid_ = false;
+    gpuTimeUpdated_ = false;
+    for (std::size_t index = 0; index < timingQueries_.size(); ++index) {
+        if (!timingPending_[index]) continue;
+        GLint available = GL_FALSE;
+        glGetQueryObjectiv(timingQueries_[index], GL_QUERY_RESULT_AVAILABLE, &available);
+        if (available == GL_TRUE) {
+            GLuint64 nanoseconds = 0;
+            glGetQueryObjectui64v(timingQueries_[index], GL_QUERY_RESULT, &nanoseconds);
+            gpuTimeMilliseconds_ = static_cast<double>(nanoseconds) / 1000000.0;
+            gpuTimeValid_ = true;
+            gpuTimeUpdated_ = true;
+            timingPending_[index] = false;
+        }
+    }
+    std::size_t timingIndex = timingQueries_.size();
+    for (std::size_t index = 0; index < timingQueries_.size(); ++index) {
+        if (!timingPending_[index]) {
+            timingIndex = index;
+            glBeginQuery(GL_TIME_ELAPSED, timingQueries_[index]);
+            break;
+        }
+    }
     glDisable(GL_DEPTH_TEST);
     glDisable(GL_BLEND);
     glDisable(GL_CULL_FACE);
@@ -238,6 +265,10 @@ void EnscapeCubeRenderer::render(RenderTarget& target, const Camera& camera,
     glActiveTexture(GL_TEXTURE2);
     glBindTexture(GL_TEXTURE_3D, 0);
     glActiveTexture(GL_TEXTURE0);
+    if (timingIndex < timingQueries_.size()) {
+        glEndQuery(GL_TIME_ELAPSED);
+        timingPending_[timingIndex] = true;
+    }
     previousTime_ = timeSeconds;
     previousViewProjection_ = viewProjection;
     previousParameters_ = parameterKey;

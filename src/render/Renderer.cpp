@@ -185,8 +185,10 @@ void Renderer::updateAtmosphereEnvironment(const RendererSettings& settings) {
         builtAtmosphere_ = atmosphere::AtmosphereParameters{};
         return;
     }
-    if (atmosphereKeyMatches(settings.atmosphere)) return;
-    environmentMap_->useAtmosphere(settings.atmosphere);
+    const bool separateWaterSun = settings.water.enabled && settings.water.surfaceOptics;
+    if (atmosphereKeyMatches(settings.atmosphere) && builtWaterSunSeparated_ == separateWaterSun) return;
+    environmentMap_->useAtmosphere(settings.atmosphere, separateWaterSun);
+    builtWaterSunSeparated_ = separateWaterSun;
     std::cout << "Atmosphere environment rebuilt in "
               << environmentMap_->lastBuildMilliseconds() << " ms (sun "
               << settings.atmosphere.sunElevationDegrees << " deg"
@@ -201,7 +203,10 @@ void Renderer::render(
     int width,
     int height
 ) {
+    cpuPassTimings_.clear();
     RendererSettings settings = requestedSettings;
+    renderedWaterSettings_ = settings.water;
+    renderedWaterSettings_.enabled = settings.water.enabled && !settings.enscapeCubeShaderEnabled;
     if (settings.atmosphere.cloudDeterministic) {
         settings.atmosphere.cloudTemporalEnabled = false;
         settings.temporalAaEnabled = false;
@@ -237,7 +242,12 @@ void Renderer::render(
             "Enscape Cube: TAA", "Enscape Cube: final image"};
         activePassContexts_.clear();
         gpuPassTimings_.clear();
-        hasGpuFrameTime_ = false;
+        hasGpuFrameTime_ = enscapeCubeRenderer_->hasGpuFrameTime();
+        gpuFrameTimeMilliseconds_ = enscapeCubeRenderer_->gpuFrameMilliseconds();
+        if (enscapeCubeRenderer_->gpuFrameTimeUpdated()) {
+            latestGpuFrameMeasurementMilliseconds_ = gpuFrameTimeMilliseconds_;
+            ++gpuFrameMeasurementSerial_;
+        }
         activeRenderPath_ = RenderPath::Forward;
         drawCallCount_ = 4U;
         submittedInstanceCount_ = 0U;
@@ -373,6 +383,16 @@ void Renderer::render(
         static_cast<float>(width) / static_cast<float>(height)
     );
     const glm::mat4 overlayProjection = projection;
+    const float cameraSurfaceHeight = settings.water.enabled && settings.water.surfaceOptics
+        ? water::surfaceHeight(settings.water, glm::vec2(camera.position().x, camera.position().z))
+        : settings.water.level;
+    const bool surfaceUnderwater = settings.water.enabled && camera.position().y < cameraSurfaceHeight;
+    cameraWaterSurfaceHeight_ = cameraSurfaceHeight;
+    cameraUnderWater_ = settings.water.surfaceOptics ? surfaceUnderwater
+        : settings.water.enabled && camera.position().y < settings.water.level - settings.water.amplitude * 0.25f;
+    const bool waterMediumChanged = settings.water.surfaceOptics && previousWaterMediumValid_
+        && previousCameraUnderwater_ != surfaceUnderwater;
+    if (waterMediumChanged) ++waterMediumTransitions_;
     const bool temporalAaActive = settings.temporalAaEnabled && !gBufferDebugActive;
     if (temporalAaActive) {
         const std::size_t sample = temporalFrameIndex_ % 8U + 1U;
@@ -383,6 +403,7 @@ void Renderer::render(
     }
     const glm::mat4 currentViewProjection = projection * view;
     const bool resetTemporalHistory = !previousViewProjectionValid_
+        || waterMediumChanged
         || !lastTemporalAaEnabled_
         || width != lastTemporalWidth_
         || height != lastTemporalHeight_
@@ -517,6 +538,8 @@ void Renderer::render(
     // Empty scenes and noncasting receivers have no object occlusion to query.
     // Skip cascade rendering and sampling until a visible caster is present.
     const bool objectShadowsActive = settings.shadowsEnabled && hasShadowCasters;
+    const bool coloredTransmissionActive = objectShadowsActive
+        && settings.coloredTransmissionShadowsEnabled && settings.transmissionEnabled;
     // Fit the light around actual shadow casters in world space. Large receivers
     // such as the noncasting seabed must not move the light eye or waste depth range.
     const float sceneRadius = hasShadowCasters
@@ -653,6 +676,7 @@ void Renderer::render(
         && atmosphere::sunDirection(settings.atmosphere).y > 0.02f
         && glm::dot(-lightDirection, atmosphere::sunDirection(settings.atmosphere)) > 0.999f;
     const auto bindCascadeSettings = [&](Shader& targetShader) {
+        targetShader.setMat4("uOpticsLightViewProjection", lightViewProjection);
         std::array<glm::mat4, shadow::maximumCascadeCount> cascadeMatrices{};
         for (std::size_t index = 0U; index < shadow::maximumCascadeCount; ++index) {
             // Unused layers repeat the last fitted cascade rather than staying identity: a shader that
@@ -715,7 +739,7 @@ shader_->setMat4("uView", view);
         shader_->setBool("uShadowsEnabled", objectShadowsActive);
         shader_->setBool(
             "uColoredTransmissionShadowsEnabled",
-            settings.coloredTransmissionShadowsEnabled
+            coloredTransmissionActive
         );
         shader_->setBool("uCausticsEnabled", causticsActive);
         shader_->setBool("uTransmissionEnabled", settings.transmissionEnabled);
@@ -798,6 +822,8 @@ shader_->setMat4("uView", view);
         waterShader.setFloat("uRippleStrength", settings.water.rippleStrength);
         waterShader.setFloat("uSunGlintStrength", settings.water.sunGlintStrength);
         waterShader.setFloat("uDeepWaterStrength", settings.water.deepWaterStrength);
+        waterShader.setBool("uSurfaceOptics", settings.water.surfaceOptics);
+        waterShader.setFloat("uCameraSurfaceHeight", cameraSurfaceHeight);
         waterShader.setFloat("uWaveDiversity", settings.water.waveDiversity);
         const auto waves = water::components(settings.water);
         waterShader.setVec4Array("uWaves[0]", waves.data(), waves.size());
@@ -809,6 +835,9 @@ shader_->setMat4("uView", view);
             waterShader.setVec3("uCameraForward", camera.forwardDirection());
             waterShader.setVec3("uLightDirection", lightDirection);
             waterShader.setVec3("uLightColor", lightColor);
+            waterShader.setBool("uSeparatedWaterSun", settings.water.surfaceOptics && settings.atmosphere.enabled);
+            waterShader.setVec3("uWaterKeyIrradiance", settings.atmosphere.sunElevationDegrees >= -2.0f
+                ? atmosphere::sunIrradiance(settings.atmosphere) : lightColor * diffuseStrength);
             waterShader.setFloat("uDiffuseStrength", diffuseStrength);
             waterShader.setFloat("uEnvironmentIntensity", settings.environmentIntensity);
             waterShader.setFloat("uEnvironmentMaxMip",
@@ -828,6 +857,16 @@ shader_->setMat4("uView", view);
             waterShader.setInt("uShadowMap", 2);
             waterShader.setInt("uOpaqueSceneColor", 3);
             waterShader.setInt("uOpaqueSceneDepth", 4);
+            environmentMap_->bindBrdfLut(6U);
+            waterShader.setInt("uWaterBrdfLut", 6);
+            waterShader.setInt("uCloudReflection", 7);
+            const bool reflectCloud = settings.water.surfaceOptics && settings.atmosphere.enabled
+                && settings.water.cloudReflectionStrength > 0.0f
+                && settings.atmosphere.cloudsEnabled && cloudLayer_->lastFrameActive();
+            waterShader.setBool("uCloudReflectionEnabled", reflectCloud);
+            waterShader.setFloat("uCloudReflectionStrength", settings.water.cloudReflectionStrength);
+            glActiveTexture(GL_TEXTURE7);
+            glBindTexture(GL_TEXTURE_2D, reflectCloud ? cloudLayer_->radianceTexture() : 0U);
             waterShader.setFloat("uInverseViewportWidth", 1.0f / static_cast<float>(width));
             waterShader.setFloat("uInverseViewportHeight", 1.0f / static_cast<float>(height));
             waterShader.setFloat("uCameraNearPlane", camera.nearPlane());
@@ -835,7 +874,8 @@ shader_->setMat4("uView", view);
             waterShader.setMat4("uInverseCurrentViewProjection",
                 glm::inverse(currentViewProjection));
             waterShader.setBool("uHighQuality", settings.water.quality == WaterQuality::High);
-            environmentMap_->bindPrefiltered(0U);
+            if (settings.water.surfaceOptics) environmentMap_->bindWaterPrefiltered(0U);
+            else environmentMap_->bindPrefiltered(0U);
             environmentMap_->bindIrradiance(1U);
             shadowMap_->bindTexture(2U);
             glActiveTexture(GL_TEXTURE3);
@@ -890,7 +930,7 @@ shader_->setMat4("uView", view);
             const float extent = std::max(camera.farPlane() * 1.5f,
                 settings.water.enabled ? settings.water.extent * 1.1f : 1.0f);
             cloudShadow_->render(settings.atmosphere, camera.position(), extent, cloudMarchExtinction_);
-            if (cloudShadow_->active()) ++drawCallCount_;
+            if (cloudShadow_->updatedThisFrame()) ++drawCallCount_;
         });
     }
     if (objectShadowsActive) {
@@ -924,7 +964,7 @@ sequence.add("Shadow maps", [&] {
             glDisable(GL_CULL_FACE);
         });
     }
-    if (objectShadowsActive && settings.coloredTransmissionShadowsEnabled) {
+    if (coloredTransmissionActive) {
         sequence.add("Colored transmission shadow", [&] {
             shadowMap_->bindTransmissionForWriting();
             glViewport(0, 0, shadowMap_->resolution(), shadowMap_->resolution());
@@ -1252,7 +1292,7 @@ deferredLightingShader_->setVec3("uCameraPosition", camera.position());
             deferredLightingShader_->setBool("uShadowsEnabled", objectShadowsActive);
             deferredLightingShader_->setBool(
                 "uColoredTransmissionShadowsEnabled",
-                settings.coloredTransmissionShadowsEnabled
+                coloredTransmissionActive
             );
             deferredLightingShader_->setBool("uCausticsEnabled", causticsActive);
             deferredLightingShader_->setInt(
@@ -1335,6 +1375,39 @@ deferredLightingShader_->setVec3("uCameraPosition", camera.position());
             }
         });
     }
+    // Keep the volume march outside postprocessing so the existing asynchronous pass timers
+    // measure its GPU cost independently. The cloud target still composites before tone mapping.
+    const bool cloudPassEnabled = !gBufferDebugActive && cloudLayer_ != nullptr
+        && settings.atmosphere.enabled && settings.atmosphere.cloudsEnabled;
+    if (cloudLayer_ != nullptr && (!cloudPassEnabled || cloudHistoryInvalidated_
+        || cloudPreviousDeferred_ != deferredActive)) cloudLayer_->invalidateHistory();
+    cloudHistoryInvalidated_ = false;
+    cloudPreviousDeferred_ = deferredActive;
+    const auto addCloudPass = [&] {
+        if (cloudPassEnabled) {
+            RenderPassContext cloudContext("Cloud volume march");
+            cloudContext.inputs = {"Camera + AtmosphereParameters"};
+            cloudContext.outputs = {"Cloud radiance + transmittance", "Cloud first-density + entry depth"};
+            cloudContext.viewportWidth = settings.atmosphere.cloudHalfResolution ? (width + 1) / 2 : width;
+            cloudContext.viewportHeight = settings.atmosphere.cloudHalfResolution ? (height + 1) / 2 : height;
+            cloudContext.state.depthTest = false;
+            cloudContext.state.depthWrite = false;
+            sequence.add(std::move(cloudContext), [&] {
+                cloud::MarchSettings marchSettings;
+                marchSettings.spatialJitter = true;
+                const auto budget = atmosphere::cloudTierBudget(settings.atmosphere.cloudQuality);
+                marchSettings.primarySteps = budget.primarySteps;
+                marchSettings.lightSteps = budget.lightSteps;
+                marchSettings.extinction = cloudMarchExtinction_;
+                const auto lighting = cloud::marchLighting(settings.atmosphere);
+                cloudLayer_->render(camera, settings.atmosphere, marchSettings, lighting.ambient,
+                    lighting.sun, renderTarget_->width(), renderTarget_->height());
+                if (cloudLayer_->lastFrameActive()) drawCallCount_ +=
+                    settings.atmosphere.cloudTemporalEnabled ? 2U : 1U;
+            });
+        }
+    };
+    if (settings.water.surfaceOptics) addCloudPass();
     sequence.add("Forward transparent / refractive scene", [&] {
         // Copy the opaque HDR result into a distinct output attachment. Future
         // transmissive materials can sample opaqueColorTexture/sceneDepthTexture
@@ -1519,36 +1592,7 @@ deferredLightingShader_->setVec3("uCameraPosition", camera.position());
             glEnable(GL_DEPTH_TEST);
         });
     }
-    // Keep the volume march outside postprocessing so the existing asynchronous pass timers
-    // measure its GPU cost independently. The cloud target still composites before tone mapping.
-    const bool cloudPassEnabled = !gBufferDebugActive && cloudLayer_ != nullptr
-        && settings.atmosphere.enabled && settings.atmosphere.cloudsEnabled;
-    if (cloudLayer_ != nullptr && (!cloudPassEnabled || cloudHistoryInvalidated_
-        || cloudPreviousDeferred_ != deferredActive)) cloudLayer_->invalidateHistory();
-    cloudHistoryInvalidated_ = false;
-    cloudPreviousDeferred_ = deferredActive;
-    if (cloudPassEnabled) {
-        RenderPassContext cloudContext("Cloud volume march");
-        cloudContext.inputs = {"Camera + AtmosphereParameters"};
-        cloudContext.outputs = {"Cloud radiance + transmittance", "Cloud first-density + entry depth"};
-        cloudContext.viewportWidth = settings.atmosphere.cloudHalfResolution ? (width + 1) / 2 : width;
-        cloudContext.viewportHeight = settings.atmosphere.cloudHalfResolution ? (height + 1) / 2 : height;
-        cloudContext.state.depthTest = false;
-        cloudContext.state.depthWrite = false;
-        sequence.add(std::move(cloudContext), [&] {
-            cloud::MarchSettings marchSettings;
-            marchSettings.spatialJitter = true;
-            const auto budget = atmosphere::cloudTierBudget(settings.atmosphere.cloudQuality);
-            marchSettings.primarySteps = budget.primarySteps;
-            marchSettings.lightSteps = budget.lightSteps;
-            marchSettings.extinction = cloudMarchExtinction_;
-            const auto lighting = cloud::marchLighting(settings.atmosphere);
-            cloudLayer_->render(camera, settings.atmosphere, marchSettings, lighting.ambient,
-                lighting.sun, renderTarget_->width(), renderTarget_->height());
-            if (cloudLayer_->lastFrameActive()) drawCallCount_ +=
-                settings.atmosphere.cloudTemporalEnabled ? 2U : 1U;
-        });
-    }
+    if (!settings.water.surfaceOptics) addCloudPass();
     bool godRaysActive = false;
     if (cloudPassEnabled && cloudShadowEnabled && settings.atmosphere.cloudGodRaysEnabled
         && (!settings.water.enabled || camera.position().y >= settings.water.level)) {
@@ -1615,9 +1659,8 @@ deferredLightingShader_->setVec3("uCameraPosition", camera.position());
         // smearing a 4.6e3 sun disk across the landscape would be the one thing that ruins the
         // effect, and the horizon sample is lifted 2 degrees so the fade reads as the sky the
         // raster actually drew at eye level.
-        const bool cameraUnderwater = settings.water.enabled
-            && camera.position().y < settings.water.level
-                - settings.water.amplitude * 0.25f;
+        const bool cameraUnderwater = settings.water.surfaceOptics ? surfaceUnderwater
+            : settings.water.enabled && camera.position().y < settings.water.level - settings.water.amplitude * 0.25f;
         postSettings.aerialPerspective = !cameraUnderwater && settings.atmosphere.enabled
             && settings.atmosphere.aerialPerspectiveEnabled
             && !gBufferDebugActive;
@@ -1638,6 +1681,9 @@ deferredLightingShader_->setVec3("uCameraPosition", camera.position());
             )
             : glm::vec3(0.0f);
         postSettings.underwaterFog = cameraUnderwater && !gBufferDebugActive;
+        postSettings.waterSurfaceOptics = settings.water.enabled && settings.water.surfaceOptics;
+        postSettings.waterSurfaceHeight = cameraSurfaceHeight;
+        postSettings.opaqueDepthTexture = renderTarget_->sceneDepthTexture();
         postSettings.colorGrading = settings.shadingMode == ShadingMode::Stylized
             && settings.stylizedColorGradingEnabled
             && !gBufferDebugActive;
@@ -1686,6 +1732,7 @@ deferredLightingShader_->setVec3("uCameraPosition", camera.position());
     }
     activePassNames_ = sequence.names();
     activePassContexts_ = sequence.contexts();
+    std::chrono::steady_clock::time_point cpuPassStart;
     std::array<std::size_t, maxProfiledPasses_> activePassQuerySlots{};
     activePassQuerySlots.fill(passTimingPending_.size());
     const bool hasDebugGroups = GLAD_GL_KHR_debug != 0
@@ -1693,6 +1740,7 @@ deferredLightingShader_->setVec3("uCameraPosition", camera.position());
         && glPopDebugGroup != nullptr;
     sequence.run(
         [&](std::size_t passIndex, const RenderPassContext& context) {
+            cpuPassStart = std::chrono::steady_clock::now();
             stateCache_.invalidate();
             stateCache_.apply(context.state);
             if (context.viewportWidth > 0 && context.viewportHeight > 0) {
@@ -1715,6 +1763,9 @@ deferredLightingShader_->setVec3("uCameraPosition", camera.position());
             activePassQuerySlots[passIndex] = slot;
         },
         [&](std::size_t passIndex, const RenderPassContext& context) {
+            cpuPassTimings_.emplace_back(context.name,
+                std::chrono::duration<double, std::milli>(
+                    std::chrono::steady_clock::now() - cpuPassStart).count());
             if (passIndex < maxProfiledPasses_) {
                 const std::size_t slot = activePassQuerySlots[passIndex];
                 if (slot < passTimingPending_.size()) {
@@ -1747,6 +1798,8 @@ deferredLightingShader_->setVec3("uCameraPosition", camera.position());
     }
     previousWaterValid_ = settings.water.enabled && temporalAaActive;
     previousWaterTime_ = settings.water.timeSeconds;
+    previousWaterMediumValid_ = settings.water.enabled && settings.water.surfaceOptics;
+    previousCameraUnderwater_ = surfaceUnderwater;
 }
 
 unsigned int Renderer::colorTexture() const {

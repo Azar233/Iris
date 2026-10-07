@@ -30,6 +30,7 @@ uniform float uCascadeSplits[MAX_SHADOW_CASCADES];
 uniform bool uShadowCascadeDebugView;
 uniform sampler2D uCausticsMap;
 uniform sampler2D uTransmissionShadowMap;
+uniform mat4 uOpticsLightViewProjection;
 uniform sampler2D uOpaqueColorTexture;
 uniform sampler2D uSceneDepthTexture;
 uniform sampler2D uThicknessTexture;
@@ -206,6 +207,22 @@ vec3 lightProjectionCoordinates() {
     return projected * 0.5 + 0.5;
 }
 
+// These 2D optics maps are generated in the independent fixed light box,
+// not in the camera-fitted cascade that provides opaque depth comparisons.
+vec3 opticsProjectionCoordinates(vec3 worldPosition) {
+    vec4 clip = uOpticsLightViewProjection * vec4(worldPosition, 1.0);
+    return clip.xyz / max(clip.w, 0.0001) * 0.5 + 0.5;
+}
+
+vec3 transmissionVisibility(vec3 worldPosition) {
+    if (!uColoredTransmissionShadowsEnabled) return vec3(1.0);
+    vec3 projected = opticsProjectionCoordinates(worldPosition);
+    if (projected.z < 0.0 || projected.z > 1.0
+        || any(lessThan(projected.xy, vec2(0.0)))
+        || any(greaterThan(projected.xy, vec2(1.0)))) return vec3(1.0);
+    return texture(uTransmissionShadowMap, projected.xy).rgb;
+}
+
 vec3 shadowVisibility(vec3 normal, vec3 lightDirection) {
     if (!uShadowsEnabled) return vec3(1.0);
     int cascade = selectCascade();
@@ -222,17 +239,13 @@ vec3 shadowVisibility(vec3 normal, vec3 lightDirection) {
                 projected.xy + vec2(x, y) * texel, float(cascade), projected.z - bias));
         }
     }
-    vec3 transmission = uColoredTransmissionShadowsEnabled
-        ? texture(uTransmissionShadowMap, projected.xy).rgb
-        : vec3(1.0);
+    vec3 transmission = transmissionVisibility(vWorldPosition);
     return transmission * (visible / 9.0);
 }
 
 vec3 causticRadiance() {
     if (!uCausticsEnabled) return vec3(0.0);
-    // Caustics are a single-cascade effect: the map is built from cascade 0's light matrix, so this
-    // deliberately uses cascade 0 instead of following the fragment's cascade choice.
-    vec3 projected = vShadowPosition[0].xyz / max(vShadowPosition[0].w, 0.0001) * 0.5 + 0.5;
+    vec3 projected = opticsProjectionCoordinates(vWorldPosition);
     if (projected.z > 1.0 || projected.z < 0.0
         || any(lessThan(projected.xy, vec2(0.0)))
         || any(greaterThan(projected.xy, vec2(1.0)))) return vec3(0.0);

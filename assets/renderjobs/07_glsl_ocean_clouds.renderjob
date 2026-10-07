@@ -1,0 +1,37 @@
+{
+  "format": "MyRendererRenderJob",
+  "schemaVersion": 3,
+  "scene": "../scenes/01_ocean_clouds_hero.myscene",
+  "renderer": "raster",
+  "camera": "scene",
+  "resolution": [
+    1280,
+    720
+  ],
+  "frames": {
+    "end": 23,
+    "start": 0,
+    "fps": 24
+  },
+  "sampling": {
+    "maxDepth": 1,
+    "seed": 20261006,
+    "spp": 1
+  },
+  "raster": {
+    "determinism": true,
+    "temporalAccumulation": false,
+    "warmupFrames": 4
+  },
+  "aovs": [
+    "beauty"
+  ],
+  "output": {
+    "resume": false,
+    "formats": [
+      "png"
+    ],
+    "path": "../../build-ci-msvc/render-jobs/07_glsl_ocean_clouds/frame_{frame:04}"
+  },
+  "failurePolicy": "stop"
+}

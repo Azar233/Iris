@@ -58,6 +58,7 @@ uniform float uTypeVariation;
 uniform float uHeightVariation;
 uniform float uDetailStrength;
 uniform float uDetailEdge;
+uniform float uShapeBlend;
 
 out vec4 outField;
 out vec4 outWeather;
@@ -94,6 +95,7 @@ void main() {
     layer.heightVariation = uHeightVariation;
     layer.detailStrength = uDetailStrength;
     layer.detailEdge = uDetailEdge;
+    layer.shapeBlend = uShapeBlend;
 
     float weatherX = uWeatherTile.x + vUv.x * uWeatherTile.z;
     float weatherY = uWeatherTile.y + vUv.y * uWeatherTile.z;

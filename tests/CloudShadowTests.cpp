@@ -1,5 +1,6 @@
 #include <algorithm>
 #include <cmath>
+#include <chrono>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
@@ -10,6 +11,7 @@
 #include <GLFW/glfw3.h>
 #include "optics/CloudReference.h"
 #include "render/CloudShadowRenderer.h"
+#include "render/Shader.h"
 namespace {
 void require(bool condition, const char* message) {
     if (!condition) throw std::runtime_error(message);
@@ -46,6 +48,7 @@ void run(const std::filesystem::path& output) {
         p.cloudWindOffsetX = 0;
         map.render(p, glm::vec3(0), 6000, cloud::volumetricExtinction);
         require(map.active(), "daylight cloud shadow map must run");
+        require(map.updatedThisFrame(), "first map or quality change must render a new transmission map");
         const auto pixels = read(map);
         float worst = 0;
         int dark = 0;
@@ -64,9 +67,11 @@ void run(const std::filesystem::path& output) {
         const std::string name = tier == atmosphere::CloudQualityTier::Low ? "low" : "high";
         save(output / (name + "-base.ppm"), pixels, map.resolution());
         map.render(p, glm::vec3(0.001f), 6000, cloud::volumetricExtinction);
+        require(!map.updatedThisFrame(), "unchanged snapped inputs must reuse the existing map");
         require(pixels == read(map), "sub-texel camera movement must keep the snapped shadow grid stable");
         p.cloudWindOffsetX = 700;
         map.render(p, glm::vec3(0), 6000, cloud::volumetricExtinction);
+        require(map.updatedThisFrame(), "wind changes must invalidate the map cache");
         const auto moved = read(map);
         double delta = 0;
         for (std::size_t i = 0; i < moved.size(); ++i) delta += std::abs(moved[i] - pixels[i]);
@@ -75,6 +80,7 @@ void run(const std::filesystem::path& output) {
         save(output / (name + "-wind.ppm"), moved, map.resolution());
         p.sunAzimuthDegrees += 25;
         map.render(p, glm::vec3(0), 6000, cloud::volumetricExtinction);
+        require(map.updatedThisFrame(), "sun changes must invalidate the map cache");
         require(moved != read(map), "solar direction must affect the cloud projection");
         p.sunAzimuthDegrees -= 25;
         std::cout << name << ": CPU/GPU maximum error " << worst << ", wind transmission MAE " << delta << '\n';
@@ -90,6 +96,41 @@ void run(const std::filesystem::path& output) {
     p.cloudShadowsEnabled = false;
     map.render(p, glm::vec3(0), 6000, cloud::volumetricExtinction);
     require(!map.active(), "cloud shadow switch must disable the map");
+    // A changed program must rerender even when every density/projection input
+    // remains identical. Only a temporary shader copy is edited here.
+    const auto shaderRoot = std::filesystem::path(MYRENDERER_SOURCE_DIR) / "shaders";
+    const auto reloadRoot = output / "reload" / "shaders";
+    std::filesystem::create_directories(reloadRoot);
+    for (const char* file : {"fullscreen.vert", "cloud_shadow.frag", "cloud_noise_sample.glsl"}) {
+        std::filesystem::copy_file(shaderRoot / file, reloadRoot / file,
+            std::filesystem::copy_options::overwrite_existing);
+    }
+    {
+        auto reloadParameters = p;
+        atmosphere::applyCloudPreset(reloadParameters, atmosphere::CloudPreset::Cumulus);
+        reloadParameters.enabled = reloadParameters.cloudShadowsEnabled = true;
+        CloudShadowRenderer reloadMap(reloadRoot);
+        reloadMap.render(reloadParameters, glm::vec3(0), 6000, cloud::volumetricExtinction);
+        const auto original = read(reloadMap);
+        reloadMap.render(reloadParameters, glm::vec3(0), 6000, cloud::volumetricExtinction);
+        require(!reloadMap.updatedThisFrame(), "unchanged reload test input must hit the cache");
+        const auto fragment = reloadRoot / "cloud_shadow.frag";
+        { std::ofstream file(fragment, std::ios::app); file << "\n// Cache hot-reload acceptance\n"; }
+        std::filesystem::last_write_time(fragment,
+            std::filesystem::last_write_time(fragment) + std::chrono::seconds(2));
+        const auto reload = Shader::reloadChangedShaders();
+        require(reload.reloaded >= 1 && reload.failed == 0, "temporary cloud shader reload must succeed");
+        reloadMap.render(reloadParameters, glm::vec3(0), 6000, cloud::volumetricExtinction);
+        require(reloadMap.updatedThisFrame(), "hot reload must invalidate cached cloud transmission");
+        require(original == read(reloadMap), "comment-only reload must preserve transmission pixels");
+        reloadMap.render(reloadParameters, glm::vec3(0), 7000, cloud::volumetricExtinction);
+        require(reloadMap.updatedThisFrame(), "projection extent changes must invalidate cached transmission");
+        require(original != read(reloadMap), "projection extent must affect sampled cloud rays");
+        reloadParameters.cloudShapeBlend = 0.85f;
+        reloadMap.render(reloadParameters, glm::vec3(0), 6000, cloud::volumetricExtinction);
+        require(reloadMap.updatedThisFrame() && original != read(reloadMap),
+            "Perlin shape changes must invalidate and alter cloud transmission");
+    }
     require(glGetError() == GL_NO_ERROR, "cloud shadow map must not leak GL errors");
 }
 }

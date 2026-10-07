@@ -1,4 +1,5 @@
 #version 330 core
+uniform bool uNoiseReduction;
 uniform vec3 iResolution;
 uniform sampler2D iChannel0;
 uniform sampler2D iChannel1;

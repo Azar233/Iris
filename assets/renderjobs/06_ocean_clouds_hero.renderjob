@@ -1,0 +1,59 @@
+{
+  "format": "MyRendererRenderJob",
+  "schemaVersion": 3,
+  "scene": "../scenes/fixtures/28_native_ocean_clouds.myscene",
+  "renderer": "raster",
+  "camera": "scene",
+  "resolution": [
+    1280,
+    720
+  ],
+  "frames": {
+    "end": 23,
+    "start": 0,
+    "fps": 24
+  },
+  "sampling": {
+    "maxDepth": 1,
+    "seed": 20261006,
+    "spp": 1
+  },
+  "raster": {
+    "determinism": true,
+    "temporalAccumulation": false,
+    "warmupFrames": 4
+  },
+  "aovs": [
+    "beauty"
+  ],
+  "output": {
+    "resume": false,
+    "formats": [
+      "png"
+    ],
+    "path": "../../build-ci-msvc/render-jobs/06_ocean_clouds_hero/frame_{frame:04}"
+  },
+  "module": {
+    "seed": 20261006,
+    "parameters": {
+      "sunStartElevation": 45.0,
+      "sunEndElevation": -12.0,
+      "sunStartAzimuth": 150.0,
+      "sunEndAzimuth": 220.0,
+      "moonIntensity": 0.4,
+      "starIntensity": 0,
+      "fogStart": 0.25,
+      "fogEnd": 0.8,
+      "waveStartAmplitude": 0.4,
+      "waveEndAmplitude": 0.6,
+      "waveStartSpeed": 0.6,
+      "waveEndSpeed": 1.1,
+      "cameraStartYaw": -4.0,
+      "cameraEndYaw": -4.0,
+      "cameraStartDistance": 16.0,
+      "cameraEndDistance": 16.0
+    },
+    "id": "myrenderer.core.coastal-sequence"
+  },
+  "failurePolicy": "stop"
+}

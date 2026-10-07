@@ -144,6 +144,8 @@ struct EditorWaterSettingsPayload {
     float deepWaterStrength{0.0f};
     float waveDiversity{0.0f};
     float nearMeshFocus{0.0f};
+    bool surfaceOptics{false};
+    float cloudReflectionStrength{0.0f};
     float windX{0.9f};
     float windZ{0.3f};
 };
@@ -311,6 +313,8 @@ struct EditorAtmosphereSettingsPayload {
     float cloudHeightVariation{0.30f};
     float cloudDetailStrength{0.45f};
     float cloudDetailEdge{0.15f};
+    bool cloudHeightLighting{false};
+    float cloudShapeBlend{0.0f};
     // `atmosphere::CloudQualityTier`, carried as an int so this payload stays a plain aggregate the
     // command queue can copy without the optics header. The Inspector is the only writer and it
     // writes values the enum defines.

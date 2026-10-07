@@ -11,6 +11,7 @@
 // `cloudAmbientScale`. The shipped defaults come from the `ambientElevation=15, scale=0.85` row.
 #include "optics/Atmosphere.h"
 #include "optics/CloudReference.h"
+#include "scene/SceneDocument.h"
 
 #include <glm/geometric.hpp>
 #include <glm/trigonometric.hpp>
@@ -61,7 +62,8 @@ ShapeMetrics measureShape(
     const cloud::MarchSettings& settings,
     int width,
     int height,
-    std::vector<float>* image = nullptr
+    std::vector<float>* image = nullptr,
+    const Camera* camera = nullptr
 ) {
     std::vector<float> transmittance(static_cast<std::size_t>(width) * height, 1.0f);
     double densitySum = 0.0;
@@ -73,11 +75,18 @@ ShapeMetrics measureShape(
             // rather than grazed, which keeps the comparison about the field and not the projection.
             const float elevation = glm::radians(15.0f + v * 40.0f);
             const float azimuth = -1.2f + u * 2.4f;
-            const glm::vec3 direction(
+            glm::vec3 direction(
                 std::cos(elevation) * std::sin(azimuth),
                 std::sin(elevation),
                 std::cos(elevation) * std::cos(azimuth));
-            const glm::vec3 origin(0.0f, 1.1f, 0.0f);
+            glm::vec3 origin(0.0f, 1.1f, 0.0f);
+            if (camera != nullptr) {
+                const float halfHeight = std::tan(glm::radians(camera->fieldOfView()) * 0.5f);
+                direction = glm::normalize(camera->forwardDirection()
+                    + camera->rightDirection() * ((u * 2.0f - 1.0f) * halfHeight * width / height)
+                    + camera->upDirection() * ((v * 2.0f - 1.0f) * halfHeight));
+                origin = camera->position();
+            }
             transmittance[static_cast<std::size_t>(y) * width + x] =
                 cloud::march(origin, direction, parameters, settings).transmittance;
             const cloud::SlabSpan span = cloud::slabSpan(origin.y, direction.y,
@@ -699,6 +708,59 @@ int acceptance(const std::filesystem::path& directory) {
 }
 
 int main(int argc, char** argv) {
+    if (argc == 4 && std::string(argv[1]) == "--hero") {
+        SceneDocument scene;
+        std::string error;
+        if (!loadSceneDocument(argv[2], scene, error)) {
+            std::fprintf(stderr, "Hero input failed: %s\n", error.c_str());
+            return 2;
+        }
+        const std::filesystem::path output(argv[3]);
+        std::filesystem::create_directories(output);
+        Camera camera;
+        camera.setOrbitPose(scene.camera.target, scene.camera.yawDegrees, scene.camera.pitchDegrees,
+            scene.camera.distance, scene.camera.fieldOfViewDegrees);
+        std::array<std::vector<float>, 2> images;
+        std::array<ShapeMetrics, 2> metrics;
+        for (int tier = 0; tier < 2; ++tier) {
+            cloud::MarchSettings settings;
+            const auto budget = atmosphere::cloudTierBudget(tier == 0
+                ? atmosphere::CloudQualityTier::Low : atmosphere::CloudQualityTier::High);
+            settings.primarySteps = budget.primarySteps;
+            settings.lightSteps = budget.lightSteps;
+            settings.sunDirection = atmosphere::sunDirection(scene.renderer.atmosphere);
+            metrics[tier] = measureShape(scene.renderer.atmosphere, settings, 96, 54, &images[tier], &camera);
+            std::ofstream ppm(output / (tier == 0 ? "low.ppm" : "high.ppm"), std::ios::binary);
+            ppm << "P6\n96 54\n255\n";
+            for (float value : images[tier]) {
+                if (!std::isfinite(value) || value < 0 || value > 1) return 1;
+                const unsigned char byte = static_cast<unsigned char>(value * 255.0f + 0.5f);
+                const unsigned char pixel[3] = {byte, byte, byte};
+                ppm.write(reinterpret_cast<const char*>(pixel), 3);
+            }
+            if (!ppm) return 2;
+        }
+        double mae = 0;
+        int intersection = 0, unionCount = 0;
+        for (std::size_t i = 0; i < images[0].size(); ++i) {
+            mae += std::abs(images[0][i] - images[1][i]);
+            const bool low = images[0][i] < 0.5f, high = images[1][i] < 0.5f;
+            intersection += low && high;
+            unionCount += low || high;
+        }
+        mae /= images[0].size();
+        const double iou = unionCount > 0 ? static_cast<double>(intersection) / unionCount : 0;
+        const bool passed = mae < 0.03 && iou > 0.90 && metrics[1].coverage > 0.05
+            && metrics[1].coverage < 0.55 && metrics[1].components >= 2;
+        std::ofstream report(output / "shape.json");
+        report << "{\"width\":96,\"height\":54,\"mae\":" << mae << ",\"iou\":" << iou
+            << ",\"lowCoverage\":" << metrics[0].coverage << ",\"highCoverage\":" << metrics[1].coverage
+            << ",\"components\":" << metrics[1].components << ",\"passed\":" << (passed ? "true" : "false") << "}\n";
+        if (!report) return 2;
+        std::printf("Hero Low/High transmission MAE %.6f, IoU %.6f, coverage %.6f, components %d: %s\n",
+            mae, iou, metrics[1].coverage, metrics[1].components, passed ? "PASS" : "FAIL");
+        return passed ? 0 : 1;
+    }
     if (argc == 2 && std::string(argv[1]) == "--preset-sweep") {
         for (auto preset : {atmosphere::CloudPreset::Cumulus, atmosphere::CloudPreset::Stratus}) {
             for (float coverage : {0.50f, 0.55f, 0.60f, 0.70f, 0.85f, 0.95f}) {

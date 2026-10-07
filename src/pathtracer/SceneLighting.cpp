@@ -7,6 +7,13 @@
 #include <mutex>
 #include <vector>
 
+#ifdef _WIN32
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <Windows.h>
+#endif
+
 #include <glm/geometric.hpp>
 
 #include "optics/Atmosphere.h"
@@ -21,6 +28,35 @@ namespace {
 // milliseconds rather than the hundreds a cubemap rebuild takes.
 constexpr int skyEquirectWidth = 1024;
 constexpr int skyEquirectHeight = 512;
+
+std::filesystem::path environmentResourcePath(int preset) {
+    const std::filesystem::path relative = std::filesystem::path("assets") / "environments"
+        / (preset == 1 ? "overcast_soil_puresky_2k.exr"
+            : preset == 2 ? "kloofendal_43d_clear_puresky_2k.exr"
+            : "kloofendal_48d_partly_cloudy_puresky_4k.exr");
+    std::vector<std::filesystem::path> roots;
+#ifdef _WIN32
+    std::wstring executable(32768, L'\0');
+    const DWORD length = GetModuleFileNameW(nullptr, executable.data(),
+        static_cast<DWORD>(executable.size()));
+    if (length > 0 && length < executable.size()) {
+        executable.resize(length);
+        roots.push_back(std::filesystem::path(executable).parent_path());
+    }
+#endif
+    roots.push_back(std::filesystem::current_path());
+#ifdef MYRENDERER_SOURCE_DIR
+    roots.emplace_back(MYRENDERER_SOURCE_DIR);
+#endif
+    for (const auto& root : roots) {
+        // Once a runtime asset root is selected, a missing preset must not be
+        // silently supplied by a different checkout or installation.
+        if (std::filesystem::is_directory(root / "assets" / "environments")) {
+            return std::filesystem::absolute(root / relative).lexically_normal();
+        }
+    }
+    return std::filesystem::absolute(relative).lexically_normal();
+}
 
 // The GUI re-captures a snapshot for every progressive tile batch and a Batch sequence does it once
 // per frame, so the sky is generated on a parameter change rather than per capture. Render Queue
@@ -96,17 +132,9 @@ SceneSnapshotLighting captureSceneLighting(const RendererSettings& settings, flo
     lighting.environment.sourceName = settings.iblEnabled
         ? "Active renderer environment"
         : "Background color";
-#ifdef MYRENDERER_SOURCE_DIR
     if (settings.iblEnabled && !settings.atmosphere.enabled) {
-        lighting.environment.sourcePath = std::filesystem::path(MYRENDERER_SOURCE_DIR)
-            / "assets" / "environments"
-            / (settings.environmentPreset == 1
-                ? "overcast_soil_puresky_2k.exr"
-                : settings.environmentPreset == 2
-                    ? "kloofendal_43d_clear_puresky_2k.exr"
-                    : "kloofendal_48d_partly_cloudy_puresky_4k.exr");
+        lighting.environment.sourcePath = environmentResourcePath(settings.environmentPreset);
     }
-#endif
     // The analytic sky *is* the environment while it is enabled, exactly as it is on the raster
     // path: the traced frame has to see the same sky, sampled by the same model, or a CPU preview of
     // an outdoor scene would light it with whatever HDR file happened to be bundled. The generated

@@ -1,4 +1,5 @@
 #version 330 core
+#include "water_medium.glsl"
 in vec2 vUv;
 uniform sampler2D uScene;
 uniform sampler2D uBloom;
@@ -37,6 +38,9 @@ uniform vec3 uAerialColumnDepth;
 uniform vec3 uAerialZenithColor;
 uniform vec3 uAerialHorizonColor;
 uniform bool uUnderwaterFogEnabled;
+uniform bool uWaterSurfaceOptics;
+uniform float uWaterSurfaceHeight;
+uniform sampler2D uOpaqueDepth;
 uniform vec3 uUnderwaterAbsorption;
 uniform vec3 uUnderwaterColor;
 uniform bool uColorGradingEnabled;
@@ -295,6 +299,14 @@ void main() {
     color = aerialPerspectiveColor(color, deviceDepth, aerialDistance, aerialSegment);
     if (uUnderwaterFogEnabled) {
         float waterDistance = aerialIsSky ? 24.0 : min(aerialDistance, 24.0);
+        if (uWaterSurfaceOptics) {
+            bool interfaceHit = !aerialIsSky && deviceDepth < texture(uOpaqueDepth, vUv).r - 1.0e-6;
+            vec4 farPoint = uInverseCurrentViewProjection * vec4(vUv * 2.0 - 1.0, 1.0, 1.0);
+            vec3 ray = aerialIsSky ? normalize(farPoint.xyz / farPoint.w - uCameraPosition)
+                : aerialSegment / max(aerialDistance, 1.0e-6);
+            waterDistance = waterMediumDistance(waterDistance, interfaceHit,
+                uCameraPosition.y, uWaterSurfaceHeight, ray.y);
+        }
         vec3 transmittance = exp(-max(uUnderwaterAbsorption, vec3(0.0))
             * waterDistance);
         color = color * transmittance

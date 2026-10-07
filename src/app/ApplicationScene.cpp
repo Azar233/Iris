@@ -26,7 +26,7 @@
 
 #include <imgui.h>
 #include <imgui_internal.h>
-#include <stb_image.h>
+#include "asset/StbImageCompat.h"
 #include "app/EditorDomain.h"
 #include "module/BuiltinModules.h"
 #include "app/EditorUi.h"
@@ -648,6 +648,7 @@ void Application::processEditorCommands() {
                     || !within(water.deepWaterStrength, 0.0f, 1.0f)
                     || !within(water.waveDiversity, 0.0f, 1.0f)
                     || !within(water.nearMeshFocus, 0.0f, 1.0f)
+                    || !within(water.cloudReflectionStrength, 0.0f, 1.0f)
                     || !within(water.windX, -1.0f, 1.0f)
                     || !within(water.windZ, -1.0f, 1.0f)) {
                     statusMessage_ = "Inspector rejected invalid water settings.";
@@ -669,6 +670,8 @@ void Application::processEditorCommands() {
                 rendererSettings_.water.deepWaterStrength = water.deepWaterStrength;
                 rendererSettings_.water.waveDiversity = water.waveDiversity;
                 rendererSettings_.water.nearMeshFocus = water.nearMeshFocus;
+                rendererSettings_.water.surfaceOptics = water.surfaceOptics;
+                rendererSettings_.water.cloudReflectionStrength = water.cloudReflectionStrength;
                 rendererSettings_.water.windDirection = glm::vec2(water.windX, water.windZ);
                 if (renderer_ != nullptr) renderer_->invalidateTemporalHistory();
                 break;
@@ -1023,6 +1026,8 @@ void Application::processEditorCommands() {
                     && atmosphere.cloudDetailStrength >= 0.0f
                     && atmosphere.cloudDetailStrength <= 1.0f
                     && std::isfinite(atmosphere.cloudDetailEdge)
+                    && std::isfinite(atmosphere.cloudShapeBlend)
+                    && atmosphere.cloudShapeBlend >= 0.0f && atmosphere.cloudShapeBlend <= 1.0f
                     && atmosphere.cloudDetailEdge >= 0.0f
                     && atmosphere.cloudDetailEdge <= 1.0f
                     && atmosphere.cloudQuality >= 0 && atmosphere.cloudQuality <= 1
@@ -1083,6 +1088,8 @@ void Application::processEditorCommands() {
                 rendererSettings_.atmosphere.cloudDetailStrength =
                     atmosphere.cloudDetailStrength;
                 rendererSettings_.atmosphere.cloudDetailEdge = atmosphere.cloudDetailEdge;
+                rendererSettings_.atmosphere.cloudHeightLighting = atmosphere.cloudHeightLighting;
+                rendererSettings_.atmosphere.cloudShapeBlend = std::clamp(atmosphere.cloudShapeBlend, 0.0f, 1.0f);
                 rendererSettings_.atmosphere.cloudHalfResolution = atmosphere.cloudHalfResolution;
                 rendererSettings_.atmosphere.cloudTemporalEnabled = atmosphere.cloudTemporalEnabled;
                 rendererSettings_.atmosphere.cloudShadowsEnabled = atmosphere.cloudShadowsEnabled;
@@ -2520,6 +2527,7 @@ void Application::deleteSelectedEntity() {
 }
 
 void Application::newEmptyScene() {
+    pendingGlslControlsScrollFrames_ = 0;
     activeModuleId_.clear();
     moduleParameterOverrides_.clear();
     moduleSeed_ = 20260919U;
@@ -2734,6 +2742,10 @@ bool Application::openScene(const std::filesystem::path& path) {
         loadedSceneDocument_ = true;
         emptySceneSession_ = false;
         rendererSettings_ = document.renderer;
+        if (document.entities.empty() && rendererSettings_.enscapeCubeShaderEnabled) {
+            focusRendererTab_ = true;
+            pendingGlslControlsScrollFrames_ = 3;
+        }
         activeModuleId_ = document.moduleId;
         moduleSeed_ = document.moduleSeed;
         moduleParameterOverrides_ = preparedModule.parameters().overrides();
@@ -3187,6 +3199,8 @@ bool Application::editorInteractionRegression() {
         waterSettings.deepWaterStrength = 0.7f;
         waterSettings.waveDiversity = 0.6f;
         waterSettings.nearMeshFocus = 0.8f;
+        waterSettings.surfaceOptics = true;
+        waterSettings.cloudReflectionStrength = 0.7f;
         EditorCommand waterCommand{EditorCommandType::SetWaterSettings};
         waterCommand.water = waterSettings;
         editorSession_.request(std::move(waterCommand));
@@ -3285,7 +3299,9 @@ bool Application::editorInteractionRegression() {
               && std::abs(rendererSettings_.water.amplitude - 0.4f) < 1.0e-6f
               && std::abs(rendererSettings_.water.deepWaterStrength - 0.7f) < 1.0e-6f
               && std::abs(rendererSettings_.water.waveDiversity - 0.6f) < 1.0e-6f
-              && std::abs(rendererSettings_.water.nearMeshFocus - 0.8f) < 1.0e-6f,
+              && std::abs(rendererSettings_.water.nearMeshFocus - 0.8f) < 1.0e-6f
+              && rendererSettings_.water.surfaceOptics
+              && std::abs(rendererSettings_.water.cloudReflectionStrength - 0.7f) < 1.0e-6f,
               "Water command did not update renderer settings");
         check(rendererSettings_.shadingMode == ShadingMode::Stylized
               && rendererSettings_.renderPath == RenderPath::Deferred

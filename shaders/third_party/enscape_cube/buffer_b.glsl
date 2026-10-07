@@ -21,7 +21,7 @@ void mainImage( out vec4 fragColor, in vec2 fragCoord )
 
     vec4 sum = vec4(0.0);
     float NUM_SAMPLES = 20.;
-    float phiOffset = hash(dot(fragCoord.xy, vec2(1.12,2.251)) + iTime);
+    float phiOffset = uNoiseReduction ? 0.5 : hash(dot(fragCoord.xy, vec2(1.12,2.251)) + iTime);
     for(float i = 0.; i < NUM_SAMPLES; i++)
     {
         vec2 r = blurRadius * i / NUM_SAMPLES;
@@ -30,7 +30,25 @@ void mainImage( out vec4 fragColor, in vec2 fragCoord )
         sum += textureLod(iChannel0, uv, 0.0);
     }
     float BLOOM_AMOUNT = 0.05 * uBloomStrength;
-    sum.xyz = mix(textureLod(iChannel0, q, 0.0).xyz, sum.xyz / NUM_SAMPLES, BLOOM_AMOUNT);
+    vec4 center = textureLod(iChannel0, q, 0.0);
+    vec3 surface = center.rgb;
+    if (uNoiseReduction && center.a > 0.5) {
+        // Pixel integration only on water. Never mix opaque/sky neighbours into
+        // this footprint; retain the original whole-scene bloom separately.
+        vec2 texel = 1.0 / iResolution.xy;
+        vec3 integrated = vec3(0.0);
+        float totalWeight = 0.0;
+        for (int y = -1; y <= 1; ++y) for (int x = -1; x <= 1; ++x) {
+            vec4 sampleValue = textureLod(iChannel0, q + vec2(x,y) * texel, 0.0);
+            float weight = (x == 0 ? 2.0 : 1.0) * (y == 0 ? 2.0 : 1.0);
+            if (sampleValue.a > 0.5) {
+                integrated += sampleValue.rgb * weight;
+                totalWeight += weight;
+            }
+        }
+        surface = integrated / max(totalWeight, 1.0);
+    }
+    sum.xyz = mix(surface, sum.xyz / NUM_SAMPLES, BLOOM_AMOUNT);
     // Make it look as if some auto exposure magic is going on
     float exposure = 0.06 * uExposure * (1.0+0.2*sin(0.5*iTime)*sin(1.8*iTime));
     fragColor = vec4(tonemapACES(exposure*sum.xyz), 1.0);

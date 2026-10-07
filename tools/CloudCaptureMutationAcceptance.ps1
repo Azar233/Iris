@@ -8,7 +8,7 @@ $sourceModel = Join-Path $SourceRoot 'assets/models/cube.obj'
 $model = Join-Path $taskRoot 'mutable.obj'
 $before = (Get-FileHash -LiteralPath $sourceModel -Algorithm SHA256).Hash
 Copy-Item -LiteralPath $sourceModel -Destination $model -Force
-$scene = Get-Content -LiteralPath (Join-Path $SourceRoot 'assets/scenes/01_volumetric_cloud_lab.myscene') -Raw | ConvertFrom-Json
+$scene = Get-Content -LiteralPath (Join-Path $SourceRoot 'assets/scenes/fixtures/27_cloud_lab_regression.myscene') -Raw | ConvertFrom-Json
 foreach ($entity in $scene.entities) {
     if (-not $entity.model.StartsWith('builtin:')) { $entity.model = $model.Replace('\','/') }
 }

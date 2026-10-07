@@ -127,6 +127,9 @@ struct AtmosphereParameters {
     // `myrenderer_cloud_density` and the shape sweep in docs/cloud-layer-c1.md.
     float cloudDetailStrength{0.45f};
     float cloudDetailEdge{0.15f};
+    // Missing fields in old scenes retain the original cloud transport.
+    bool cloudHeightLighting{false};
+    float cloudShapeBlend{0.0f};
     // Quality changes quadrature budgets, independently of raster resolution and temporal history.
     CloudQualityTier cloudQuality{CloudQualityTier::Low};
     // Raster-only optimization; old scenes keep their full-resolution deterministic output.

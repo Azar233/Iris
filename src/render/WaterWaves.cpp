@@ -39,7 +39,7 @@ void applyPreset(WaterSettings& settings, WaterPreset preset) {
 }
 
 int activeComponentCount(const WaterSettings& settings) {
-    if (settings.quality == WaterQuality::Low) return 2;
+    if (settings.quality == WaterQuality::Low && !settings.surfaceOptics) return 2;
     return settings.waveDiversity > 0.0f ? componentCount : 4;
 }
 
@@ -114,6 +114,19 @@ WaterSample evaluate(const WaterSettings& settings, const glm::vec2& position) {
     sample.normal = glm::normalize(glm::cross(tangentZ, tangentX));
     sample.tangent = glm::normalize(tangentX);
     return sample;
+}
+
+float surfaceHeight(const WaterSettings& settings, const glm::vec2& worldPosition) {
+    // Invert horizontal Gerstner displacement before querying height at a world
+    // coordinate. Treating world XZ as logical XZ moves the interface under the eye.
+    glm::vec2 logical = worldPosition;
+    for (int iteration = 0; iteration < 24; ++iteration) {
+        const auto sample = evaluate(settings, logical);
+        const glm::vec2 error(sample.position.x - worldPosition.x, sample.position.z - worldPosition.y);
+        logical -= error;
+        if (glm::dot(error, error) < 1.0e-10f) break;
+    }
+    return evaluate(settings, logical).position.y;
 }
 
 float gridCoordinate(float logicalCoordinate, float extent, float nearMeshFocus) {

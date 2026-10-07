@@ -25,6 +25,9 @@ public:
         const RendererSettings& settings, int width, int height, float timeSeconds,
         unsigned int fullscreenVertexArray);
     void invalidateHistory() { historyValid_ = false; }
+    bool hasGpuFrameTime() const { return gpuTimeValid_; }
+    bool gpuFrameTimeUpdated() const { return gpuTimeUpdated_; }
+    double gpuFrameMilliseconds() const { return gpuTimeMilliseconds_; }
 
 private:
     void resize(int width, int height);
@@ -41,10 +44,15 @@ private:
     int width_{0};
     int height_{0};
     unsigned int historyIndex_{0};
+    std::array<unsigned int, 3> timingQueries_{};
+    std::array<bool, 3> timingPending_{};
+    bool gpuTimeValid_{false};
+    bool gpuTimeUpdated_{false};
+    double gpuTimeMilliseconds_{0.0};
     bool historyValid_{false};
     bool cameraValid_{false};
     bool parametersValid_{false};
     glm::mat4 previousViewProjection_{1.0f};
-    std::array<float, 11> previousParameters_{};
+    std::array<float, 13> previousParameters_{};
     float previousTime_{0.0f};
 };

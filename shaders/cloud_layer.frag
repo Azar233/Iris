@@ -70,6 +70,8 @@ uniform int uMultiScatterOctaves;
 uniform float uMultiScatterAttenuation;
 uniform float uMultiScatterEccentricity;
 uniform bool uPowder;
+uniform bool uHeightLighting;
+uniform float uShapeBlend;
 
 layout(location = 0) out vec4 outCloud;
 layout(location = 1) out vec4 outCloudDebug;
@@ -100,9 +102,14 @@ float cloudSunDepth(vec3 position, MyRendererCloudParams layer, inout float samp
     float stepLength = length / float(steps);
     float depth = 0.0;
     for (int step = 0; step < steps; ++step) {
-        float distance = start + (float(step) + 0.5) * stepLength;
+        float nearFraction = myrenderer_cloud_light_fraction(float(step) / float(steps), uHeightLighting);
+        float farFraction = myrenderer_cloud_light_fraction(float(step + 1) / float(steps), uHeightLighting);
+        float intervalLength = length * (farFraction - nearFraction);
+        float distance = uHeightLighting ? start + length * (nearFraction + farFraction) * 0.5
+            : start + (float(step) + 0.5) * stepLength;
         vec3 sample = position + uSunDirection * distance;
-        depth += myrenderer_cloud_density(sample.x, sample.y, sample.z, layer) * stepLength;
+        depth += myrenderer_cloud_density(sample.x, sample.y, sample.z, layer)
+            * (uHeightLighting ? intervalLength : stepLength);
         sampleCount += 1.0;
     }
     return depth;
@@ -130,6 +137,7 @@ void main() {
     layer.heightVariation = uHeightVariation;
     layer.detailStrength = uDetailStrength;
     layer.detailEdge = uDetailEdge;
+    layer.shapeBlend = uShapeBlend;
 
     // The background behind the cloud is the environment the sky was built into, so a cloud seen
     // against the sky is the same cloud the sky's own radiance passes through.
@@ -179,7 +187,8 @@ void main() {
             // depth. Without this the interior stays black however many octaves are added.
             float fillTransmittance = cloudTransmission(sunDepth * multiWeight, uOfflineNoise);
             float powder = uPowder ? myrenderer_cloud_powder(density, stepLength) : 1.0;
-            vec3 scatter = uAmbientRadiance
+            vec3 scatter = uAmbientRadiance * myrenderer_cloud_ambient_weight(
+                position.y, uBaseHeight, uTopHeight, uHeightLighting)
                 + uSunRadiance * ((1.0 - multiWeight) * singlePhase * sunTransmittance
                     + multiWeight * multiPhase * fillTransmittance);
             float stepTransmittance = cloudTransmission(sampleOpticalDepth * uExtinction, uOfflineNoise);

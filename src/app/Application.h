@@ -156,6 +156,7 @@ private:
     bool loadedSceneDocument_{false};
     bool focusObjectTab_{false};
     bool focusRendererTab_{false};
+    int pendingGlslControlsScrollFrames_{0};
     bool focusAssetsTab_{false};
     bool focusRenderQueueTab_{false};
     bool focusModulesTab_{false};
@@ -231,6 +232,7 @@ private:
     // batch frame can be compared byte for byte.
     std::filesystem::path pendingCpuPreviewExportPath_;
     int pendingScreenshotWarmupFrames_{0};
+    bool presentationSnapshotCaptured_{false};
     int pendingEditorScreenshotWarmupFrames_{3};
     // `MYRENDERER_EDITOR_SCREENSHOT_SCROLL`: Inspector scroll offset used while an automated
     // editor capture is pending, so a capture can reach a section below the fold.
@@ -291,6 +293,7 @@ private:
     std::vector<double> benchmarkBeamGpuTimes_;
     std::vector<double> benchmarkCausticsGpuTimes_;
     std::map<std::string, std::vector<double>> benchmarkPassGpuTimes_;
+    std::map<std::string, std::vector<double>> benchmarkPassCpuTimes_;
     std::map<std::string, std::size_t> lastBenchmarkPassSerials_;
     std::size_t lastBenchmarkGpuFrameSerial_{0};
     std::size_t lastBenchmarkBeamSerial_{0};

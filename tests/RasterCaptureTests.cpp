@@ -21,7 +21,7 @@ int main(){try{
     const auto root=std::filesystem::current_path()/"raster-capture-test";
     std::filesystem::create_directories(root);
     const auto path=root/"job.renderjob";
-    const auto scene=std::filesystem::path(MYRENDERER_SOURCE_DIR)/"assets/scenes/01_volumetric_cloud_lab.myscene";
+    const auto scene=std::filesystem::path(MYRENDERER_SOURCE_DIR)/"assets/scenes/fixtures/27_cloud_lab_regression.myscene";
     std::string error;RenderJob job;
     writeJob(path,scene,3,",\"raster\":{\"determinism\":false,\"warmupFrames\":7,\"temporalAccumulation\":true}");
     require(loadRenderJob(path,job,error),error.c_str());
@@ -43,11 +43,15 @@ int main(){try{
     writeJob(path,scene,2,"");require(loadRenderJob(path,job,error),error.c_str());
     require(job.rasterDeterminism&&job.rasterWarmupFrames==0&&!job.rasterTemporalAccumulation,"legacy raster defaults must be history-free");
     RendererSettings settings;settings.atmosphere.enabled=settings.atmosphere.cloudsEnabled=true;
+    settings.water.surfaceOptics=true;settings.water.cloudReflectionStrength=0.7f;
     settings.temporalAaEnabled=settings.atmosphere.cloudTemporalEnabled=true;
     require(writeRasterFrameReport(root/"first.json",job,0,settings,"test GPU",error),error.c_str());
     require(writeRasterFrameReport(root/"second.json",job,0,settings,"test GPU",error),error.c_str());
     const auto report=read(root/"first.json");
     require(report==read(root/"second.json"),"unchanged metadata must repeat exactly");
+    require(report.find("\"surfaceOptics\": true")!=std::string::npos
+        && report.find("\"cloudReflectionStrength\"")!=std::string::npos,
+        "Raster reports must identify the rendered water optics and reflection input");
     require(report.find("\"effectiveTaa\": false")!=std::string::npos
         &&report.find("\"effectiveCloudHistory\": false")!=std::string::npos,"determinism must override requested history in metadata");
     require(report.find("procedural-shared-field")!=std::string::npos,"report must not claim offline noise assets");

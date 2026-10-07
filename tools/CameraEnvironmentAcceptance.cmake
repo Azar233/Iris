@@ -5,12 +5,8 @@ foreach(required RENDERER SOURCE_DIR OUTPUT_DIR)
     endif()
 endforeach()
 file(MAKE_DIRECTORY "${OUTPUT_DIR}")
-foreach(scene 01_volumetric_cloud_lab 23_ocean_clouds)
-    if(scene STREQUAL "23_ocean_clouds")
-        set(scene_path "${SOURCE_DIR}/assets/scenes/fixtures/${scene}.myscene")
-    else()
-        set(scene_path "${SOURCE_DIR}/assets/scenes/${scene}.myscene")
-    endif()
+foreach(scene 27_cloud_lab_regression 23_ocean_clouds)
+    set(scene_path "${SOURCE_DIR}/assets/scenes/fixtures/${scene}.myscene")
     execute_process(
         COMMAND "${CMAKE_COMMAND}" -E env
             MYRENDERER_BENCHMARK_FRAMES=40

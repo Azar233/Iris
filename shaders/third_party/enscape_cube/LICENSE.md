@@ -12,3 +12,7 @@ not the repository's MIT license. Preserve these notices in redistributed copies
 
 The original Shadertoy channel textures were not part of the supplied source.
 The host generates deterministic 2D weather and 3D noise textures instead.
+
+2026-10-07 adaptation: optional study-cube visibility for the shared GLSL cloud/ocean Hero. The original study keeps the cube enabled by default; the source and adapters retain this license and attribution.
+
+2026-10-07 adaptation: optional noise reduction adds multi-direction cloud reflections, near-water normal and specular filtering, water-only pixel integration, stable bloom sampling, and disables chromatic offsets. The original study defaults to the unchanged legacy path. These shader modifications retain the same license and attribution.

@@ -70,7 +70,7 @@ std::vector<float> readTexture(unsigned int texture) {
 
 } // namespace
 
-int main() {
+int main(int argc, char** argv) {
     if (glfwInit() != GLFW_TRUE) {
         std::cerr << "GLFW initialization failed\n";
         return 1;
@@ -98,6 +98,14 @@ int main() {
         const std::filesystem::path sourceRoot(MYRENDERER_SOURCE_DIR);
         auto parameters = cloudParameters();
         parameters.cloudOfflineNoise = std::getenv("MYRENDERER_TEST_OFFLINE_NOISE")!=nullptr;
+        parameters.cloudHeightLighting = argc >= 2 && std::string(argv[1]) == "--height-lighting";
+        parameters.cloudShapeBlend = parameters.cloudHeightLighting ? 0.85f : 0.0f;
+        if (argc >= 3) parameters.sunElevationDegrees = std::stof(argv[2]);
+        if (parameters.cloudHeightLighting) {
+            parameters.cloudVolumetricAmbientScale = 2.4f;
+            parameters.cloudVolumetricSunScale = 0.8f;
+            parameters.nightSkyEnabled = true;
+        }
 
         // One camera, looking up into the layer so most of the frame has cloud in it. A camera that
         // mostly missed the slab would flatter the comparison.
@@ -120,6 +128,11 @@ int main() {
             atmosphere::skyRadiance(glm::vec3(0.0f, 1.0f, 0.0f), parameters);
         settings.sunRadiance = atmosphere::skyLightColor(parameters)
             * std::max(parameters.sunIntensity, 0.0f);
+        if (parameters.cloudHeightLighting) {
+            const auto lighting = cloud::marchLighting(parameters);
+            settings.ambientRadiance = lighting.ambient;
+            settings.sunRadiance = lighting.sun;
+        }
 
         CloudLayerRenderer renderer(
             sourceRoot / "shaders" / "fullscreen.vert",

@@ -38,6 +38,7 @@ inline MyRendererCloudParams makeCloudParams(const atmosphere::AtmosphereParamet
     layer.heightVariation = parameters.cloudHeightVariation;
     layer.detailStrength = parameters.cloudDetailStrength;
     layer.detailEdge = parameters.cloudDetailEdge;
+    layer.shapeBlend = parameters.cloudShapeBlend;
     return layer;
 }
 

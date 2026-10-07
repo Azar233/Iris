@@ -51,6 +51,9 @@ struct PostProcessSettings {
     glm::vec3 aerialPerspectiveZenithColor{0.0f};
     glm::vec3 aerialPerspectiveHorizonColor{0.0f};
     bool underwaterFog{false};
+    bool waterSurfaceOptics{false};
+    float waterSurfaceHeight{0.0f};
+    unsigned int opaqueDepthTexture{0U};
     glm::vec3 underwaterAbsorption{0.32f, 0.12f, 0.065f};
     glm::vec3 underwaterColor{0.012f, 0.085f, 0.12f};
     bool colorGrading{false};

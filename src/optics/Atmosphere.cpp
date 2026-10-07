@@ -302,6 +302,8 @@ bool parametersMatch(const AtmosphereParameters& a, const AtmosphereParameters& 
         && std::abs(a.cloudHeightVariation - b.cloudHeightVariation) < parameterTolerance
         && std::abs(a.cloudDetailStrength - b.cloudDetailStrength) < parameterTolerance
         && std::abs(a.cloudDetailEdge - b.cloudDetailEdge) < parameterTolerance
+        && a.cloudHeightLighting == b.cloudHeightLighting
+        && std::abs(a.cloudShapeBlend - b.cloudShapeBlend) < parameterTolerance
         // The tier changes the integral's step count, so it moves pixels even though no field
         // parameter changed. A cache that ignored it would hand a High-tier consumer a Low-tier bake.
         && a.cloudQuality == b.cloudQuality

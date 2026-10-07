@@ -178,6 +178,7 @@ mat3 cubeForm = mat3(1.0);
 float Yelevation = 0.0;
 float map( in vec3 pos )
 {
+    if (!uCubeEnabled) return 10000.0;
     pos *= cubeForm;
     pos.y += Yelevation;
 
@@ -238,7 +239,7 @@ vec3 skyRay(vec3 org, vec3 dir, vec3 sun_direction, bool fast)
     const float ATM_START = EARTH_RADIUS+CLOUD_START;
     const float ATM_END = ATM_START+CLOUD_HEIGHT;
 
-    int nbSample = fast ? 13 : 35;
+    int nbSample = fast ? (uNoiseReduction ? 32 : 13) : 35;
     vec3 color = vec3(0.0);
     float distToAtmStart = intersectSphere(org, dir, vec3(0.0, -EARTH_RADIUS, 0.0), ATM_START);
     float distToAtmEnd = intersectSphere(org, dir, vec3(0.0, -EARTH_RADIUS, 0.0), ATM_END);
@@ -288,6 +289,7 @@ float D_GGX(in float r, in float NoH, in vec3 h)
 
 float castRay( in vec3 ro, in vec3 rd, in float tmin)
 {
+    if (!uCubeEnabled) return -1.0;
     float tmax = max(10.0, length(ro) + 10.0);
 #if 1
     float maxY = 3.0;
@@ -366,7 +368,23 @@ vec3 getSeaColor(in vec3 p, in vec3 N, in vec3 sun_direction, in vec3 dir, in ve
     float VoH = max(0.0, dot(V, normalize(V+L)));
     float fresnel = Schlick(0.02, NoV);
     float cubeRes = castRay(p, L, 0.0001);
-    vec3 reflection = skyRay(p, L, sun_direction, true);
+    vec3 reflection;
+    if (uNoiseReduction) {
+        // Integrate the reflected sky over the normal's projected footprint,
+        // rather than applying a screen-space blur to the whole water image.
+        vec3 tangent = normalize(cross(abs(L.y) < 0.95 ? vec3(0,1,0) : vec3(1,0,0), L));
+        vec3 bitangent = cross(L, tangent);
+        float cone = clamp(max(length(dFdx(L)), length(dFdy(L))) * 0.5, 0.001, 0.06);
+        reflection = vec3(0.0);
+        for (int sampleIndex = 0; sampleIndex < 4; ++sampleIndex) {
+            float angle = 1.57079633 * (float(sampleIndex) + 0.5);
+            vec3 ray = normalize(L + cone * (cos(angle) * tangent + sin(angle) * bitangent));
+            reflection += skyRay(p, ray, sun_direction, true);
+        }
+        reflection *= 0.25;
+    } else {
+        reflection = skyRay(p, L, sun_direction, true);
+    }
     if(cubeRes != -1.)
         reflection = renderCubeFast(p, L, sun_direction, cubeRes);
     vec3 color = mix(cloudShadow*SEA_BASE, reflection,
@@ -379,6 +397,10 @@ vec3 getSeaColor(in vec3 p, in vec3 N, in vec3 sun_direction, in vec3 dir, in ve
         vec3 H = normalize(V+sun_direction);
         float NoL = max(0.0, dot(N, sun_direction));
         float roughness = 0.05;
+        if (uNoiseReduction) {
+            float variance = max(dot(dFdx(N), dFdx(N)), dot(dFdy(N), dFdy(N)));
+            roughness = clamp(sqrt(0.08 * 0.08 + 0.35 * variance), 0.08, 0.25);
+        }
         color += LOW_SCATTER*0.4*vec3(NoL/PI*fresnel*SUN_POWER*D_GGX(roughness, max(0.0, dot(N, H)), H));
     }
     color += 9.0*max(0.0, smoothstep(0.35, 0.6, p.y - SEA_HEIGHT) * N.x); // Foam
@@ -467,6 +489,7 @@ void setupCubeForm()
 
 void mainImage( out vec4 fragColor, in vec2 fragCoord )
 {
+    float waterMask = 0.0;
     vec2 q = fragCoord.xy / iResolution.xy;
     vec2 v = -1.0 + 2.0*q;
     v.x *= iResolution.x/ iResolution.y;
@@ -557,10 +580,23 @@ void mainImage( out vec4 fragColor, in vec2 fragCoord )
     }
     else // water
     {
+        waterMask = 1.0;
         vec3 waterHitPoint;
         heightMapTracing(org,dir,waterHitPoint);
         vec3 dist = waterHitPoint - org;
         vec3 n = getNormalWater(waterHitPoint, dot(dist,dist) * EPSILON_NRM);
+        if (uNoiseReduction && dot(dist,dist) < 2500.0) {
+            // World footprint regularises finite differences and resolves slopes
+            // over a pixel, avoiding precision loss close to the interface.
+            float footprint = max(length(dFdx(waterHitPoint.xz)), length(dFdy(waterHitPoint.xz)));
+            float eps = max(0.008, max(footprint * 0.7, dot(dist,dist) * EPSILON_NRM));
+            float dx = mapWater(waterHitPoint + vec3(eps,0,0), ITER_FRAGMENT, true)
+                     - mapWater(waterHitPoint - vec3(eps,0,0), ITER_FRAGMENT, true);
+            float dz = mapWater(waterHitPoint + vec3(0,0,eps), ITER_FRAGMENT, true)
+                     - mapWater(waterHitPoint - vec3(0,0,eps), ITER_FRAGMENT, true);
+            vec3 filteredNormal = normalize(vec3(dx, 2.0 * eps, dz));
+            n = normalize(mix(filteredNormal, n, smoothstep(625.0, 2500.0, dot(dist,dist))));
+        }
         float cloudShadow= 1.0-textureLod(iChannel0, waterHitPoint.xz*0.008-vec2(0.0, 0.03*iTime), 7.0).x;
             color = getSeaColor(waterHitPoint,n,sun_direction,dir,dist, mu, cloudShadow);
 
@@ -588,4 +624,5 @@ void mainImage( out vec4 fragColor, in vec2 fragCoord )
 
     float fogPhase = 0.5*HenyeyGreenstein(mu, 0.7)+0.5*HenyeyGreenstein(mu, -0.6);
     fragColor = vec4(mix(fogPhase*0.1*LOW_SCATTER*SUN_POWER+10.0*vec3(0.55, 0.8, 1.0), color, exp(-0.0003*fogDistance)), 1.0);
+    if (uNoiseReduction) fragColor.a = waterMask;
 }

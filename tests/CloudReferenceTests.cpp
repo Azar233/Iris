@@ -650,6 +650,23 @@ int main() {
             // the view ray.
             require(std::abs(multi.transmittance - single.transmittance) < 1.0e-6f,
                 "the multiple-scattering fill must not change transmittance");
+            auto heightParameters = parameters;
+            heightParameters.cloudHeightLighting = true;
+            auto nightParameters = heightParameters;
+            nightParameters.sunElevationDegrees = -12.0f;
+            require(glm::length(cloud::marchLighting(nightParameters).sun) == 0.0f,
+                "height lighting must not illuminate night clouds with a below-horizon sun");
+            require(!atmosphere::parametersMatch(parameters, heightParameters),
+                "height lighting changes must invalidate cloud history");
+            auto ambientOnly = settings;
+            ambientOnly.sunRadiance = glm::vec3(0.0f);
+            const auto uniformAmbient = cloud::march(glm::vec3(0.0f, eyeHeight, 0.0f),
+                direction, parameters, ambientOnly);
+            const auto heightAmbient = cloud::march(glm::vec3(0.0f, eyeHeight, 0.0f),
+                direction, heightParameters, ambientOnly);
+            require(glm::length(heightAmbient.radiance) < glm::length(uniformAmbient.radiance)
+                && heightAmbient.transmittance == uniformAmbient.transmittance,
+                "height ambient must reduce buried radiance without changing extinction");
             // The powder term darkens thin edges, so switching it off must brighten the frame.
             cloud::MarchSettings noPowder = settings;
             noPowder.powder = false;

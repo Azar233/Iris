@@ -1,4 +1,5 @@
 #version 330 core
+uniform bool uNoiseReduction;
 uniform vec3 iResolution;
 uniform float iTime;
 uniform float uBloomStrength;

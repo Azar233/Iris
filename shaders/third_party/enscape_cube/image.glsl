@@ -32,8 +32,8 @@ void mainImage( out vec4 fragColor, in vec2 fragCoord )
 
     vec2 centerToUv = q-vec2(0.5);
     vec3 aberr;
-    aberr.x = textureLod(iChannel0, vec2(0.5)+centerToUv*0.995,0.0).x;
-    aberr.y = textureLod(iChannel0, vec2(0.5)+centerToUv*0.997, 0.0).y;
+    aberr.x = textureLod(iChannel0, vec2(0.5)+centerToUv*(uNoiseReduction ? 1.0 : 0.995),0.0).x;
+    aberr.y = textureLod(iChannel0, vec2(0.5)+centerToUv*(uNoiseReduction ? 1.0 : 0.997), 0.0).y;
     aberr.z = textureLod(iChannel0, vec2(0.5)+centerToUv, 0.0).z;
     fragColor = vec4(pow(vign*aberr, vec3(0.2+1.0/2.2)), 1.0);
 }

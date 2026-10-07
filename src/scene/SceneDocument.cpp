@@ -45,6 +45,8 @@ void writeMatrix(Writer& writer, const glm::mat4& value) {
 void writeRendererSettings(Writer& writer, const RendererSettings& settings) {
     writer.StartObject();
     writer.Key("enscapeCubeShaderEnabled"); writer.Bool(settings.enscapeCubeShaderEnabled);
+    writer.Key("enscapeNoiseReduction"); writer.Bool(settings.enscapeCube.noiseReduction);
+    writer.Key("enscapeCubeEnabled"); writer.Bool(settings.enscapeCube.cubeEnabled);
     writer.Key("enscapeWaveHeight"); writer.Double(settings.enscapeCube.waveHeight);
     writer.Key("enscapeWaveFrequency"); writer.Double(settings.enscapeCube.waveFrequency);
     writer.Key("enscapeWaveChoppiness"); writer.Double(settings.enscapeCube.waveChoppiness);
@@ -109,6 +111,8 @@ void writeRendererSettings(Writer& writer, const RendererSettings& settings) {
     writer.Key("waterDeepWaterStrength"); writer.Double(settings.water.deepWaterStrength);
     writer.Key("waterWaveDiversity"); writer.Double(settings.water.waveDiversity);
     writer.Key("waterNearMeshFocus"); writer.Double(settings.water.nearMeshFocus);
+    writer.Key("waterSurfaceOptics"); writer.Bool(settings.water.surfaceOptics);
+    writer.Key("waterCloudReflectionStrength"); writer.Double(settings.water.cloudReflectionStrength);
     writer.Key("waterWindX"); writer.Double(settings.water.windDirection.x);
     writer.Key("waterWindZ"); writer.Double(settings.water.windDirection.y);
     WRITE_BOOL(causticsEnabled);
@@ -157,6 +161,8 @@ void writeRendererSettings(Writer& writer, const RendererSettings& settings) {
     writer.Key("cloudHeightVariation"); writer.Double(settings.atmosphere.cloudHeightVariation);
     writer.Key("cloudDetailStrength"); writer.Double(settings.atmosphere.cloudDetailStrength);
     writer.Key("cloudDetailEdge"); writer.Double(settings.atmosphere.cloudDetailEdge);
+    writer.Key("cloudHeightLighting"); writer.Bool(settings.atmosphere.cloudHeightLighting);
+    writer.Key("cloudShapeBlend"); writer.Double(settings.atmosphere.cloudShapeBlend);
     writer.Key("cloudHalfResolution"); writer.Bool(settings.atmosphere.cloudHalfResolution);
     writer.Key("cloudTemporalEnabled"); writer.Bool(settings.atmosphere.cloudTemporalEnabled);
     writer.Key("cloudShadowsEnabled"); writer.Bool(settings.atmosphere.cloudShadowsEnabled);
@@ -296,6 +302,8 @@ void readRendererSettings(const scene_json::Value& value, RendererSettings& sett
 #define READ_BOOL(field) settings.field = readBool(value, #field, settings.field)
 #define READ_VEC3(field) settings.field = readVec3(value, #field, settings.field)
     READ_BOOL(enscapeCubeShaderEnabled);
+    settings.enscapeCube.noiseReduction = readBool(value, "enscapeNoiseReduction", settings.enscapeCube.noiseReduction);
+    settings.enscapeCube.cubeEnabled = readBool(value, "enscapeCubeEnabled", settings.enscapeCube.cubeEnabled);
     settings.enscapeCube.waveHeight = std::clamp(readFloat(value, "enscapeWaveHeight",
         settings.enscapeCube.waveHeight), 0.05f, 1.5f);
     settings.enscapeCube.waveFrequency = std::clamp(readFloat(value, "enscapeWaveFrequency",
@@ -378,6 +386,8 @@ void readRendererSettings(const scene_json::Value& value, RendererSettings& sett
     settings.water.deepWaterStrength = std::clamp(readFloat(value, "waterDeepWaterStrength", settings.water.deepWaterStrength), 0.0f, 1.0f);
     settings.water.waveDiversity = std::clamp(readFloat(value, "waterWaveDiversity", settings.water.waveDiversity), 0.0f, 1.0f);
     settings.water.nearMeshFocus = std::clamp(readFloat(value, "waterNearMeshFocus", settings.water.nearMeshFocus), 0.0f, 1.0f);
+    settings.water.surfaceOptics = readBool(value, "waterSurfaceOptics", false);
+    settings.water.cloudReflectionStrength = std::clamp(readFloat(value, "waterCloudReflectionStrength", 0.0f), 0.0f, 1.0f);
     settings.water.windDirection.x = std::clamp(
         readFloat(value, "waterWindX", settings.water.windDirection.x), -1.0f, 1.0f);
     settings.water.windDirection.y = std::clamp(
@@ -474,6 +484,8 @@ void readRendererSettings(const scene_json::Value& value, RendererSettings& sett
     settings.atmosphere.cloudGodRaysEnabled = readBool(value, "cloudGodRaysEnabled", false);
     settings.atmosphere.cloudDeterministic = readBool(value, "cloudDeterministic", false);
     settings.atmosphere.cloudOfflineNoise = readBool(value,"cloudOfflineNoise",false);
+    settings.atmosphere.cloudHeightLighting = readBool(value, "cloudHeightLighting", false);
+    settings.atmosphere.cloudShapeBlend = std::clamp(readFloat(value, "cloudShapeBlend", 0.0f), 0.0f, 1.0f);
     if(settings.atmosphere.cloudOfflineNoise && std::lround(settings.atmosphere.cloudNoisePeriod)!=4)
         throw std::runtime_error("Offline cloud noise requires period 4");
     if(settings.atmosphere.cloudOfflineNoise) {

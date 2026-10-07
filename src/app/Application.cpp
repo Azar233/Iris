@@ -725,6 +725,12 @@ int Application::run(const std::filesystem::path& initialModel) {
         if(rendererSettings_.atmosphere.cloudOfflineNoise)
             rendererSettings_.atmosphere.cloudNoisePeriod=4.0f;
     }
+    if (const char* value = std::getenv("MYRENDERER_CLOUD_HEIGHT_LIGHTING")) {
+        rendererSettings_.atmosphere.cloudHeightLighting = std::atoi(value) != 0;
+    }
+    if (const char* value = std::getenv("MYRENDERER_CLOUD_SHAPE_BLEND")) {
+        rendererSettings_.atmosphere.cloudShapeBlend = std::clamp(std::strtof(value, nullptr), 0.0f, 1.0f);
+    }
     if (const char* value = std::getenv("MYRENDERER_DETERMINISM")) {
         rendererSettings_.atmosphere.cloudDeterministic = std::atoi(value) != 0;
     }
@@ -799,6 +805,13 @@ int Application::run(const std::filesystem::path& initialModel) {
         if (std::isfinite(foam) && foam >= 0.0f) {
             rendererSettings_.water.foamStrength = std::clamp(foam, 0.0f, 1.0f);
         }
+    }
+    if (const char* value = std::getenv("MYRENDERER_WATER_SURFACE_OPTICS")) {
+        rendererSettings_.water.surfaceOptics = std::atoi(value) != 0;
+    }
+    if (const char* value = std::getenv("MYRENDERER_WATER_CLOUD_REFLECTION")) {
+        const float strength = std::strtof(value, nullptr);
+        if (std::isfinite(strength)) rendererSettings_.water.cloudReflectionStrength = std::clamp(strength, 0.0f, 1.0f);
     }
     if (const char* value = std::getenv("MYRENDERER_TAA_DEBUG")) {
         rendererSettings_.temporalDebugView = std::clamp(std::atoi(value), 0, 2);
@@ -968,7 +981,7 @@ int Application::run(const std::filesystem::path& initialModel) {
     bool recoveryScheduled = recoveryModel.empty();
 
     const bool cpuPreviewSmoke = std::getenv("MYRENDERER_SMOKE_TEST") != nullptr
-        && viewportRenderMode_ == 1;
+        && editorSession_.backend() == EditorRenderBackend::CpuPathTraced;
     const bool thumbnailAcceptance = std::getenv("MYRENDERER_ASSET_THUMBNAIL_ACCEPTANCE") != nullptr;
     if (thumbnailAcceptance) {
         focusAssetsTab_ = true;
@@ -1126,11 +1139,13 @@ int Application::run(const std::filesystem::path& initialModel) {
             [](const auto& entry) { return entry.second.texture != 0U; });
         if (!pendingEditorScreenshotPath_.empty() && !pendingModelImport_.has_value()
             && !cpuPreviewSingleFrameRefresh_
+            && (!cpuPreviewSmoke || cpuPreviewUploadedSamples_ > 0U)
             && (!thumbnailAcceptance || thumbnailReady)
             && pendingEditorScreenshotWarmupFrames_ > 0) {
             --pendingEditorScreenshotWarmupFrames_;
         } else if (!pendingEditorScreenshotPath_.empty() && !pendingModelImport_.has_value()
                    && !cpuPreviewSingleFrameRefresh_
+                   && (!cpuPreviewSmoke || cpuPreviewUploadedSamples_ > 0U)
                    && (!thumbnailAcceptance || thumbnailReady)) {
             std::string screenshotError;
             if (renderer_->saveEditorScreenshot(
@@ -1151,7 +1166,7 @@ int Application::run(const std::filesystem::path& initialModel) {
         cpuFrameTimeMilliseconds_ = cpuFrameTimeMilliseconds_ > 0.0
             ? cpuFrameTimeMilliseconds_ * 0.9 + measuredCpuTime * 0.1
             : measuredCpuTime;
-        if (benchmarkMode_ && (model_ != nullptr || rendererSettings_.water.enabled)
+        if (benchmarkMode_ && (model_ != nullptr || rendererSettings_.water.enabled || loadedSceneDocument_)
             && !pendingModelImport_.has_value()) {
             ++benchmarkRenderedFrames_;
             if (benchmarkRenderedFrames_ > benchmarkWarmupFrames_) {
@@ -1181,6 +1196,9 @@ int Application::run(const std::filesystem::path& initialModel) {
                     benchmarkPassGpuTimes_[timing.name].push_back(
                         timing.latestMilliseconds
                     );
+                }
+                for (const auto& [name, milliseconds] : renderer_->cpuPassTimings()) {
+                    benchmarkPassCpuTimes_[name].push_back(milliseconds);
                 }
             }
             if (benchmarkRenderedFrames_
@@ -2096,13 +2114,19 @@ void Application::drawInspectorPanel() {
                 ImGui::EndDisabled();
             }
             if (EditorUi::section("Lighting & environment", true)) {
-            if (EditorUi::Checkbox(EditorUi::label("Enscape Cube GLSL study"), &rendererSettings_.enscapeCubeShaderEnabled)) {
+            if (EditorUi::Checkbox((EditorUi::chinese ? "GLSL 云海" : "GLSL ocean and clouds"), &rendererSettings_.enscapeCubeShaderEnabled)) {
                 renderer_->invalidateTemporalHistory();
             }
             if (rendererSettings_.enscapeCubeShaderEnabled) {
+                // Tab activation and dock layout settle over the first few frames.
+                if (pendingGlslControlsScrollFrames_ > 0) {
+                    ImGui::SetScrollHereY(0.0f);
+                    --pendingGlslControlsScrollFrames_;
+                }
                 auto& ocean = rendererSettings_.enscapeCube;
                 ImGui::SeparatorText(EditorUi::chinese ? "GLSL 海面参数" : "GLSL ocean controls");
-                bool changed = false;
+                bool changed = EditorUi::Checkbox(EditorUi::chinese ? "显示研究方块" : "Show study cube", &ocean.cubeEnabled);
+                changed |= EditorUi::Checkbox(EditorUi::chinese ? "稳定反射 / 减少噪点" : "Stable reflections / reduce noise", &ocean.noiseReduction);
                 changed |= EditorUi::SliderFloat(EditorUi::label("GLSL wave height"), &ocean.waveHeight, 0.05f, 1.5f, "%.2f");
                 changed |= EditorUi::SliderFloat(EditorUi::label("GLSL wave frequency"), &ocean.waveFrequency, 0.04f, 0.5f, "%.3f");
                 changed |= EditorUi::SliderFloat(EditorUi::label("GLSL choppiness"), &ocean.waveChoppiness, 1.0f, 8.0f, "%.2f");
@@ -2196,6 +2220,7 @@ void Application::drawInspectorPanel() {
                 );
             }
             }
+            ImGui::BeginDisabled(rendererSettings_.enscapeCubeShaderEnabled);
             if (EditorUi::section("Water surface")) {
                 auto waterSettings = EditorDomain::captureWaterSettings(rendererSettings_);
                 bool changed = EditorUi::Checkbox(EditorUi::label("Enable water"), &waterSettings.enabled);
@@ -2245,13 +2270,19 @@ void Application::drawInspectorPanel() {
                 parametersChanged |= EditorUi::SliderFloat(EditorUi::label("Near mesh focus"),
                     &waterSettings.nearMeshFocus, 0.0f, 1.0f, "%.2f");
                 EditorUi::tooltip("Near mesh focus");
+                parametersChanged |= EditorUi::Checkbox(EditorUi::label("Filtered surface optics"),
+                    &waterSettings.surfaceOptics);
+                parametersChanged |= EditorUi::SliderFloat(EditorUi::label("Cloud reflection"),
+                    &waterSettings.cloudReflectionStrength, 0.0f, 1.0f, "%.2f");
                 parametersChanged |= EditorUi::SliderFloat(EditorUi::label("Wind east"),
                     &waterSettings.windX, -1.0f, 1.0f, "%.2f");
                 parametersChanged |= EditorUi::SliderFloat(EditorUi::label("Wind north"),
                     &waterSettings.windZ, -1.0f, 1.0f, "%.2f");
                 if (parametersChanged) waterSettings.preset = 0;
                 changed |= parametersChanged;
-                ImGui::TextDisabled("Wave Synthesis | 4 waves | %d x %d grid",
+                const int waveCount = waterSettings.quality == 0 && !waterSettings.surfaceOptics ? 2
+                    : waterSettings.waveDiversity > 0.0f ? 8 : 4;
+                ImGui::TextDisabled("Wave Synthesis | %d waves | %d x %d grid", waveCount,
                     waterSettings.quality == 0 ? water::lowGridResolution : water::gridResolution,
                     waterSettings.quality == 0 ? water::lowGridResolution : water::gridResolution);
                 if (changed) {
@@ -2332,6 +2363,10 @@ void Application::drawInspectorPanel() {
                         &cloudSettings.cloudDetailStrength, 0.0f, 1.0f, "%.2f");
                     changed |= EditorUi::SliderFloat(EditorUi::label("Detail at edge"),
                         &cloudSettings.cloudDetailEdge, 0.0f, 1.0f, "%.2f");
+                    changed |= EditorUi::Checkbox(EditorUi::label("Height lighting"),
+                        &cloudSettings.cloudHeightLighting);
+                    changed |= EditorUi::SliderFloat(EditorUi::label("Perlin shape blend"),
+                        &cloudSettings.cloudShapeBlend, 0.0f, 1.0f, "%.2f");
                     ImGui::TreePop();
                 }
                 changed |= EditorUi::SliderFloat(EditorUi::label("Wind east"),
@@ -2361,6 +2396,7 @@ void Application::drawInspectorPanel() {
                     editorSession_.request(std::move(command));
                 }
             }
+            ImGui::EndDisabled();
             if (EditorUi::section("Glass feature toggles")) {
             EditorUi::Checkbox("Glass transmission", &rendererSettings_.transmissionEnabled);
             EditorUi::Checkbox("Dispersion", &rendererSettings_.dispersionEnabled);
@@ -3067,6 +3103,15 @@ void Application::exportCpuPreview() {
 }
 
 void Application::applyModuleEnvironmentOverrides() {
+    // Scene loading may enqueue Preview, which clears the early fixed-time value.
+    // Apply explicit capture inputs after those commands; Timeline frame below wins.
+    if (const char* time = std::getenv("MYRENDERER_ANIMATION_TIME")) {
+        const float parsed = std::strtof(time, nullptr);
+        if (!std::isfinite(parsed)) throw std::runtime_error("Capture animation time must be finite");
+        animationTimeSeconds_ = std::max(parsed, 0.0f);
+        animationTimeFixed_ = true;
+        animationPlaying_ = false;
+    }
     if (const char* module = std::getenv("MYRENDERER_MODULE")) {
         activeModuleId_ = module;
         ++moduleInputRevision_;
@@ -3381,6 +3426,26 @@ void Application::drawViewportPanel() {
             animatedCamera, previewSettings);
         previewCamera.setOrbitState(animatedCamera);
     }
+    if (!presentationSnapshotCaptured_) {
+        if (const char* destination = std::getenv("MYRENDERER_PRESENTATION_SNAPSHOT")) {
+            // This diagnostic freezes presentation, not authoring. Restrict it
+            // to the entity-free natural scene until runtime entities are exported.
+            if (!viewportScene().entities().empty())
+                throw std::runtime_error("Presentation snapshot requires an entity-free scene");
+            auto document = captureSceneDocument();
+            document.camera = previewCamera.orbitState();
+            document.renderer = previewSettings;
+            document.moduleId.clear();
+            document.moduleParameters.clear();
+            document.playback.animationPlaying = false;
+            document.playback.animationTimeSeconds = previewSettings.water.timeSeconds;
+            std::string error;
+            if (!saveSceneDocument(std::filesystem::u8path(destination), document, error))
+                throw std::runtime_error("Presentation snapshot failed: " + error);
+            presentationSnapshotCaptured_ = true;
+            std::cout << "Saved actual presentation snapshot: " << destination << '\n';
+        }
+    }
     if (lightStressDemoEnabled_ || instanceStressDemoEnabled_) {
         for (const RenderItem& item : viewportScene().buildRenderItems()) {
             if (std::find(stressEntities_.begin(), stressEntities_.end(), item.entityId) == stressEntities_.end()
@@ -3451,12 +3516,12 @@ void Application::drawViewportPanel() {
     }
 
     if (!cpuPreviewVisible && !pendingScreenshotPath_.empty()
-        && (!scene_.entities().empty() || rendererSettings_.water.enabled)
+        && (!scene_.entities().empty() || rendererSettings_.water.enabled || loadedSceneDocument_)
         && !pendingModelImport_.has_value()
         && pendingScreenshotWarmupFrames_ > 0) {
         --pendingScreenshotWarmupFrames_;
     } else if (!cpuPreviewVisible && !pendingScreenshotPath_.empty()
-        && (!scene_.entities().empty() || rendererSettings_.water.enabled)
+        && (!scene_.entities().empty() || rendererSettings_.water.enabled || loadedSceneDocument_)
         && !pendingModelImport_.has_value()) {
         std::string screenshotError;
         if (renderer_->saveScreenshot(pendingScreenshotPath_, screenshotError)) {
@@ -3554,12 +3619,19 @@ void Application::drawViewportPanel() {
     } else {
         const ImVec2 imageMin = ImGui::GetItemRectMin();
         char overlay[256]{};
+        if (rendererSettings_.enscapeCubeShaderEnabled) {
+            std::snprintf(overlay, sizeof(overlay),
+                "GLSL ocean | %s | %dx%d\nTime %.2f s | %s",
+                activityName(editorSession_.activity()), width, height,
+                animationTimeSeconds_, animationPlaying_ ? "Playing" : "Paused");
+        } else {
         std::snprintf(
             overlay, sizeof(overlay),
             "Raster | %s | %dx%d\nFrame %d @ %d FPS | Denoiser Off | Live",
             activityName(editorSession_.activity()), width, height,
             editorSession_.frame(), editorSession_.framesPerSecond()
         );
+        }
         ImDrawList* drawList = ImGui::GetWindowDrawList();
         const ImVec2 padding(7.0f, 5.0f);
         const ImVec2 textSize = ImGui::CalcTextSize(overlay);
@@ -4802,6 +4874,25 @@ void Application::writePrismBenchmarkReport() {
            << "{\n"
            << "  \"schemaVersion\": 1,\n"
            << "  \"gpu\": " << std::quoted(gpuDescription_) << ",\n"
+           << "  \"animationTimeSeconds\": " << animationTimeSeconds_ << ",\n"
+           << "  \"animationTimeFixed\": " << (animationTimeFixed_ ? "true" : "false") << ",\n"
+           << "  \"moduleId\": " << std::quoted(moduleRuntime_.report().moduleId) << ",\n"
+           << "  \"moduleSeed\": " << moduleRuntime_.report().seed << ",\n"
+           << "  \"moduleBuildId\": " << std::quoted(moduleRuntime_.report().buildId) << ",\n"
+           << "  \"moduleLastFrame\": " << moduleRuntime_.report().lastFrame << ",\n"
+           << "  \"moduleFps\": " << moduleRuntime_.report().framesPerSecond << ",\n"
+           << "  \"cloudHeightLighting\": " << (rendererSettings_.atmosphere.cloudHeightLighting ? "true" : "false") << ",\n"
+           << "  \"cloudShapeBlend\": " << rendererSettings_.atmosphere.cloudShapeBlend << ",\n"
+           << "  \"waterSurfaceOptics\": " << (renderer_->renderedWaterSettings().surfaceOptics ? "true" : "false") << ",\n"
+           << "  \"waterEnabled\": " << (renderer_->renderedWaterSettings().enabled ? "true" : "false") << ",\n"
+           << "  \"waterCloudReflectionStrength\": " << renderer_->renderedWaterSettings().cloudReflectionStrength << ",\n"
+           << "  \"waterAmplitude\": " << renderer_->renderedWaterSettings().amplitude << ",\n"
+           << "  \"waterRoughness\": " << renderer_->renderedWaterSettings().roughness << ",\n"
+           << "  \"waterRippleStrength\": " << renderer_->renderedWaterSettings().rippleStrength << ",\n"
+           << "  \"cameraHeight\": " << camera_.position().y << ",\n"
+           << "  \"cameraWaterSurfaceHeight\": " << renderer_->cameraWaterSurfaceHeight() << ",\n"
+           << "  \"cameraUnderWater\": " << (renderer_->cameraUnderWater() ? "true" : "false") << ",\n"
+           << "  \"waterMediumTransitions\": " << renderer_->waterMediumTransitions() << ",\n"
            << "  \"width\": " << renderer_->renderWidth() << ",\n"
            << "  \"height\": " << renderer_->renderHeight() << ",\n"
            << "  \"msaaSamples\": " << renderer_->activeMsaaSamples() << ",\n"
@@ -4874,6 +4965,15 @@ void Application::writePrismBenchmarkReport() {
                << "\"measurements\": " << samples.size() << "}"
                << (++passIndex < benchmarkPassGpuTimes_.size() ? "," : "")
                << "\n";
+    }
+    report << "  },\n  \"cpuPasses\": {\n";
+    std::size_t cpuPassIndex = 0U;
+    for (const auto& [name, samples] : benchmarkPassCpuTimes_) {
+        report << "    " << std::quoted(name) << ": {"
+               << "\"p50Ms\": " << percentile(samples, 0.50) << ", "
+               << "\"p95Ms\": " << percentile(samples, 0.95) << ", "
+               << "\"measurements\": " << samples.size() << "}"
+               << (++cpuPassIndex < benchmarkPassCpuTimes_.size() ? "," : "") << "\n";
     }
     report << "  },\n"
            << "  \"renderMemoryBytes\": " << renderer_->estimatedRenderMemoryBytes() << ",\n"

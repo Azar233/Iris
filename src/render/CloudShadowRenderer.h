@@ -2,6 +2,8 @@
 #include <filesystem>
 #include <memory>
 #include <cstddef>
+#include <array>
+#include <string>
 #include <glm/vec2.hpp>
 #include <glm/vec3.hpp>
 #include "optics/Atmosphere.h"
@@ -23,6 +25,7 @@ public:
     int resolution() const { return resolution_; }
     int steps() const { return steps_; }
     bool active() const { return active_; }
+    bool updatedThisFrame() const { return updatedThisFrame_; }
     glm::vec3 texelRayOrigin(int x, int y) const;
     std::size_t estimatedBytes() const { return static_cast<std::size_t>(resolution_) * resolution_ * 2U + noiseTexture_.estimatedBytes(); }
 private:
@@ -35,4 +38,8 @@ private:
     glm::vec3 axisX_{1,0,0}, axisY_{0,0,1};
     bool active_{false};
     float cloudBase_{0};
+    bool updatedThisFrame_{false}, cacheValid_{false};
+    std::array<float, 26> cachedInputs_{};
+    int cachedProgram_{0};
+    std::string cachedNoiseFingerprint_;
 };

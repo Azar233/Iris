@@ -24,7 +24,7 @@ function(capture name preset enabled tier)
             MYRENDERER_TAA=0
             MYRENDERER_BLOOM=0
             MYRENDERER_HIDE_SELECTION_OUTLINE=1
-            "${RENDERER}" "${SOURCE_DIR}/assets/scenes/01_volumetric_cloud_lab.myscene"
+            "${RENDERER}" "${SOURCE_DIR}/assets/scenes/fixtures/27_cloud_lab_regression.myscene"
         WORKING_DIRECTORY "${SOURCE_DIR}"
         RESULT_VARIABLE result
         TIMEOUT 90

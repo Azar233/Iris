@@ -56,6 +56,7 @@ struct MyRendererCloudParams {
     // smooth; see `myrenderer_cloud_density`.
     float detailStrength;
     float detailEdge;
+    float shapeBlend;
 };
 
 // Deterministic hash. Integer hashing alone means no table, no random state, and no dependence on
@@ -265,6 +266,46 @@ MYRENDERER_CLOUD_INLINE float myrenderer_cloud_worley3(
 // Feature scale now describes the large cloud body, rather than four small cells per feature.
 // Only the lower octave owns the silhouette; the second adds broad variation without stamping fine
 // cellular texture into the edge. Horizontal repeats still occur at featureScale * noisePeriod.
+MYRENDERER_CLOUD_INLINE float myrenderer_cloud_gradient3(
+    int x, int y, int z, int period, float dx, float dy, float dz) {
+    uint hash = myrenderer_cloud_hash(uint(myrenderer_cloud_wrap(x, period)) * 0x9e3779b9U
+        ^ uint(myrenderer_cloud_wrap(y, period)) * 0x85ebca6bU
+        ^ uint(myrenderer_cloud_wrap(z, period)) * 0xc2b2ae35U);
+    int h = int(hash & 15U);
+    float u = h < 8 ? dx : dy;
+    float v = h < 4 ? dy : ((h == 12 || h == 14) ? dx : dz);
+    return ((h & 1) == 0 ? u : -u) + ((h & 2) == 0 ? v : -v);
+}
+MYRENDERER_CLOUD_INLINE float myrenderer_cloud_lerp(float a, float b, float t) {
+    return a + (b - a) * t;
+}
+MYRENDERER_CLOUD_INLINE float myrenderer_cloud_fade(float t) {
+    return t * t * t * (t * (t * 6.0 - 15.0) + 10.0);
+}
+// The gradient noise already used by the noise-v1 generator; unrolled corners
+// let the reference and GLSL evaluate the same field without dialect arrays.
+MYRENDERER_CLOUD_INLINE float myrenderer_cloud_perlin3(float x, float y, float z, int period) {
+    int ix = int(floor(x)), iy = int(floor(y)), iz = int(floor(z));
+    float fx = x - float(ix), fy = y - float(iy), fz = z - float(iz);
+    float sx = myrenderer_cloud_fade(fx), sy = myrenderer_cloud_fade(fy), sz = myrenderer_cloud_fade(fz);
+    return myrenderer_cloud_lerp(
+        myrenderer_cloud_lerp(
+            myrenderer_cloud_lerp(myrenderer_cloud_gradient3(ix,iy,iz,period,fx,fy,fz),
+                myrenderer_cloud_gradient3(ix+1,iy,iz,period,fx-1.0,fy,fz),sx),
+            myrenderer_cloud_lerp(myrenderer_cloud_gradient3(ix,iy+1,iz,period,fx,fy-1.0,fz),
+                myrenderer_cloud_gradient3(ix+1,iy+1,iz,period,fx-1.0,fy-1.0,fz),sx),sy),
+        myrenderer_cloud_lerp(
+            myrenderer_cloud_lerp(myrenderer_cloud_gradient3(ix,iy,iz+1,period,fx,fy,fz-1.0),
+                myrenderer_cloud_gradient3(ix+1,iy,iz+1,period,fx-1.0,fy,fz-1.0),sx),
+            myrenderer_cloud_lerp(myrenderer_cloud_gradient3(ix,iy+1,iz+1,period,fx,fy-1.0,fz-1.0),
+                myrenderer_cloud_gradient3(ix+1,iy+1,iz+1,period,fx-1.0,fy-1.0,fz-1.0),sx),sy),sz);
+}
+MYRENDERER_CLOUD_INLINE float myrenderer_cloud_perlin_shape(float x, float y, float z, int period) {
+    return clamp(0.5 + (myrenderer_cloud_perlin3(x,y,z,period) * 0.5714286
+        + myrenderer_cloud_perlin3(x*2.0,y*2.0,z*2.0,period*2) * 0.2857143
+        + myrenderer_cloud_perlin3(x*4.0,y*4.0,z*4.0,period*4) * 0.1428571) * 0.5, 0.0, 1.0);
+}
+
 MYRENDERER_CLOUD_INLINE float myrenderer_cloud_volume_base_shape(
     float tileX, float tileY, float taper, int noisePeriod)
 {
@@ -417,6 +458,22 @@ MYRENDERER_CLOUD_INLINE float myrenderer_cloud_multi_phase(
 // The powder effect: the darkening of a cloud's thin edges where light passes through without being
 // multiply scattered. `density` is the local density and `distance` the step it was sampled over.
 // Without it a cloud's silhouette glows, which is the opposite of what a real one does.
+// Height lighting estimates the ambient path through the slab without adding a
+// second density march. It is bounded and deliberately separate from extinction.
+MYRENDERER_CLOUD_INLINE float myrenderer_cloud_ambient_weight(
+    float height, float baseHeight, float topHeight, bool heightLighting) {
+    if (!heightLighting) return 1.0;
+    float h = clamp((height - baseHeight) / max(topHeight - baseHeight, 1.0e-3), 0.0, 1.0);
+    return 0.12 + 0.88 * h * h;
+}
+
+// Squared interval endpoints concentrate the unchanged solar sample budget
+// near the scattering point. Every interval retains its actual world length.
+MYRENDERER_CLOUD_INLINE float myrenderer_cloud_light_fraction(
+    float fraction, bool heightLighting) {
+    return heightLighting ? fraction * fraction : fraction;
+}
+
 MYRENDERER_CLOUD_INLINE float myrenderer_cloud_powder(float density, float distance) {
     float opticalDepth = max(density, 0.0) * max(distance, 0.0);
     return 1.0 - exp(-2.0 * opticalDepth);
@@ -452,7 +509,8 @@ MYRENDERER_CLOUD_INLINE float myrenderer_cloud_layer_profile(
     float weatherSpan = max(layer.weatherScale, 1.0e-3);
     float weatherX = (worldX + layer.windX) / weatherSpan;
     float weatherY = (worldZ + layer.windZ) / weatherSpan;
-    float weatherType = myrenderer_cloud_weather(weatherX, weatherY, 1);
+    float weatherType = layer.typeVariation != 0.0
+        ? myrenderer_cloud_weather(weatherX, weatherY, 1) : 0.5;
     float cloudType = clamp(
         layer.cloudType + (weatherType - 0.5) * layer.typeVariation, 0.0, 1.0);
 
@@ -460,7 +518,8 @@ MYRENDERER_CLOUD_INLINE float myrenderer_cloud_layer_profile(
     // where the parameters put it -- the march's span, the sun march and the analytic layer all
     // intersect it once from the same numbers, and a per-sample slab would make every one of them
     // approximate. Sliding the profile is what a bumpy cloud base actually looks like anyway.
-    float weatherHeight = myrenderer_cloud_weather(weatherX, weatherY, 2);
+    float weatherHeight = layer.heightVariation != 0.0
+        ? myrenderer_cloud_weather(weatherX, weatherY, 2) : 0.5;
     float slid = taper - (weatherHeight - 0.5) * layer.heightVariation;
     return myrenderer_cloud_profile(slid, cloudType);
 }
@@ -499,6 +558,15 @@ MYRENDERER_CLOUD_INLINE float myrenderer_cloud_density(
             + myrenderer_cloud_offline_sample(tileX,tileY,vertical,1) * 0.15;
     } else {
         baseShape = myrenderer_cloud_volume_base_shape(tileX,tileY,taper,layer.noisePeriod);
+    }
+    // Perlin modulation breaks uniform cellular domes; alpha in the canonical
+    // offline volume already stores the same gradient FBM. Old inputs use zero.
+    if (layer.shapeBlend > 0.0) {
+        float vertical = clamp(taper, 0.0, 1.0) * 2.0;
+        float perlin = layer.offlineNoise
+            ? myrenderer_cloud_offline_sample(tileX,tileY,vertical,3)
+            : myrenderer_cloud_perlin_shape(tileX,tileY,vertical,layer.noisePeriod);
+        baseShape = clamp(baseShape + (perlin - 0.5) * 0.8 * clamp(layer.shapeBlend,0.0,1.0),0.0,1.0);
     }
     baseShape *= profile;
     // Coverage is a threshold on the base shape, remapped so the parameter reads as the fraction

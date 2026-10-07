@@ -5,6 +5,7 @@
 #include <filesystem>
 #include <memory>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include <glm/mat4x4.hpp>
@@ -125,6 +126,8 @@ struct GpuPassTiming {
 };
 
 struct EnscapeCubeSettings {
+    bool cubeEnabled{true};
+    bool noiseReduction{false};
     float waveHeight{0.6f};
     float waveFrequency{0.16f};
     float waveChoppiness{4.0f};
@@ -316,6 +319,7 @@ public:
     const std::vector<std::string>& activePassNames() const { return activePassNames_; }
     const std::vector<RenderPassContext>& activePassContexts() const { return activePassContexts_; }
     const std::vector<GpuPassTiming>& gpuPassTimings() const { return gpuPassTimings_; }
+    const std::vector<std::pair<std::string, double>>& cpuPassTimings() const { return cpuPassTimings_; }
     int shadowResolution() const;
     int renderWidth() const;
     int renderHeight() const;
@@ -335,12 +339,23 @@ public:
         cloudMarchExtinction_ = extinction > 0.0f ? extinction : 0.0f;
     }
 
+    // Diagnostics refer to the last rendered frame and cumulative interface resets.
+    float cameraWaterSurfaceHeight() const { return cameraWaterSurfaceHeight_; }
+    bool cameraUnderWater() const { return cameraUnderWater_; }
+    std::size_t waterMediumTransitions() const { return waterMediumTransitions_; }
+    const WaterSettings& renderedWaterSettings() const { return renderedWaterSettings_; }
+
 private:
     // Only cloudless sky inputs invalidate the environment; camera/cloud changes
     // are handled by the per-frame passes and their own temporal histories.
     void updateAtmosphereEnvironment(const RendererSettings& settings);
     bool atmosphereKeyMatches(const atmosphere::AtmosphereParameters& parameters) const;
     atmosphere::AtmosphereParameters builtAtmosphere_;
+    bool builtWaterSunSeparated_{false};
+    float cameraWaterSurfaceHeight_{0.0f};
+    bool cameraUnderWater_{false};
+    std::size_t waterMediumTransitions_{0U};
+    WaterSettings renderedWaterSettings_{};
     bool atmosphereActive_{false};
     int builtEnvironmentPreset_{0};
     std::unique_ptr<Shader> shader_;
@@ -383,6 +398,8 @@ private:
     std::unique_ptr<Shader> waterGBufferShader_;
     float previousWaterTime_{0.0f};
     bool previousWaterValid_{false};
+    bool previousWaterMediumValid_{false};
+    bool previousCameraUnderwater_{false};
     bool enscapeCubeActive_{false};
     unsigned int fullscreenVertexArray_{0};
     std::array<unsigned int, 4> timingQueries_{};
@@ -425,6 +442,7 @@ private:
     std::vector<std::string> activePassNames_;
     std::vector<RenderPassContext> activePassContexts_;
     std::vector<GpuPassTiming> gpuPassTimings_;
+    std::vector<std::pair<std::string, double>> cpuPassTimings_;
     RenderPath activeRenderPath_{RenderPath::Forward};
     glm::mat4 previousViewProjection_{1.0f};
     std::size_t temporalFrameIndex_{0U};

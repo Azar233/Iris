@@ -10,7 +10,7 @@
 #include <stdexcept>
 #include <glm/gtc/matrix_transform.hpp>
 #define STB_IMAGE_IMPLEMENTATION
-#include <stb_image.h>
+#include "asset/StbImageCompat.h"
 using namespace pathtracer;
 namespace {
 void require(bool ok, const char *message) {
@@ -833,6 +833,25 @@ void twoLevelInstancing() {
     require(twoLevel.statistics.bvhTraversal.instanceTests > 0U,
             "TLAS traversal did not test any instances");
 }
+// Authored bytes exercise flat RGBE decoding without depending on our writer.
+void flatHdrDecoding() {
+    const std::string header = "#?RADIANCE\nFORMAT=32-bit_rle_rgbe\n\n-Y 2 +X 2\n";
+    std::vector<unsigned char> bytes(header.begin(), header.end());
+    const unsigned char pixels[] = {128,0,0,131, 0,128,0,129, 0,0,128,127, 0,0,0,0};
+    bytes.insert(bytes.end(), std::begin(pixels), std::end(pixels));
+    int width = 0, height = 0, components = 0;
+    float* decoded = stbi_loadf_from_memory(bytes.data(), static_cast<int>(bytes.size()),
+                                          &width, &height, &components, 3);
+    require(decoded && width == 2 && height == 2, "Authored flat HDR decode failed");
+    const glm::vec3 expected[] = {{4,0,0}, {0,1,0}, {0,0,.25f}, {0,0,0}};
+    bool correct = true;
+    for (int pixel = 0; pixel < 4; ++pixel) {
+        for (int channel = 0; channel < 3; ++channel)
+            correct = correct && decoded[pixel*3+channel] == expected[pixel][channel];
+    }
+    stbi_image_free(decoded);
+    require(correct, "Flat HDR second row/exponent decode mismatch");
+}
 void output() {
     RenderImage image;
     image.width = 2;
@@ -1025,6 +1044,7 @@ int main(int argc, char **argv) {
         adaptiveSampling();
         tileSchedulingAndProfiles();
         twoLevelInstancing();
+        flatHdrDecoding();
         output();
         referenceComparisonOutput();
         convergence();
