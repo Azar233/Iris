@@ -184,6 +184,11 @@ int Application::runRasterSequence(const RenderJob& job) {
         std::cerr << "Raster Scene requires unavailable render plugin: " << iris::enscapePluginId << '\n';
         return 66;
     }
+    if (!authoredScene.renderer.enscapeCubeShaderEnabled
+        && !iris::builtinRenderPlugins().contains(iris::postProcessPluginId)) {
+        std::cerr << "Raster Scene requires unavailable render plugin: " << iris::postProcessPluginId << '\n';
+        return 66;
+    }
     if (job.module.id.empty() && !authoredScene.moduleId.empty()) {
         std::cerr << "Scene has a module; Raster requires explicit Render Job module configuration (id, seed, parameters)\n";
         return 65;

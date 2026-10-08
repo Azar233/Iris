@@ -31,7 +31,6 @@ namespace iris { class RenderPlugin; }
 class GBuffer;
 class GpuModel;
 class OpticalPathDebugRenderer;
-class PostProcessor;
 class RenderTarget;
 class Shader;
 class ShadowMap;
@@ -389,7 +388,7 @@ private:
     std::unique_ptr<Shader> glassThicknessShader_;
     std::unique_ptr<Shader> gBufferShader_;
     std::unique_ptr<Shader> deferredLightingShader_;
-    std::unique_ptr<PostProcessor> postProcessor_;
+    std::unique_ptr<iris::RenderPlugin> postProcessor_;
     std::unique_ptr<RenderTarget> renderTarget_;
     std::unique_ptr<TextureCache> textureCache_;
     std::unique_ptr<WaterSurface> waterSurface_;

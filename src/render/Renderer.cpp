@@ -25,7 +25,7 @@
 #include "render/GBuffer.h"
 #include "render/GpuModel.h"
 #include "render/OpticalPathDebugRenderer.h"
-#include "render/PostProcessor.h"
+#include "render/PostProcessSettings.h"
 #include "render/RenderPassSequence.h"
 #include "render/RenderTarget.h"
 #include "render/SceneDrawList.h"
@@ -125,13 +125,6 @@ Renderer::Renderer(
     deferredLightingShader_(std::make_unique<Shader>(
         vertexShaderPath.parent_path() / "fullscreen.vert",
         vertexShaderPath.parent_path() / "deferred_lighting.frag"
-    )),
-    postProcessor_(std::make_unique<PostProcessor>(
-        vertexShaderPath.parent_path() / "fullscreen.vert",
-        vertexShaderPath.parent_path() / "bloom_extract.frag",
-        vertexShaderPath.parent_path() / "bloom_blur.frag",
-        vertexShaderPath.parent_path() / "postprocess.frag",
-        vertexShaderPath.parent_path() / "temporal_aa.frag"
     )),
     renderTarget_(std::make_unique<RenderTarget>()),
     textureCache_(std::make_unique<TextureCache>()),
@@ -1705,9 +1698,11 @@ deferredLightingShader_->setVec3("uCameraPosition", camera.position());
         postSettings.godRaysEnabled = godRaysActive;
         postSettings.godRaysTexture = godRaysActive ? godRays_->texture() : 0U;
         postSettings.godRaysColor = lightColor * diffuseStrength;
-        postProcessor_->process(*renderTarget_, postSettings);
-        drawCallCount_ += (!gBufferDebugActive && settings.bloom ? 10U : 1U)
-            + (temporalAaActive ? 1U : 0U);
+        if (!postProcessor_) postProcessor_ = iris::builtinRenderPlugins().create(
+            iris::postProcessPluginId, {iris::openGlFullscreenService}, shaderDirectory_);
+        postProcessor_->renderFrame({*renderTarget_, camera, settings, width, height,
+            settings.water.timeSeconds, fullscreenVertexArray_, &postSettings});
+        drawCallCount_ += postProcessor_->frameInfo().drawCalls;
     });
     if (settings.showAxes && !gBufferDebugActive) {
         // Editor guides belong to the display overlay: geometry, transparency and
@@ -1807,6 +1802,7 @@ unsigned int Renderer::colorTexture() const {
 }
 
 void Renderer::invalidateTemporalHistory() {
+    if (postProcessor_) postProcessor_->invalidateHistory();
     previousViewProjectionValid_ = false;
     temporalFrameIndex_ = 0U;
     cloudHistoryInvalidated_ = true;
@@ -1849,7 +1845,7 @@ int Renderer::renderHeight() const {
 std::size_t Renderer::estimatedRenderMemoryBytes() const {
     return renderTarget_->estimatedBytes()
         + gBuffer_->estimatedBytes()
-        + postProcessor_->estimatedBytes()
+        + (postProcessor_ ? postProcessor_->estimatedBytes() : 0U)
         + selectionOutline_->estimatedBytes()
         + environmentMap_->estimatedBytes()
         + shadowMap_->estimatedBytes()

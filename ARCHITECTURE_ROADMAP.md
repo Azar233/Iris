@@ -28,6 +28,15 @@ A1 是可行性实验，不代表通用插件平台完成。首次迁移不修�
 
 PBR/NPR 是着色或管线能力，光追是执行技术，可以组合；后端、管线和效果不混成互斥枚举。Material/Light/Camera 数据合同保持共享，CPU/GPU 支持差异明确诊断。现有 SceneModule 只控制运行场景/模拟，不直接扩充为持有 GL 对象的渲染插件。
 
+## A2 分包与当前范围（2026-10-08）
+
+A1 的 GitHub CI 已成功，当前实现基准为 `38b1995`。A2 分成两个独立验收工作包，父项在全部完成前保持未完成：
+
+- **A2-A（2026-10-08 本地验收完成）**：插件 API v2、Input/Output/Transient/History 的有序逻辑 Pass 合同、借用纹理类型/尺寸/别名校验；共享后处理管线已迁到第二个可选 Target。双编译器 ON/OFF、最终 28/28、真实 GPU 资源消费/拒绝/历史/resize/重建、固定图 SHA 相同、十套渲染/Stylized/CPU PT 回归通过，默认构建恢复 ON。无 Shader 算法或基线修改。
+- **A2-B（随后）**：通用插件配置与参数持久化、编辑器扩展、事务式资源替换和能力查询、完整输入资源声明。复用已有 ParameterRegistry/EditorCommand，避免另建 Scene 或参数真相来源。
+
+A2-A 只验证有序逻辑计划，不是自动执行的通用 Render Graph；私有 Bloom ping-pong/TAA 等仍由插件执行，半分辨率云与光束的资源校验仍沿用原有生产者和旧设置桥。HDR/深度/运动/法线等帧大小绑定由新接口检查并消费。关闭后处理插件意味着原生 Raster 管线不支持，需明确拒绝；Enscape 全屏场景仍可运行，不悄悄跳过色调映射。
+
 ## A1 真实验证任务卡
 
 - **范围**：把现有 Enscape 实现移到独立插件 Target；宿主通过抽象渲染接口与注册工厂消费，不再直接构造具体类。原生云海/NPR/PBR 暂不迁移，不改图像基线。
@@ -41,9 +50,12 @@ PBR/NPR 是着色或管线能力，光追是执行技术，可以组合；后端
 ## 状态
 
 - A0：当前成果已提交并推送，检查点 `63039f2`；远端 main 仍为 `b135c6e4e6f94ae8cf77d68491024199b37ff622`。
-- A1：最小静态插件可行性验证通过。双编译器 ON/OFF 构建、最终 CTest 各 27/27、普通场景/缺插件 Job 无产物拒绝、真实 GPU 生命周期、GLSL 保存及两次 24 帧、十套渲染回归通过；默认构建已恢复 ON。实验分支交付，CI 状态按对应提交另行查询。A2～A4/P1/M3 尚未开始。
+- A1：最小静态插件可行性验证及 GitHub CI 通过，提交 38b1995。
+- A2-A：后处理第二插件与资源/Pass 合同本地验收通过，交付仍在实验分支；父项 A2 未完成，下一项 A2-B。A3/A4/P1/M3 尚未开始。
 - 本文件用于 GitHub 上的共享计划；本地详细 `todolist.md`/`docs` 继续受 Git ignore 管理，没有强制加入历史资料。
 
 迁移对照为 01 / 1280×720 / 1.25 s / 64 帧预热，检查点与插件 PNG SHA-256 均为 `CF455627E64FE7C2C04B963B01F02538B341F62546118894C8AE7036B5A1EBF2`。最终 240 帧测量 GPU P95 8.299520→6.778880 ms，满足预设上限 9.129472 ms；时钟/温度会影响单次值，不宣称插件化加速。无 Shader 算法或基线变化，无新 ZIP。
 
-复现入口：`tools/RenderPluginAcceptance.ps1`（需先捕获检查点 before.png / before.json）、`render-plugin-gpu-acceptance`、`tools/GlslOceanAcceptance.ps1`。注册表只验证静态服务需求，并非完整依赖图；工厂失败测试不等于 GUI 资源替换失败恢复。下一项 A2 优先用另一种不同能力验证资源/Pass/参数合同，A1 不作为全面插件化已经完成的证据。
+复现入口：A1 的 `tools/RenderPluginAcceptance.ps1`（需先捕获检查点 before.png / before.json）、`render-plugin-gpu-acceptance`、`tools/GlslOceanAcceptance.ps1`；A2-A 的 `postprocess-plugin-gpu-acceptance`、`tools/PostProcessPluginAcceptance.ps1`、CTest `render-plugin-contract`。注册表不是完整服务依赖图，逻辑 Pass 校验不是自动资源调度，工厂失败测试不等于 GUI 资源替换恢复。
+
+A2-A 同输入 1280×720 / 4× MSAA / 1.25 s / 64 帧预热 / 240 帧测量：CPU P50/P95 0.6323/1.1338→0.6991/1.1926 ms，GPU P50/P95 0.571392/0.785408→0.595968/1.097728 ms；Draw Call 28、报告 renderMemoryBytes 400069816 字节不变。后处理 CPU Pass 中位耗时约增加 0.0079 ms；整帧采样存在波动，不宣称零开销或加速。既有 NPR 场景迁移前后 PNG SHA 同为 `863A11FC841A9789316078A5DBED1613F606D0E970FC269881516EE89166A5A2`。当前目标继续是架构合同，未开发新场景效果。

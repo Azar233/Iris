@@ -15,6 +15,7 @@ void RenderPluginRegistry::add(RenderPluginDescriptor descriptor, Factory factor
         throw std::invalid_argument("Duplicate render plugin ID: " + descriptor.id);
     for (const auto& service : descriptor.requiredServices)
         if (service.empty()) throw std::invalid_argument("Empty render plugin service: " + descriptor.id);
+    validatePluginContract(descriptor.contract);
     entries_.push_back({std::move(descriptor), std::move(factory)});
 }
 
@@ -22,6 +23,11 @@ bool RenderPluginRegistry::contains(const std::string& id) const {
     return std::any_of(entries_.begin(), entries_.end(), [&](const Entry& entry) {
         return entry.descriptor.id == id;
     });
+}
+
+const RenderPluginDescriptor* RenderPluginRegistry::descriptor(const std::string& id) const {
+    for (const auto& entry : entries_) if (entry.descriptor.id == id) return &entry.descriptor;
+    return nullptr;
 }
 
 std::unique_ptr<RenderPlugin> RenderPluginRegistry::create(const std::string& id,

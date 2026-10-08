@@ -37,11 +37,11 @@ int main() {
             return std::make_unique<FakePlugin>(live);
         };
         registry.add({"test", iris::renderPluginApiVersion, {"gpu"}, "MIT"}, factory);
-        rejects([&] { registry.add({"test", 1, {}, "MIT"}, factory); }, "Duplicate");
+        rejects([&] { registry.add({"test", iris::renderPluginApiVersion, {}, "MIT"}, factory); }, "Duplicate");
         rejects([&] { registry.add({"wrong-api", 99, {}, "MIT"}, factory); }, "API");
-        rejects([&] { registry.add({"", 1, {}, "MIT"}, factory); }, "ID");
-        rejects([&] { registry.add({"empty-service", 1, {""}, "MIT"}, factory); }, "service");
-        rejects([&] { registry.add({"empty-factory", 1, {}, "MIT"}, {}); }, "factory");
+        rejects([&] { registry.add({"", iris::renderPluginApiVersion, {}, "MIT"}, factory); }, "ID");
+        rejects([&] { registry.add({"empty-service", iris::renderPluginApiVersion, {""}, "MIT"}, factory); }, "service");
+        rejects([&] { registry.add({"empty-factory", iris::renderPluginApiVersion, {}, "MIT"}, {}); }, "factory");
         require(registry.size() == 1, "Rejected registration changed registry");
         rejects([&] { registry.create("missing", {"gpu"}, "test-shaders"); }, "unavailable");
         rejects([&] { registry.create("test", {}, "test-shaders"); }, "requires service");
@@ -49,11 +49,11 @@ int main() {
         { auto plugin = registry.create("test", {"gpu"}, "test-shaders");
           require(live == 1 && factoryCalls == 1, "Valid factory not called exactly once"); }
         require(live == 0, "Plugin instance did not release resources");
-        registry.add({"fails", 1, {}, "MIT"}, [](const std::filesystem::path&) -> std::unique_ptr<iris::RenderPlugin> {
+        registry.add({"fails", iris::renderPluginApiVersion, {}, "MIT"}, [](const std::filesystem::path&) -> std::unique_ptr<iris::RenderPlugin> {
             throw std::runtime_error("compile failed");
         });
         rejects([&] { registry.create("fails", {}, "test-shaders"); }, "compile failed");
-        registry.add({"null", 1, {}, "MIT"}, [](const std::filesystem::path&) -> std::unique_ptr<iris::RenderPlugin> { return {}; });
+        registry.add({"null", iris::renderPluginApiVersion, {}, "MIT"}, [](const std::filesystem::path&) -> std::unique_ptr<iris::RenderPlugin> { return {}; });
         rejects([&] { registry.create("null", {}, "test-shaders"); }, "no instance");
         { auto plugin = registry.create("test", {"gpu"}, "test-shaders");
           require(live == 1, "Factory failure damaged valid plugin"); }

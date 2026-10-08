@@ -55,6 +55,7 @@ EnscapeCubeRenderer::EnscapeCubeRenderer(const std::filesystem::path& shaderDire
 }
 
 void EnscapeCubeRenderer::renderFrame(const iris::RenderPluginFrame& frame) {
+    iris::validatePluginBindings(iris::enscapeContract(), frame.textures, frame.width, frame.height);
     render(frame.target, frame.camera, frame.settings, frame.width, frame.height,
         frame.timeSeconds, frame.fullscreenVertexArray);
 }

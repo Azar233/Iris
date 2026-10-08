@@ -1,4 +1,5 @@
-#include "render/PostProcessor.h"
+#include "PostProcessor.h"
+#include <stdexcept>
 
 #include <algorithm>
 #include <array>
@@ -211,13 +212,37 @@ void PostProcessor::drawFullscreen() const {
     glBindVertexArray(0);
 }
 
-void PostProcessor::process(RenderTarget& target, const PostProcessSettings& settings) {
+void PostProcessor::renderFrame(const iris::RenderPluginFrame& frame) {
+    if (!frame.postProcessSettings) throw std::invalid_argument("Postprocess settings missing");
+    iris::validatePluginBindings(iris::postProcessContract(), frame.textures, frame.width, frame.height);
+    auto settings = *frame.postProcessSettings;
+    if (frame.texture("display") != frame.target.colorTexture())
+        throw std::invalid_argument("Postprocess output does not match borrowed target");
+    settings.depthTexture = frame.texture("depth");
+    settings.objectMotionTexture = frame.texture("motion");
+    settings.outlineNormalTexture = frame.texture("normals");
+    settings.opaqueDepthTexture = frame.texture("opaqueDepth");
+    if (settings.temporalAa && settings.depthTexture == 0U)
+        throw std::invalid_argument("Postprocess TAA requires depth");
+    if (settings.outlineNormalAvailable && settings.outlineNormalTexture == 0U)
+        throw std::invalid_argument("Postprocess normal input missing");
+    lastDrawCalls_ = 1U + (settings.bloom ? 9U : 0U) + (settings.temporalAa ? 1U : 0U);
+    process(frame.target, settings, frame.texture("hdr"));
+}
+
+iris::RenderPluginFrameInfo PostProcessor::frameInfo() const {
+    return {{"Postprocess temporal", "Postprocess bloom", "Postprocess composite"},
+        lastDrawCalls_, false, false, 0.0};
+}
+
+void PostProcessor::process(RenderTarget& target, const PostProcessSettings& settings, unsigned int hdrTexture) {
     resize(target.width(), target.height());
     glViewport(0, 0, target.width(), target.height());
     glDisable(GL_DEPTH_TEST);
     glDisable(GL_BLEND);
 
-    unsigned int sceneTexture = target.hdrColorTexture();
+    const unsigned int sourceHdr = hdrTexture != 0U ? hdrTexture : target.hdrColorTexture();
+    unsigned int sceneTexture = sourceHdr;
     unsigned int motionTexture = 0U;
     if (settings.temporalAa) {
         if (settings.resetTemporalHistory) historyValid_ = false;
@@ -241,7 +266,7 @@ void PostProcessor::process(RenderTarget& target, const PostProcessSettings& set
         );
         temporalShader_->setMat4("uPreviousViewProjection", settings.previousViewProjection);
         glActiveTexture(GL_TEXTURE0);
-        glBindTexture(GL_TEXTURE_2D, target.hdrColorTexture());
+        glBindTexture(GL_TEXTURE_2D, sourceHdr);
         glActiveTexture(GL_TEXTURE1);
         glBindTexture(GL_TEXTURE_2D, settings.depthTexture);
         glActiveTexture(GL_TEXTURE2);
