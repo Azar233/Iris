@@ -259,7 +259,8 @@ option(IRIS_ENABLE_ENSCAPE_PLUGIN "Build the optional Enscape render plugin" ON)
 option(IRIS_ENABLE_POSTPROCESS_PLUGIN "Build the native pipeline postprocess plugin" ON)
 add_library(IrisRenderPluginHost STATIC
     src/plugin/RenderPluginRegistry.cpp src/plugin/BuiltinRenderPlugins.cpp
-    src/plugin/RenderPlugin.cpp src/plugin/RenderPluginContract.cpp)
+    src/plugin/RenderPlugin.cpp src/plugin/RenderPluginContract.cpp
+    src/plugin/RenderPluginConfiguration.cpp)
 target_include_directories(IrisRenderPluginHost PUBLIC src)
 target_link_libraries(IrisRenderPluginHost PRIVATE glm::glm)
 target_compile_definitions(IrisRenderPluginHost PRIVATE
@@ -293,6 +294,7 @@ add_executable(MyRenderer
     src/app/AssetThumbnail.cpp
     src/app/Application.cpp
     src/app/ApplicationScene.cpp
+    src/app/RenderPluginPanel.cpp
     src/app/EditorSession.cpp
     src/app/WorkspaceAssets.cpp
     src/asset/BuiltinModels.cpp
@@ -423,6 +425,12 @@ if(BUILD_TESTING)
     add_executable(IrisRenderPluginContractTests tests/RenderPluginContractTests.cpp)
     target_link_libraries(IrisRenderPluginContractTests PRIVATE IrisRenderPluginHost)
     add_test(NAME render-plugin-contract COMMAND IrisRenderPluginContractTests)
+    add_executable(IrisRenderPluginConfigurationTests tests/RenderPluginConfigurationTests.cpp)
+    target_link_libraries(IrisRenderPluginConfigurationTests PRIVATE IrisRenderPluginHost)
+    add_test(NAME render-plugin-configuration COMMAND IrisRenderPluginConfigurationTests)
+    add_executable(IrisRenderPluginPanelTests tests/RenderPluginPanelTests.cpp src/app/RenderPluginPanel.cpp)
+    target_link_libraries(IrisRenderPluginPanelTests PRIVATE IrisRenderPluginHost imgui_backend)
+    add_test(NAME render-plugin-panel COMMAND IrisRenderPluginPanelTests)
     if(IRIS_ENABLE_ENSCAPE_PLUGIN)
         add_executable(IrisRenderPluginGpuTests tests/RenderPluginGpuTests.cpp
             src/render/Camera.cpp src/render/RenderTarget.cpp src/render/Shader.cpp)
@@ -447,7 +455,7 @@ if(BUILD_TESTING)
         add_custom_target(postprocess-plugin-gpu-acceptance COMMAND IrisPostProcessPluginGpuTests
             DEPENDS IrisPostProcessPluginGpuTests COMMENT "Validating a second plugin's real resource and history lifecycle")
     endif()
-    foreach(pluginTestTarget IrisRenderPluginRegistryTests IrisRenderPluginContractTests IrisRenderPluginGpuTests IrisPostProcessPluginGpuTests)
+    foreach(pluginTestTarget IrisRenderPluginRegistryTests IrisRenderPluginContractTests IrisRenderPluginConfigurationTests IrisRenderPluginPanelTests IrisRenderPluginGpuTests IrisPostProcessPluginGpuTests)
         if(TARGET ${pluginTestTarget})
             if(MSVC)
                 target_compile_options(${pluginTestTarget} PRIVATE /W4 /permissive- /utf-8)

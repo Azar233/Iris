@@ -44,6 +44,12 @@ void writeMatrix(Writer& writer, const glm::mat4& value) {
 
 void writeRendererSettings(Writer& writer, const RendererSettings& settings) {
     writer.StartObject();
+    std::string pluginError;
+    if(!iris::validPluginConfigurationShape(settings.renderPlugins,pluginError))throw std::runtime_error(pluginError);
+    writer.Key("renderPlugins");writer.StartObject();writer.Key("version");writer.Int(1);
+    writer.Key("entries");writer.StartArray();
+    for(const auto& entry:settings.renderPlugins){writer.StartObject();writer.Key("id");writer.String(entry.id.c_str());writer.Key("enabled");writer.Bool(entry.enabled);writer.EndObject();}
+    writer.EndArray();writer.EndObject();
     writer.Key("enscapeCubeShaderEnabled"); writer.Bool(settings.enscapeCubeShaderEnabled);
     writer.Key("enscapeNoiseReduction"); writer.Bool(settings.enscapeCube.noiseReduction);
     writer.Key("enscapeCubeEnabled"); writer.Bool(settings.enscapeCube.cubeEnabled);
@@ -297,6 +303,21 @@ glm::mat4 readMatrix(
 }
 
 void readRendererSettings(const scene_json::Value& value, RendererSettings& settings) {
+    if(!value.IsObject())throw std::runtime_error("Renderer settings must be an object");
+    if(value.HasMember("renderPlugins")){
+        const auto& plugins=value["renderPlugins"];
+        if(!plugins.IsObject()||!plugins.HasMember("version")||!plugins["version"].IsInt()||plugins["version"].GetInt()!=1
+            ||!plugins.HasMember("entries")||!plugins["entries"].IsArray())throw std::runtime_error("Unsupported/invalid renderPlugins configuration");
+        if(plugins["entries"].Size()>64)throw std::runtime_error("Too many render plugin entries");
+        iris::RenderPluginConfiguration config;
+        for(const auto& entry:plugins["entries"].GetArray()){
+            if(!entry.IsObject()||!entry.HasMember("id")||!entry["id"].IsString()
+                ||!entry.HasMember("enabled")||!entry["enabled"].IsBool())throw std::runtime_error("Invalid render plugin activation entry");
+            config.push_back({std::string(entry["id"].GetString(),entry["id"].GetStringLength()),entry["enabled"].GetBool()});
+        }
+        std::string error;if(!iris::validPluginConfigurationShape(config,error))throw std::runtime_error(error);
+        settings.renderPlugins=std::move(config);
+    }
 #define READ_FLOAT(field) settings.field = readFloat(value, #field, settings.field)
 #define READ_INT(field) settings.field = readInt(value, #field, settings.field)
 #define READ_BOOL(field) settings.field = readBool(value, #field, settings.field)

@@ -57,6 +57,7 @@
 #include "render/Renderer.h"
 #include "scene/SceneDocument.h"
 #include "plugin/RenderPluginRegistry.h"
+#include "app/RenderPluginPanel.h"
 
 namespace {
 
@@ -194,6 +195,10 @@ int Application::runRasterSequence(const RenderJob& job) {
         return 65;
     }
     capture::InputManifest inputManifest;
+    if(!iris::validatePluginConfiguration(iris::builtinRenderPlugins(),authoredScene.renderer.renderPlugins,
+        authoredScene.renderer.enscapeCubeShaderEnabled?iris::enscapePluginId:iris::postProcessPluginId,sceneError)){
+        std::cerr<<"Raster Scene plugin configuration invalid: "<<sceneError<<'\n';return 66;
+    }
     if(!job.sourcePath.empty()) {
         inputManifest.record(job.sourcePath);
         if(!job.loadedSourceFingerprint.empty() && capture::snapshot(job.sourcePath).fingerprint!=job.loadedSourceFingerprint)
@@ -972,6 +977,7 @@ int Application::run(const std::filesystem::path& initialModel) {
         if (const char* tab = std::getenv("MYRENDERER_EDITOR_SCREENSHOT_TAB")) {
             focusObjectTab_ = std::strcmp(tab, "object") == 0;
             focusRendererTab_ = std::strcmp(tab, "renderer") == 0;
+            focusPluginsTab_ = std::strcmp(tab, "plugins") == 0;
             focusAssetsTab_ = std::strcmp(tab, "assets") == 0;
             focusRenderQueueTab_ = std::strcmp(tab, "render-queue") == 0;
             focusModulesTab_ = std::strcmp(tab, "modules") == 0;
@@ -1249,6 +1255,7 @@ int Application::run(const std::filesystem::path& initialModel) {
         std::cout << "Append scene validation: " << (appendPassed ? "PASS" : "FAIL") << '\n';
     }
     const bool interactionsPassed = !std::getenv("MYRENDERER_EDITOR_INTERACTION_TEST") || editorInteractionRegression();
+    const bool pluginsPassed = !std::getenv("MYRENDERER_PLUGIN_ACTIVATION_TEST") || pluginActivationRegression();
     const bool referenceComparisonPassed = !referenceComparisonMode_
         || (referenceComparisonComplete_ && !referenceComparisonFailed_);
     const bool cpuPreviewSmokePassed = !cpuPreviewSmoke || cpuPreviewUploadedSamples_ > 0U;
@@ -1270,7 +1277,7 @@ int Application::run(const std::filesystem::path& initialModel) {
             << ", uploads=" << uploadedThumbnails_.size() << ")\n";
     }
     shutdown();
-    return recoveryPassed && appendPassed && interactionsPassed
+    return recoveryPassed && appendPassed && interactionsPassed && pluginsPassed
         && referenceComparisonPassed && cpuPreviewSmokePassed && thumbnailAcceptancePassed ? 0 : 2;
 }
 
@@ -1815,6 +1822,13 @@ void Application::drawInspectorPanel() {
             ImGui::EndTabItem();
         }
 
+        const bool showPlugins=focusPluginsTab_;focusPluginsTab_=false;
+        if(ImGui::BeginTabItem(EditorUi::chinese?"插件###RenderPlugins":"Plugins###RenderPlugins",nullptr,showPlugins?ImGuiTabItemFlags_SetSelected:0)){
+            if(auto change=iris::drawRenderPluginPanel(iris::builtinRenderPlugins(),iris::builtinRenderPluginCatalog(),
+                rendererSettings_.renderPlugins,rendererSettings_.enscapeCubeShaderEnabled?iris::enscapePluginId:iris::postProcessPluginId))editorSession_.request(*change);
+            ImGui::EndTabItem();
+        }
+
         const bool showRenderer = focusRendererTab_;
         focusRendererTab_ = false;
         if (ImGui::BeginTabItem(
@@ -2125,10 +2139,12 @@ void Application::drawInspectorPanel() {
                 ImGui::EndDisabled();
             }
             if (EditorUi::section("Lighting & environment", true)) {
-            const bool enscapeAvailable = iris::builtinRenderPlugins().contains(iris::enscapePluginId);
+            const bool enscapeAvailable = iris::builtinRenderPlugins().contains(iris::enscapePluginId)
+                &&iris::pluginEnabled(rendererSettings_.renderPlugins,iris::enscapePluginId);
             ImGui::BeginDisabled(!enscapeAvailable);
-            if (EditorUi::Checkbox((EditorUi::chinese ? "GLSL 云海" : "GLSL ocean and clouds"), &rendererSettings_.enscapeCubeShaderEnabled)) {
-                renderer_->invalidateTemporalHistory();
+            bool glslSelected=rendererSettings_.enscapeCubeShaderEnabled;
+            if (EditorUi::Checkbox((EditorUi::chinese ? "GLSL 云海" : "GLSL ocean and clouds"), &glslSelected)) {
+                EditorCommand change{EditorCommandType::SetRenderPipelineMode};change.flag=glslSelected;editorSession_.request(change);
             }
             ImGui::EndDisabled();
             if (!enscapeAvailable) {

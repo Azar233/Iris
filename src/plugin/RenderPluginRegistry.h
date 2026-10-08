@@ -39,5 +39,6 @@ private:
 
 // Registration only; querying this registry never allocates GPU resources.
 const RenderPluginRegistry& builtinRenderPlugins();
+const std::vector<RenderPluginDescriptor>& builtinRenderPluginCatalog();
 
 } // namespace iris

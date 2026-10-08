@@ -49,6 +49,8 @@ enum class EditorCommandType {
     SetWaterSettings,
     SetShadingSettings,
     SetPostProcessingSettings,
+    SetRenderPluginEnabled,
+    SetRenderPipelineMode,
     SetRasterizationSettings,
     SetCameraSettings,
     SetRuntimeSettings,

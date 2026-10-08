@@ -36,6 +36,7 @@ int main() {
         source.camera.fieldOfViewDegrees = 39.0f;
         source.renderer.renderPath = RenderPath::Deferred;
         source.renderer.enscapeCubeShaderEnabled = true;
+        source.renderer.renderPlugins={{"iris.enscape",true},{"iris.postprocess",false}};
         source.renderer.enscapeCube.cubeEnabled = false;
         source.renderer.enscapeCube.noiseReduction = true;
         source.renderer.enscapeCube.waveHeight = 0.93f;
@@ -151,6 +152,9 @@ int main() {
         require(saveSceneDocument(scenePath, source, error), error.c_str());
         SceneDocument firstLoad;
         require(loadSceneDocument(scenePath, firstLoad, error), error.c_str());
+        require(firstLoad.renderer.renderPlugins.size()==2
+            && iris::pluginEnabled(firstLoad.renderer.renderPlugins,"iris.enscape")
+            && !iris::pluginEnabled(firstLoad.renderer.renderPlugins,"iris.postprocess"),"plugin activation roundtrip");
         require(firstLoad.entities.size() == 2U, "first load entity count");
         require(firstLoad.entities[1].parent == 7U, "hierarchy survives first load");
         if (firstLoad.entities[0].modelResource != "../assets/models/cube.obj") {
@@ -303,6 +307,19 @@ int main() {
             && close(retained.renderer.atmosphere.cloudNoisePeriod,4)
             && retained.entities.size()==firstLoad.entities.size(),"failed offline load must preserve the previous scene");
 
+        const auto malformedPlugins=directory/"invalid-plugins.myscene";
+        for(const auto* config:{
+            "{\"version\":2,\"entries\":[]}",
+            "{\"version\":1,\"entries\":[{\"id\":\"iris.enscape\",\"enabled\":true},{\"id\":\"iris.enscape\",\"enabled\":false}]}",
+            "{\"version\":1,\"entries\":[{\"id\":\"iris.enscape\",\"enabled\":0}]}"}){
+            std::ofstream file(malformedPlugins);
+            file<<"{\"format\":\"MyRendererScene\",\"version\":2,\"entities\":[],\"renderer\":{\"renderPlugins\":"<<config<<"}}";file.close();
+            auto preserved=firstLoad;
+            require(!loadSceneDocument(malformedPlugins,preserved,error),"malformed plugin config accepted");
+            require(preserved.entities.size()==firstLoad.entities.size()
+                && !iris::pluginEnabled(preserved.renderer.renderPlugins,"iris.postprocess"),"failed plugin load mutated scene");
+        }
+
         // Typed overrides preserve enum/asset identity and scene-relative resources.
         SceneDocument moduleScene = source;
         moduleScene.moduleId = "myrenderer.core.turntable";
@@ -363,6 +380,8 @@ int main() {
             "legacy scenes retain water defaults without cloud reflections");
         require(restoredModule.moduleId.empty() && restoredModule.moduleParameters.empty(),
             "loading a legacy scene clears previous module configuration");
+        require(restoredModule.renderer.renderPlugins.empty()
+            && iris::pluginEnabled(restoredModule.renderer.renderPlugins,"iris.enscape"),"legacy scene defaults to enabled plugins");
 
         const std::filesystem::path examples =
             std::filesystem::path(MYRENDERER_SOURCE_DIR) / "assets" / "scenes";

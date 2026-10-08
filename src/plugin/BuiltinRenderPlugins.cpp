@@ -9,19 +9,24 @@
 
 namespace iris {
 
+const std::vector<RenderPluginDescriptor>& builtinRenderPluginCatalog() {
+    static const std::vector<RenderPluginDescriptor> catalog={
+        {enscapePluginId,renderPluginApiVersion,{openGlFullscreenService},"CC BY-NC-SA-3.0 (third-party shaders)",enscapeContract()},
+        {postProcessPluginId,renderPluginApiVersion,{openGlFullscreenService},"MIT",postProcessContract()}};
+    return catalog;
+}
+
 const RenderPluginRegistry& builtinRenderPlugins() {
     static const RenderPluginRegistry registry = [] {
         RenderPluginRegistry result;
 #if IRIS_ENABLE_ENSCAPE_PLUGIN
-        result.add({enscapePluginId, renderPluginApiVersion,
-            {openGlFullscreenService}, "CC BY-NC-SA-3.0 (third-party shaders)", enscapeContract()},
+        result.add(builtinRenderPluginCatalog()[0],
             [](const std::filesystem::path& directory) {
                 return std::make_unique<EnscapeCubeRenderer>(directory);
             });
 #endif
 #if IRIS_ENABLE_POSTPROCESS_PLUGIN
-        result.add({postProcessPluginId, renderPluginApiVersion,
-            {openGlFullscreenService}, "MIT", postProcessContract()},
+        result.add(builtinRenderPluginCatalog()[1],
             [](const std::filesystem::path& directory) {
                 return std::make_unique<PostProcessor>(directory / "fullscreen.vert",
                     directory / "bloom_extract.frag", directory / "bloom_blur.frag",

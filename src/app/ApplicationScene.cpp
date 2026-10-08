@@ -782,6 +782,25 @@ void Application::processEditorCommands() {
                 if (renderer_ != nullptr) renderer_->invalidateTemporalHistory();
                 break;
             }
+            case EditorCommandType::SetRenderPluginEnabled: {
+                std::string error;
+                const std::string required=rendererSettings_.enscapeCubeShaderEnabled?iris::enscapePluginId:iris::postProcessPluginId;
+                if(!iris::setPluginEnabled(iris::builtinRenderPlugins(),rendererSettings_.renderPlugins,required,command.text,command.flag,error)){
+                    statusMessage_="Plugin change rejected: "+error;break;
+                }
+                if(renderer_)renderer_->invalidateTemporalHistory();
+                statusMessage_="Plugin configuration updated: "+command.text;break;
+            }
+            case EditorCommandType::SetRenderPipelineMode: {
+                std::string error;
+                if(!iris::validatePluginConfiguration(iris::builtinRenderPlugins(),rendererSettings_.renderPlugins,
+                    command.flag?iris::enscapePluginId:iris::postProcessPluginId,error)){
+                    statusMessage_="Pipeline change rejected: "+error;break;
+                }
+                rendererSettings_.enscapeCubeShaderEnabled=command.flag;
+                if(renderer_)renderer_->invalidateTemporalHistory();
+                break;
+            }
             case EditorCommandType::SetPostProcessingSettings: {
                 const auto& post = command.postProcessing;
                 const bool valid = post.temporalDebugView >= 0 && post.temporalDebugView <= 2
@@ -2709,6 +2728,10 @@ bool Application::openScene(const std::filesystem::path& path) {
             + std::string(iris::postProcessPluginId);
         return false;
     }
+    if(!iris::validatePluginConfiguration(iris::builtinRenderPlugins(),document.renderer.renderPlugins,
+        document.renderer.enscapeCubeShaderEnabled?iris::enscapePluginId:iris::postProcessPluginId,documentError)){
+        statusMessage_="Open scene failed; current scene preserved: "+documentError;return false;
+    }
     // Validate against the same registry as Batch before replacing the edit scene.
     ModuleRuntime preparedModule(moduleRegistry_);
     if (!preparedModule.configure(document.moduleId, document.moduleParameters,
@@ -2988,6 +3011,63 @@ SceneEntityId Application::pickEntity(const std::vector<RenderItem>& items,
     glUseProgram(program); glBindVertexArray(vao); glPixelStorei(GL_PACK_ALIGNMENT, packAlignment);
     if (!complete) throw std::runtime_error("Editor picking framebuffer is incomplete");
     return hit > 0 && hit <= items.size() ? items[hit - 1].entityId : invalidSceneEntityId;
+}
+
+bool Application::pluginActivationRegression() {
+    try {
+        const auto check=[](bool passed,const char* message){if(!passed)throw std::runtime_error(message);};
+        newEmptyScene();
+        const auto cube=sourceRoot_/"assets/models/cube.obj";
+        finishModelLoad(cube,findImporter(cube)->load(cube),true);
+        rendererSettings_.renderPlugins.clear();
+        const auto command=[&](EditorCommandType type,const char* id,bool flag){
+            EditorCommand value{type};value.text=id;value.flag=flag;
+            editorSession_.request(std::move(value));processEditorCommands();
+        };
+        const auto draw=[&](){
+            renderer_->render(scene_.buildRenderItems(),camera_,rendererSettings_,320,180);
+            glFinish();check(glGetError()==GL_NO_ERROR,"activation produced a GL error");
+        };
+        command(EditorCommandType::SetRenderPipelineMode,"",false);draw();
+        check(renderer_->hasRenderPluginInstance(iris::postProcessPluginId),"native PostProcess not created");
+        command(EditorCommandType::SetRenderPluginEnabled,iris::postProcessPluginId,false);
+        check(iris::pluginEnabled(rendererSettings_.renderPlugins,iris::postProcessPluginId),"required plugin was disabled");
+        command(EditorCommandType::SetRenderPipelineMode,"",true);draw();
+        check(renderer_->hasRenderPluginInstance(iris::enscapePluginId),"Enscape not created");
+        command(EditorCommandType::SetRenderPluginEnabled,iris::postProcessPluginId,false);draw();
+        check(!renderer_->hasRenderPluginInstance(iris::postProcessPluginId),"inactive PostProcess resource was retained");
+        command(EditorCommandType::SetRenderPipelineMode,"",false);
+        check(rendererSettings_.enscapeCubeShaderEnabled,"disabled target pipeline was selected");
+        command(EditorCommandType::SetRenderPluginEnabled,iris::postProcessPluginId,true);
+        command(EditorCommandType::SetRenderPipelineMode,"",false);draw();
+        check(renderer_->hasRenderPluginInstance(iris::postProcessPluginId),"PostProcess was not recreated");
+        command(EditorCommandType::SetRenderPluginEnabled,iris::enscapePluginId,false);draw();
+        check(!renderer_->hasRenderPluginInstance(iris::enscapePluginId),"inactive Enscape resource was retained");
+        const auto directory=std::filesystem::temp_directory_path()/"IrisPluginActivationAcceptance";
+        std::filesystem::create_directories(directory);
+        const auto saved=directory/"saved.myscene";
+        check(saveSceneTo(saved),"plugin scene save failed");
+        command(EditorCommandType::SetRenderPluginEnabled,iris::enscapePluginId,true);
+        command(EditorCommandType::SetRenderPipelineMode,"",true);draw();
+        check(openScene(saved),"plugin scene reopen failed");draw();
+        check(!rendererSettings_.enscapeCubeShaderEnabled
+            && !iris::pluginEnabled(rendererSettings_.renderPlugins,iris::enscapePluginId)
+            && !renderer_->hasRenderPluginInstance(iris::enscapePluginId),"saved activation not restored");
+        auto invalid=captureSceneDocument();
+        const auto rejected=directory/"rejected.myscene";
+        std::string error;
+        invalid.renderer.renderPlugins= {{iris::enscapePluginId,false},{iris::postProcessPluginId,false}};
+        check(saveSceneDocument(rejected,invalid,error),"rejection fixture save failed");
+        const auto count=scene_.size();const auto path=currentScenePath_;
+        check(!openScene(rejected)&&scene_.size()==count&&currentScenePath_==path
+            && iris::pluginEnabled(rendererSettings_.renderPlugins,iris::postProcessPluginId),
+            "rejected plugin scene mutated the current session");
+        draw();
+        std::cout<<"Plugin activation commands / GPU release-recreate / save-reopen / transactional rejection: PASS\n";
+        return true;
+    } catch(const std::exception& error) {
+        std::cerr<<"Plugin activation regression: "<<error.what()<<'\n';return false;
+    }
 }
 
 bool Application::editorInteractionRegression() {

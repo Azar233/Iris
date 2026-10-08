@@ -18,6 +18,7 @@
 #include "render/RenderPassSequence.h"
 #include "render/RenderItem.h"
 #include "render/WaterWaves.h"
+#include "plugin/RenderPluginConfiguration.h"
 
 class Camera;
 class CausticsMap;
@@ -141,6 +142,7 @@ struct EnscapeCubeSettings {
 };
 
 struct RendererSettings {
+    iris::RenderPluginConfiguration renderPlugins;
     bool enscapeCubeShaderEnabled{false};
     EnscapeCubeSettings enscapeCube;
     glm::vec3 backgroundColor{0.055f, 0.065f, 0.085f};
@@ -287,6 +289,7 @@ public:
     void drawSelectionOutline(const std::vector<RenderItem>& items, const Camera& camera,
         std::uint64_t selected, bool cullBackFaces);
     unsigned int colorTexture() const;
+    bool hasRenderPluginInstance(const std::string& id) const;
     bool saveScreenshot(const std::filesystem::path& path, std::string& error) const;
     bool saveEditorScreenshot(
         const std::filesystem::path& path,

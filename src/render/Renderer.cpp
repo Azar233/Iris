@@ -198,6 +198,12 @@ void Renderer::render(
 ) {
     cpuPassTimings_.clear();
     RendererSettings settings = requestedSettings;
+    std::string pluginError;
+    if (!iris::validatePluginConfiguration(iris::builtinRenderPlugins(),settings.renderPlugins,
+        settings.enscapeCubeShaderEnabled ? iris::enscapePluginId : iris::postProcessPluginId,pluginError))
+        throw std::runtime_error(pluginError);
+    if (!iris::pluginEnabled(settings.renderPlugins,iris::enscapePluginId)) enscapeCubeRenderer_.reset();
+    if (!iris::pluginEnabled(settings.renderPlugins,iris::postProcessPluginId)) postProcessor_.reset();
     renderedWaterSettings_ = settings.water;
     renderedWaterSettings_.enabled = settings.water.enabled && !settings.enscapeCubeShaderEnabled;
     if (settings.atmosphere.cloudDeterministic) {
@@ -1795,6 +1801,11 @@ deferredLightingShader_->setVec3("uCameraPosition", camera.position());
     previousWaterTime_ = settings.water.timeSeconds;
     previousWaterMediumValid_ = settings.water.enabled && settings.water.surfaceOptics;
     previousCameraUnderwater_ = surfaceUnderwater;
+}
+
+bool Renderer::hasRenderPluginInstance(const std::string& id) const {
+    return id == iris::enscapePluginId ? enscapeCubeRenderer_ != nullptr
+        : id == iris::postProcessPluginId && postProcessor_ != nullptr;
 }
 
 unsigned int Renderer::colorTexture() const {

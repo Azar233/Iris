@@ -85,6 +85,7 @@ private:
     SceneEntityId pickEntity(const std::vector<RenderItem>& items, int width, int height, int x, int y);
     void materializeStressEntities(std::vector<RenderItem>& items);
     bool editorInteractionRegression();
+    bool pluginActivationRegression();
     void drawInspectorPanel();
     void drawViewportPanel();
     void updateViewportCameraNavigation();
@@ -156,6 +157,7 @@ private:
     bool loadedSceneDocument_{false};
     bool focusObjectTab_{false};
     bool focusRendererTab_{false};
+    bool focusPluginsTab_{false};
     int pendingGlslControlsScrollFrames_{0};
     bool focusAssetsTab_{false};
     bool focusRenderQueueTab_{false};
