@@ -2,6 +2,7 @@
 #include "scene/SceneDocument.h"
 #include "optics/CloudNoiseVolume.h"
 #include "optics/CloudLightingLut.h"
+#include "plugin/RenderPluginParameters.h"
 
 #include <algorithm>
 #include <cmath>
@@ -50,20 +51,31 @@ void writeRendererSettings(Writer& writer, const RendererSettings& settings) {
     writer.Key("entries");writer.StartArray();
     for(const auto& entry:settings.renderPlugins){writer.StartObject();writer.Key("id");writer.String(entry.id.c_str());writer.Key("enabled");writer.Bool(entry.enabled);writer.EndObject();}
     writer.EndArray();writer.EndObject();
+    writer.Key("renderPluginParameters"); writer.StartObject();
+    writer.Key("version"); writer.Int(1);
+    writer.Key("entries"); writer.StartArray();
+    for (const auto& schema : iris::builtinRenderPluginParameterSchemas()) {
+        writer.StartObject(); writer.Key("id"); writer.String(schema.pluginId.c_str());
+        writer.Key("schemaVersion"); writer.Int(schema.version);
+        writer.Key("values"); writer.StartArray();
+        for (const auto& entry : schema.capture(settings)) {
+            writer.StartObject(); writer.Key("id"); writer.String(entry.id.c_str());
+            writer.Key("type"); writer.Int(static_cast<int>(entry.value.type));
+            writer.Key("value");
+            switch (entry.value.type) {
+                case ModuleParameterType::Bool: writer.Bool(entry.value.boolean); break;
+                case ModuleParameterType::Int: writer.Int(entry.value.integer); break;
+                case ModuleParameterType::Float: writer.Double(entry.value.number); break;
+                case ModuleParameterType::Color: writeVec3(writer, entry.value.color); break;
+                case ModuleParameterType::Enum: writer.String(entry.value.text.c_str()); break;
+                case ModuleParameterType::Asset: throw std::runtime_error("Plugin resource parameters not supported");
+            }
+            writer.EndObject();
+        }
+        writer.EndArray(); writer.EndObject();
+    }
+    writer.EndArray(); writer.EndObject();
     writer.Key("enscapeCubeShaderEnabled"); writer.Bool(settings.enscapeCubeShaderEnabled);
-    writer.Key("enscapeNoiseReduction"); writer.Bool(settings.enscapeCube.noiseReduction);
-    writer.Key("enscapeCubeEnabled"); writer.Bool(settings.enscapeCube.cubeEnabled);
-    writer.Key("enscapeWaveHeight"); writer.Double(settings.enscapeCube.waveHeight);
-    writer.Key("enscapeWaveFrequency"); writer.Double(settings.enscapeCube.waveFrequency);
-    writer.Key("enscapeWaveChoppiness"); writer.Double(settings.enscapeCube.waveChoppiness);
-    writer.Key("enscapeWaveSpeed"); writer.Double(settings.enscapeCube.waveSpeed);
-    writer.Key("enscapeCloudCoverage"); writer.Double(settings.enscapeCube.cloudCoverage);
-    writer.Key("enscapeReflectionStrength"); writer.Double(settings.enscapeCube.reflectionStrength);
-    writer.Key("enscapeUnderwaterClarity"); writer.Double(settings.enscapeCube.underwaterClarity);
-    writer.Key("enscapeSunAzimuthDegrees"); writer.Double(settings.enscapeCube.sunAzimuthDegrees);
-    writer.Key("enscapeSunElevationDegrees"); writer.Double(settings.enscapeCube.sunElevationDegrees);
-    writer.Key("enscapeBloomStrength"); writer.Double(settings.enscapeCube.bloomStrength);
-    writer.Key("enscapeExposure"); writer.Double(settings.enscapeCube.exposure);
 #define WRITE_FLOAT(field) writer.Key(#field); writer.Double(settings.field)
 #define WRITE_INT(field) writer.Key(#field); writer.Int(settings.field)
 #define WRITE_BOOL(field) writer.Key(#field); writer.Bool(settings.field)
@@ -127,7 +139,7 @@ void writeRendererSettings(Writer& writer, const RendererSettings& settings) {
     WRITE_FLOAT(causticsSharpness); WRITE_BOOL(causticsAnimated);
     WRITE_FLOAT(causticsReceiverPlaneY); WRITE_BOOL(transmissionEnabled);
     WRITE_BOOL(skyboxEnabled); writer.Key("environmentPreset"); writer.Int(settings.environmentPreset);
-    WRITE_BOOL(toneMapping); WRITE_BOOL(bloom);
+
     WRITE_BOOL(showPrismIncidentBeam); WRITE_FLOAT(environmentIntensity);
     // Sun-driven analytic sky. Off by default, so a scene written before these fields existed
     // keeps its HDR environment.
@@ -188,7 +200,7 @@ void writeRendererSettings(Writer& writer, const RendererSettings& settings) {
     WRITE_FLOAT(volumeGlassAttenuationDistance); WRITE_BOOL(dispersionEnabled);
     WRITE_FLOAT(dispersionStrength);
     writer.Key("glassDebugView"); writer.Int(static_cast<int>(settings.glassDebugView));
-    WRITE_FLOAT(exposure); WRITE_FLOAT(bloomThreshold); WRITE_FLOAT(bloomIntensity);
+
     WRITE_FLOAT(prismBeamOutputLength); WRITE_FLOAT(prismBeamWidth);
     WRITE_FLOAT(prismBeamIntensity); WRITE_FLOAT(prismBeamEdgeSoftness);
     WRITE_FLOAT(prismBeamBloomContribution); WRITE_FLOAT(indexOfRefractionOverride);
@@ -570,6 +582,13 @@ void readRendererSettings(const scene_json::Value& value, RendererSettings& sett
 }
 
 void validateDocument(const SceneDocument& document) {
+    auto pluginSettings = document.renderer;
+    for (const auto& schema : iris::builtinRenderPluginParameterSchemas()) {
+        bool history = false;
+        std::string error;
+        if (!schema.apply(pluginSettings, schema.capture(document.renderer), history, error))
+            throw std::runtime_error(error);
+    }
     if (document.moduleId.empty() && !document.moduleParameters.empty()) {
         throw std::runtime_error("Module parameters require a module id");
     }
@@ -822,6 +841,63 @@ bool loadSceneDocument(
         }
         if (const scene_json::Value* renderer = optionalMember(root, "renderer")) {
             readRendererSettings(*renderer, loaded.renderer);
+            if (const auto* parameters = optionalMember(*renderer, "renderPluginParameters")) {
+                if (!parameters->IsObject() || !parameters->HasMember("version")
+                    || !(*parameters)["version"].IsInt() || (*parameters)["version"].GetInt() != 1
+                    || !parameters->HasMember("entries") || !(*parameters)["entries"].IsArray()
+                    || (*parameters)["entries"].Size() > 64U)
+                    throw std::runtime_error("Unsupported/invalid renderPluginParameters");
+                std::unordered_set<std::string> plugins;
+                for (const auto& plugin : (*parameters)["entries"].GetArray()) {
+                    if (!plugin.IsObject() || !plugin.HasMember("id") || !plugin["id"].IsString()
+                        || !plugin.HasMember("schemaVersion") || !plugin["schemaVersion"].IsInt()
+                        || !plugin.HasMember("values") || !plugin["values"].IsArray()
+                        || plugin["values"].Size() > 64U)
+                        throw std::runtime_error("Invalid plugin parameter entry");
+                    const std::string id(plugin["id"].GetString(), plugin["id"].GetStringLength());
+                    const auto* schema = iris::builtinRenderPluginParameterSchema(id);
+                    if (!schema || !plugins.insert(id).second || schema->version != plugin["schemaVersion"].GetInt())
+                        throw std::runtime_error("Unknown/duplicate plugin parameter schema: " + id);
+                    std::vector<ModuleParameterOverride> values;
+                    for (const auto& item : plugin["values"].GetArray()) {
+                        if (!item.IsObject() || !item.HasMember("id") || !item["id"].IsString()
+                            || !item.HasMember("type") || !item["type"].IsInt() || !item.HasMember("value"))
+                            throw std::runtime_error("Invalid plugin parameter value");
+                        ModuleParameterOverride entry;
+                        entry.id = std::string(item["id"].GetString(), item["id"].GetStringLength());
+                        entry.value.type = static_cast<ModuleParameterType>(item["type"].GetInt());
+                        const auto& value = item["value"];
+                        switch (entry.value.type) {
+                            case ModuleParameterType::Bool:
+                                if (!value.IsBool()) throw std::runtime_error("Plugin Bool value required");
+                                entry.value.boolean = value.GetBool(); break;
+                            case ModuleParameterType::Int:
+                                if (!value.IsInt()) throw std::runtime_error("Plugin Int value required");
+                                entry.value.integer = value.GetInt(); break;
+                            case ModuleParameterType::Float:
+                                if (!value.IsNumber()) throw std::runtime_error("Plugin Float value required");
+                                entry.value.number = static_cast<float>(value.GetDouble()); break;
+                            case ModuleParameterType::Color:
+                                entry.value.color = readVec3(item, "value", entry.value.color); break;
+                            case ModuleParameterType::Enum: {
+                                if (!value.IsString()) throw std::runtime_error("Plugin Enum value required");
+                                entry.value.text = std::string(value.GetString(), value.GetStringLength());
+                                const auto* descriptor = schema->metadata.descriptor(entry.id);
+                                if (!descriptor) throw std::runtime_error("Unknown plugin Enum parameter");
+                                const auto label = std::find(descriptor->enumLabels.begin(), descriptor->enumLabels.end(), entry.value.text);
+                                if (label == descriptor->enumLabels.end()) throw std::runtime_error("Unknown plugin Enum label");
+                                entry.value.integer = static_cast<int>(label - descriptor->enumLabels.begin());
+                                break;
+                            }
+                            default: throw std::runtime_error("Unsupported plugin parameter type");
+                        }
+                        values.push_back(std::move(entry));
+                    }
+                    bool history = false;
+                    std::string parameterError;
+                    if (!schema->apply(loaded.renderer, values, history, parameterError)) throw std::runtime_error(parameterError);
+                }
+            }
         }
         if (const scene_json::Value* playback = optionalMember(root, "playback")) {
             loaded.playback.animationEnabled = readBool(*playback, "animationEnabled", loaded.playback.animationEnabled);

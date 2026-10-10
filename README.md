@@ -8,6 +8,8 @@
 
 2026-10-10 进度：A1、A2-A 与 A2-B1 已验收；新增 Point/Spot 灯光实体（创建、编辑、启停、保存与实时/CPU 渲染）和 G-buffer/SSAO 通道预览及 PNG 导出。当前架构主线为 A2-B2 通用参数与事务资源合同；局部灯光阴影、体积光和 Vulkan 尚未实现。
 
+A2-B2a 已完成现有两个插件的 18 个声明式参数：在 Inspector → Plugins → Parameters 中编辑，随 Scene 保存，错误输入保留原状态；仍复用共享 RendererSettings。A2-B2 的独立参数存储与事务资源替换继续作为后续切片。
+
 <p align="center">A C++17 real-time and offline rendering playground.</p>
 
 <p align="center">

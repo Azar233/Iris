@@ -11,8 +11,8 @@ namespace iris {
 
 const std::vector<RenderPluginDescriptor>& builtinRenderPluginCatalog() {
     static const std::vector<RenderPluginDescriptor> catalog={
-        {enscapePluginId,renderPluginApiVersion,{openGlFullscreenService},"CC BY-NC-SA-3.0 (third-party shaders)",enscapeContract()},
-        {postProcessPluginId,renderPluginApiVersion,{openGlFullscreenService},"MIT",postProcessContract()}};
+        {enscapePluginId,renderPluginApiVersion,{openGlFullscreenService},"CC BY-NC-SA-3.0 (third-party shaders)",enscapeContract(),builtinRenderPluginParameterSchema(enscapePluginId)},
+        {postProcessPluginId,renderPluginApiVersion,{openGlFullscreenService},"MIT",postProcessContract(),builtinRenderPluginParameterSchema(postProcessPluginId)}};
     return catalog;
 }
 

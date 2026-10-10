@@ -35,6 +35,8 @@ A1 的 GitHub CI 已成功，当前实现基准为 `38b1995`。A2 分成两个�
 - **A2-A（2026-10-08 本地验收完成）**：插件 API v2、Input/Output/Transient/History 的有序逻辑 Pass 合同、借用纹理类型/尺寸/别名校验；共享后处理管线已迁到第二个可选 Target。双编译器 ON/OFF、最终 28/28、真实 GPU 资源消费/拒绝/历史/resize/重建、固定图 SHA 相同、十套渲染/Stylized/CPU PT 回归通过，默认构建恢复 ON。无 Shader 算法或基线修改。
 - **A2-B1（2026-10-08，GUI 启停切片）**：Inspector 的 Plugins 页统一显示静态插件目录、编译可用性和当前管线用途；启停通过共享 EditorCommand 校验，随 Scene 保存。当前管线必需项锁定，切换到停用能力或加载无效配置时保留当前状态；停用未使用能力在下次 Raster 帧的上下文线程释放实例，重新启用按需创建。CTest 新增真实 ImGui 输入注入与配置事务测试；GPU 命令/保存重开/释放重建由 tools/PluginGuiAcceptance.ps1 验证。
 - **A2-B2（随后，未完成）**：通用参数持久化与动态参数面板、Shader 编译失败后的事务式资源替换、完整输入资源声明。启停配置不等于通用参数平台；父项 A2-B/A2 继续未完成。复用已有 ParameterRegistry/EditorCommand，避免另建 Scene 或参数真相来源。
+  - **A2-B2a（2026-10-10，验收完成）**：ParameterRegistry 成为模块与渲染插件共享 target；descriptor 声明参数元信息与绑定，Inspector → Plugins 自动生成面板。两个现有插件共 18 个参数，新 Scene 参数块 version=1，旧字段兼容读取；绑定修改同一 RendererSettings，未知/重复/类型/范围错误事务拒绝。双编译器 ON 全构建各 32/32、两插件 OFF 参数/控件测试、真实 GPU 贡献/旧字段等价/保存重开、双尺寸与 260 px 长标签、真实 ImGui Bool/Float 输入、Raster/CPU Job 无产物拒绝、十套图像回归与 CPU PT 回归通过，既有固定图 SHA 不变。源码与共享进度在当前实验分支一并交付，新提交 CI 状态单独核对。
+  - **后续切片**：独立插件参数值与可扩展 schema 目录、资源参数/版本迁移、Shader 编译失败的事务资源替换、剩余资源声明。当前参数绑定仍使用 RendererSettings 兼容桥，通用参数/资源平台未全部收口；不因此开启 A3/A4。
 
 A2-A 只验证有序逻辑计划，不是自动执行的通用 Render Graph；私有 Bloom ping-pong/TAA 等仍由插件执行，半分辨率云与光束的资源校验仍沿用原有生产者和旧设置桥。HDR/深度/运动/法线等帧大小绑定由新接口检查并消费。关闭后处理插件意味着原生 Raster 管线不支持，需明确拒绝；Enscape 全屏场景仍可运行，不悄悄跳过色调映射。
 

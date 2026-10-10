@@ -1,7 +1,18 @@
 #include "plugin/RenderPluginConfiguration.h"
 #include "plugin/RenderPluginRegistry.h"
+#include "render/Renderer.h"
 #include <algorithm>
 namespace iris {
+bool setPluginParameter(const RenderPluginRegistry& registry, RendererSettings& settings,
+    const std::string& id, const ModuleParameterOverride& parameter, bool& affectsHistory, std::string& error) {
+    affectsHistory = false;
+    const auto* descriptor = registry.descriptor(id);
+    if (!descriptor || !descriptor->parameters || !pluginEnabled(settings.renderPlugins, id)) {
+        error = "Plugin parameters unavailable or plugin disabled: " + id;
+        return false;
+    }
+    return descriptor->parameters->apply(settings, {parameter}, affectsHistory, error);
+}
 bool validatePluginConfiguration(const RenderPluginRegistry& registry,
     const RenderPluginConfiguration& config,const std::string& required,std::string& error){
     if(!validPluginConfigurationShape(config,error))return false;

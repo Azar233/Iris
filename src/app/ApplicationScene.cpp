@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <iostream>
+#include <limits>
 #include <stdexcept>
 #include <glad/gl.h>
 #include <glm/gtc/matrix_transform.hpp>
@@ -812,6 +813,26 @@ void Application::processEditorCommands() {
                 // Raster-only domain: the reference integrator keeps the physical
                 // material and light semantics, so only temporal history drops.
                 if (renderer_ != nullptr) renderer_->invalidateTemporalHistory();
+                break;
+            }
+            case EditorCommandType::SetRenderPluginParameter: {
+                ModuleParameterOverride parameter;
+                parameter.id = command.pluginParameterId;
+                parameter.value.type = static_cast<ModuleParameterType>(command.moduleParameter.type);
+                parameter.value.boolean = command.moduleParameter.boolean;
+                parameter.value.integer = command.moduleParameter.integer;
+                parameter.value.number = command.moduleParameter.number;
+                parameter.value.color = glm::vec3(command.color.x, command.color.y, command.color.z);
+                parameter.value.text = command.moduleParameter.text;
+                bool history = false;
+                std::string error;
+                if (!iris::setPluginParameter(iris::builtinRenderPlugins(), rendererSettings_, command.text,
+                        parameter, history, error)) {
+                    statusMessage_ = "Plugin parameter rejected: " + error;
+                    break;
+                }
+                if (history && renderer_) renderer_->invalidateTemporalHistory();
+                statusMessage_ = "Plugin parameter updated: " + command.text + "/" + parameter.id;
                 break;
             }
             case EditorCommandType::SetRenderPluginEnabled: {
@@ -3086,6 +3107,75 @@ SceneEntityId Application::pickEntity(const std::vector<RenderItem>& items,
     glUseProgram(program); glBindVertexArray(vao); glPixelStorei(GL_PACK_ALIGNMENT, packAlignment);
     if (!complete) throw std::runtime_error("Editor picking framebuffer is incomplete");
     return hit > 0 && hit <= items.size() ? items[hit - 1].entityId : invalidSceneEntityId;
+}
+
+bool Application::pluginParameterRegression() {
+    try {
+        const auto check = [](bool passed, const char* message) { if (!passed) throw std::runtime_error(message); };
+        newEmptyScene();
+        const auto cube = sourceRoot_ / "assets/models/cube.obj";
+        finishModelLoad(cube, findImporter(cube)->load(cube), true);
+        rendererSettings_.temporalAaEnabled = false;
+        rendererSettings_.bloom = false;
+        rendererSettings_.enscapeCube.noiseReduction = false;
+        const auto draw = [&]() {
+            // Compare equal history inputs: the four-pass scene accumulates
+            // between frames even with the reflection stabilization switch off.
+            renderer_->invalidateTemporalHistory();
+            renderer_->render(scene_.buildRenderItems(), camera_, rendererSettings_, 320, 180);
+            glFinish(); check(glGetError() == GL_NO_ERROR, "parameter render produced GL error");
+        };
+        const auto pixels = [&]() {
+            GLint texture = 0, pack = 0;
+            glGetIntegerv(GL_TEXTURE_BINDING_2D, &texture); glGetIntegerv(GL_PACK_ALIGNMENT, &pack);
+            std::vector<unsigned char> result(320U * 180U * 4U);
+            glBindTexture(GL_TEXTURE_2D, renderer_->colorTexture()); glPixelStorei(GL_PACK_ALIGNMENT, 1);
+            glGetTexImage(GL_TEXTURE_2D, 0, GL_RGBA, GL_UNSIGNED_BYTE, result.data());
+            glBindTexture(GL_TEXTURE_2D, static_cast<GLuint>(texture)); glPixelStorei(GL_PACK_ALIGNMENT, pack);
+            return result;
+        };
+        const auto edit = [&](const char* plugin, const char* parameter, float value) {
+            EditorCommand command{EditorCommandType::SetRenderPluginParameter};
+            command.text = plugin; command.pluginParameterId = parameter;
+            command.moduleParameter.type = static_cast<int>(ModuleParameterType::Float);
+            command.moduleParameter.number = value;
+            editorSession_.request(std::move(command)); processEditorCommands();
+        };
+        draw(); const auto nativeDefault = pixels();
+        edit(iris::postProcessPluginId, "exposure", 1.7f);
+        check(rendererSettings_.exposure == 1.7f, "command did not apply postprocess parameter");
+        draw(); const auto nativeEdited = pixels();
+        check(nativeEdited != nativeDefault, "postprocess parameter did not affect actual GPU output");
+        edit(iris::postProcessPluginId, "exposure", std::numeric_limits<float>::quiet_NaN());
+        draw(); check(rendererSettings_.exposure == 1.7f && pixels() == nativeEdited, "failed edit changed frame/settings");
+        rendererSettings_.exposure = 1.0f; draw();
+        rendererSettings_.exposure = 1.7f; draw();
+        check(pixels() == nativeEdited, "generic/legacy postprocess values produce different frames");
+        rendererSettings_.enscapeCubeShaderEnabled = true;
+        renderer_->invalidateTemporalHistory(); draw(); const auto oceanDefault = pixels();
+        edit(iris::enscapePluginId, "waveHeight", 0.9f);
+        draw(); const auto oceanEdited = pixels();
+        check(rendererSettings_.enscapeCube.waveHeight == 0.9f && oceanEdited != oceanDefault,
+            "Enscape parameter did not affect actual GPU output");
+        edit(iris::enscapePluginId, "waveHeight", 7.0f);
+        draw(); check(rendererSettings_.enscapeCube.waveHeight == 0.9f && pixels() == oceanEdited,
+            "out-of-range ocean edit changed frame/settings");
+        rendererSettings_.enscapeCube.waveHeight = 0.6f; draw();
+        rendererSettings_.enscapeCube.waveHeight = 0.9f; renderer_->invalidateTemporalHistory(); draw();
+        check(pixels() == oceanEdited, "generic/legacy ocean values produce different frames");
+        const auto directory = std::filesystem::temp_directory_path() / "IrisPluginParameterGpuAcceptance";
+        std::filesystem::create_directories(directory);
+        const auto saved = directory / "saved.myscene";
+        check(saveSceneTo(saved), "plugin parameter scene save failed");
+        edit(iris::enscapePluginId, "waveHeight", 0.5f);
+        check(openScene(saved), "plugin parameter scene reopen failed");
+        draw(); check(rendererSettings_.exposure == 1.7f && rendererSettings_.enscapeCube.waveHeight == 0.9f
+            && pixels() == oceanEdited, "saved plugin parameters did not restore GPU frame");
+        std::cout << "Plugin parameter commands / GPU contribution / legacy parity / rejection / save-reopen: PASS\n";
+        return true;
+    } catch (const std::exception& error) {
+        std::cerr << "Plugin parameter regression: " << error.what() << '\n'; return false;
+    }
 }
 
 bool Application::pluginActivationRegression() {

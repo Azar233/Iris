@@ -1329,6 +1329,7 @@ int Application::run(const std::filesystem::path& initialModel) {
     }
     const bool interactionsPassed = !std::getenv("MYRENDERER_EDITOR_INTERACTION_TEST") || editorInteractionRegression();
     const bool pluginsPassed = !std::getenv("MYRENDERER_PLUGIN_ACTIVATION_TEST") || pluginActivationRegression();
+    const bool pluginParametersPassed = !std::getenv("MYRENDERER_PLUGIN_PARAMETER_TEST") || pluginParameterRegression();
     const bool referenceComparisonPassed = !referenceComparisonMode_
         || (referenceComparisonComplete_ && !referenceComparisonFailed_);
     const bool cpuPreviewSmokePassed = !cpuPreviewSmoke || cpuPreviewUploadedSamples_ > 0U;
@@ -1351,7 +1352,7 @@ int Application::run(const std::filesystem::path& initialModel) {
     }
     shutdown();
     if (lightUiInteraction && !lightUiInteractionComplete_) std::cerr << "Light UI incomplete: phase=" << lightUiInteractionPhase_ << ", lights=" << scene_.lightEntityCount() << "\n";
-    return recoveryPassed && appendPassed && interactionsPassed && pluginsPassed
+    return recoveryPassed && appendPassed && interactionsPassed && pluginsPassed && pluginParametersPassed
         && referenceComparisonPassed && cpuPreviewSmokePassed && thumbnailAcceptancePassed
         && (!bufferAcceptance || (bufferAcceptancePhase == 3 && bufferAcceptancePassed))
         && (!std::getenv("MYRENDERER_BUFFER_DRAWER_INTERACTION") || bufferDrawerInteractionComplete_)
@@ -1924,7 +1925,8 @@ void Application::drawInspectorPanel() {
         const bool showPlugins=focusPluginsTab_;focusPluginsTab_=false;
         if(ImGui::BeginTabItem(EditorUi::chinese?"插件###RenderPlugins":"Plugins###RenderPlugins",nullptr,showPlugins?ImGuiTabItemFlags_SetSelected:0)){
             if(auto change=iris::drawRenderPluginPanel(iris::builtinRenderPlugins(),iris::builtinRenderPluginCatalog(),
-                rendererSettings_.renderPlugins,rendererSettings_.enscapeCubeShaderEnabled?iris::enscapePluginId:iris::postProcessPluginId))editorSession_.request(*change);
+                rendererSettings_.renderPlugins,rendererSettings_.enscapeCubeShaderEnabled?iris::enscapePluginId:iris::postProcessPluginId,
+                nullptr, &rendererSettings_))editorSession_.request(*change);
             ImGui::EndTabItem();
         }
 

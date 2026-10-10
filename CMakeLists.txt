@@ -207,12 +207,22 @@ target_link_libraries(MyRendererBatch PRIVATE MyRendererBatchRuntime MyRendererM
 # framework lives in this target together with the concrete modules, so adding a
 # module does not touch the editor or the batch CLI. `Scene` symbols are provided by
 # the consumer, exactly like the other shared sources in this project.
+add_library(IrisParameters STATIC src/module/ParameterRegistry.cpp src/plugin/RenderPluginParameters.cpp)
+target_include_directories(IrisParameters PUBLIC src)
+target_link_libraries(IrisParameters PUBLIC glm::glm PRIVATE glad_gl_core_33)
+if(MSVC)
+    target_compile_options(IrisParameters PRIVATE /W4 /permissive- /utf-8)
+else()
+    target_compile_options(IrisParameters PRIVATE -Wall -Wextra -Wpedantic)
+endif()
+target_link_libraries(MyRendererCloudCalibration PRIVATE IrisParameters)
+target_link_libraries(MyRendererBatchRuntime PRIVATE IrisParameters)
+
 add_library(MyRendererModules STATIC
     src/module/BuiltinModules.cpp
     src/module/CoastalSequenceModule.cpp
     src/module/ModuleRegistry.cpp
     src/module/ModuleRuntime.cpp
-    src/module/ParameterRegistry.cpp
     src/module/RuntimeScene.cpp
     src/module/SimulationCache.cpp
 )
@@ -223,7 +233,7 @@ target_include_directories(MyRendererModules PRIVATE
 target_compile_definitions(MyRendererModules PRIVATE
     MYRENDERER_BUILD_ID="${MYRENDERER_BUILD_ID}"
 )
-target_link_libraries(MyRendererModules PUBLIC glm::glm PRIVATE glad_gl_core_33)
+target_link_libraries(MyRendererModules PUBLIC glm::glm IrisParameters PRIVATE glad_gl_core_33)
 if(MSVC)
     target_compile_options(MyRendererModules PRIVATE /W4 /permissive- /utf-8)
 else()
@@ -262,7 +272,7 @@ add_library(IrisRenderPluginHost STATIC
     src/plugin/RenderPlugin.cpp src/plugin/RenderPluginContract.cpp
     src/plugin/RenderPluginConfiguration.cpp)
 target_include_directories(IrisRenderPluginHost PUBLIC src)
-target_link_libraries(IrisRenderPluginHost PRIVATE glm::glm)
+target_link_libraries(IrisRenderPluginHost PUBLIC IrisParameters PRIVATE glm::glm glad_gl_core_33)
 target_compile_definitions(IrisRenderPluginHost PRIVATE
     IRIS_ENABLE_ENSCAPE_PLUGIN=$<BOOL:${IRIS_ENABLE_ENSCAPE_PLUGIN}>
     IRIS_ENABLE_POSTPROCESS_PLUGIN=$<BOOL:${IRIS_ENABLE_POSTPROCESS_PLUGIN}>)
@@ -428,8 +438,12 @@ if(BUILD_TESTING)
     add_executable(IrisRenderPluginConfigurationTests tests/RenderPluginConfigurationTests.cpp)
     target_link_libraries(IrisRenderPluginConfigurationTests PRIVATE IrisRenderPluginHost)
     add_test(NAME render-plugin-configuration COMMAND IrisRenderPluginConfigurationTests)
+    add_executable(IrisRenderPluginParameterTests tests/RenderPluginParameterTests.cpp src/scene/Scene.cpp src/scene/SceneDocument.cpp)
+    target_include_directories(IrisRenderPluginParameterTests PRIVATE src ${assimp_SOURCE_DIR}/contrib/rapidjson/include)
+    target_link_libraries(IrisRenderPluginParameterTests PRIVATE IrisRenderPluginHost MyRendererCloudNoise glad_gl_core_33)
+    add_test(NAME render-plugin-parameters COMMAND IrisRenderPluginParameterTests)
     add_executable(IrisRenderPluginPanelTests tests/RenderPluginPanelTests.cpp src/app/RenderPluginPanel.cpp)
-    target_link_libraries(IrisRenderPluginPanelTests PRIVATE IrisRenderPluginHost imgui_backend)
+    target_link_libraries(IrisRenderPluginPanelTests PRIVATE IrisRenderPluginHost imgui_backend glad_gl_core_33)
     add_test(NAME render-plugin-panel COMMAND IrisRenderPluginPanelTests)
     if(IRIS_ENABLE_ENSCAPE_PLUGIN)
         add_executable(IrisRenderPluginGpuTests tests/RenderPluginGpuTests.cpp
@@ -722,7 +736,7 @@ if(BUILD_TESTING)
     target_compile_definitions(MyRendererSceneDocumentTests PRIVATE
         MYRENDERER_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}"
     )
-    target_link_libraries(MyRendererSceneDocumentTests PRIVATE glm::glm glad_gl_core_33 MyRendererCloudNoise)
+    target_link_libraries(MyRendererSceneDocumentTests PRIVATE glm::glm glad_gl_core_33 MyRendererCloudNoise IrisParameters)
     if(MSVC)
         target_compile_options(MyRendererSceneDocumentTests PRIVATE /W4 /permissive- /utf-8)
     else()
@@ -732,7 +746,7 @@ if(BUILD_TESTING)
     add_executable(IrisLightEntityTests tests/LightEntityTests.cpp
         src/scene/Scene.cpp src/scene/SceneDocument.cpp src/module/RuntimeScene.cpp src/module/SimulationCache.cpp)
     target_include_directories(IrisLightEntityTests PRIVATE src ${assimp_SOURCE_DIR}/contrib/rapidjson/include)
-    target_link_libraries(IrisLightEntityTests PRIVATE glm::glm glad_gl_core_33 MyRendererCloudNoise)
+    target_link_libraries(IrisLightEntityTests PRIVATE glm::glm glad_gl_core_33 MyRendererCloudNoise IrisParameters)
     if(MSVC)
         target_compile_options(IrisLightEntityTests PRIVATE /W4 /permissive- /utf-8)
     else()
@@ -1739,3 +1753,11 @@ add_custom_target(light-entity-acceptance
         -DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/light-entities -P ${CMAKE_CURRENT_SOURCE_DIR}/tools/LightEntityAcceptance.cmake
     DEPENDS MyRenderer MyRendererBatch WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
     COMMENT "Checking scene light entities and rendering compatibility")
+
+if(IRIS_ENABLE_ENSCAPE_PLUGIN AND IRIS_ENABLE_POSTPROCESS_PLUGIN)
+add_custom_target(render-plugin-parameter-gpu-acceptance
+    COMMAND ${CMAKE_COMMAND} -E env MYRENDERER_SMOKE_TEST=1 MYRENDERER_PLUGIN_PARAMETER_TEST=1
+        $<TARGET_FILE:MyRenderer> ${CMAKE_CURRENT_SOURCE_DIR}/assets/models/cube.obj
+    DEPENDS MyRenderer WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    COMMENT "Checking typed plugin edits, real GPU output and save-reopen transactions")
+endif()

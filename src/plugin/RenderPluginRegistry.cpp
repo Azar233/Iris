@@ -16,6 +16,11 @@ void RenderPluginRegistry::add(RenderPluginDescriptor descriptor, Factory factor
     for (const auto& service : descriptor.requiredServices)
         if (service.empty()) throw std::invalid_argument("Empty render plugin service: " + descriptor.id);
     validatePluginContract(descriptor.contract);
+    if (descriptor.parameters) {
+        descriptor.parameters->validate();
+        if (descriptor.parameters->pluginId != descriptor.id)
+            throw std::invalid_argument("Plugin parameter schema ID does not match descriptor");
+    }
     entries_.push_back({std::move(descriptor), std::move(factory)});
 }
 

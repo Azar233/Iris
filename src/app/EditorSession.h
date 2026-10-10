@@ -52,6 +52,7 @@ enum class EditorCommandType {
     SetShadingSettings,
     SetPostProcessingSettings,
     SetRenderPluginEnabled,
+    SetRenderPluginParameter,
     SetRenderPipelineMode,
     SetRasterizationSettings,
     SetCameraSettings,
@@ -378,6 +379,7 @@ struct EditorCommand {
     bool flag{false};
     std::string text;
     EditorTransformPayload transform;
+    std::string pluginParameterId;
     EditorVector3Payload color;
     EditorStageSettingsPayload stage;
     EditorMaterialSettingsPayload material;

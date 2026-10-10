@@ -7,19 +7,22 @@
 #include <utility>
 
 #include "plugin/RenderPlugin.h"
+#include "plugin/RenderPluginParameters.h"
 
 namespace iris {
 
 struct RenderPluginDescriptor {
     RenderPluginDescriptor(std::string idValue, int api, std::vector<std::string> services,
-        std::string licenseValue, RenderPluginContract contractValue = {})
+        std::string licenseValue, RenderPluginContract contractValue = {},
+        const RenderPluginParameterSchema* parameterSchema = nullptr)
         : id(std::move(idValue)), apiVersion(api), requiredServices(std::move(services)),
-          license(std::move(licenseValue)), contract(std::move(contractValue)) {}
+          license(std::move(licenseValue)), contract(std::move(contractValue)), parameters(parameterSchema) {}
     std::string id;
     int apiVersion{renderPluginApiVersion};
     std::vector<std::string> requiredServices;
     std::string license;
     RenderPluginContract contract;
+    const RenderPluginParameterSchema* parameters{nullptr}; // Static schema outlives the registry.
 };
 
 class RenderPluginRegistry {

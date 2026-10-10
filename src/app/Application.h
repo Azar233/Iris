@@ -86,6 +86,7 @@ private:
     void materializeStressEntities(std::vector<RenderItem>& items);
     bool editorInteractionRegression();
     bool pluginActivationRegression();
+    bool pluginParameterRegression();
     void drawInspectorPanel();
     void drawViewportPanel();
     void drawBufferPreviewPanel();

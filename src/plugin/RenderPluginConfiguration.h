@@ -3,6 +3,8 @@
 #include <vector>
 #include <set>
 #include <cctype>
+#include "module/ParameterRegistry.h"
+struct RendererSettings;
 namespace iris {
 struct RenderPluginActivation { std::string id; bool enabled{true}; };
 using RenderPluginConfiguration=std::vector<RenderPluginActivation>;
@@ -24,4 +26,6 @@ bool validatePluginConfiguration(const RenderPluginRegistry& registry,
     const RenderPluginConfiguration& config,const std::string& required,std::string& error);
 bool setPluginEnabled(const RenderPluginRegistry& registry,RenderPluginConfiguration& config,
     const std::string& required,const std::string& id,bool enabled,std::string& error);
+bool setPluginParameter(const RenderPluginRegistry& registry, RendererSettings& settings,
+    const std::string& id, const ModuleParameterOverride& parameter, bool& affectsHistory, std::string& error);
 } // namespace iris
