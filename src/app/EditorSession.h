@@ -53,6 +53,7 @@ enum class EditorCommandType {
     SetPostProcessingSettings,
     SetRenderPluginEnabled,
     SetRenderPluginParameter,
+    RetryShaderReload,
     SetRenderPipelineMode,
     SetRasterizationSettings,
     SetCameraSettings,

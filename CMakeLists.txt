@@ -1755,6 +1755,11 @@ add_custom_target(light-entity-acceptance
     COMMENT "Checking scene light entities and rendering compatibility")
 
 if(IRIS_ENABLE_ENSCAPE_PLUGIN AND IRIS_ENABLE_POSTPROCESS_PLUGIN)
+add_custom_target(shader-transaction-acceptance
+    COMMAND powershell -NoProfile -ExecutionPolicy Bypass -File ${CMAKE_CURRENT_SOURCE_DIR}/tools/ShaderTransactionAcceptance.ps1
+        -BuildDirectory ${CMAKE_CURRENT_BINARY_DIR}
+    DEPENDS MyRenderer WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    COMMENT "Checking atomic multi-program reload, real plugin output and retry UI")
 add_custom_target(render-plugin-parameter-gpu-acceptance
     COMMAND ${CMAKE_COMMAND} -E env MYRENDERER_SMOKE_TEST=1 MYRENDERER_PLUGIN_PARAMETER_TEST=1
         $<TARGET_FILE:MyRenderer> ${CMAKE_CURRENT_SOURCE_DIR}/assets/models/cube.obj

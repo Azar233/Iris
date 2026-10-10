@@ -3,8 +3,10 @@
 
 #include <algorithm>
 #include <fstream>
+#include <memory>
 #include <sstream>
 #include <stdexcept>
+#include <utility>
 #include <vector>
 
 #include <glad/gl.h>
@@ -17,10 +19,33 @@ std::vector<Shader*>& shaderRegistry() {
     return registry;
 }
 
+std::size_t& shaderRegistryRevision() { static std::size_t revision = 0; return revision; }
+
+// Also owns stages compiled before a later stage or link fails.
+struct CompilationResources {
+    CompilationResources() = default;
+    CompilationResources(const CompilationResources&) = delete;
+    CompilationResources& operator=(const CompilationResources&) = delete;
+    unsigned int program{0};
+    std::array<unsigned int, 3> stages{};
+    ~CompilationResources() {
+        for (auto stage : stages) if (stage) glDeleteShader(stage);
+        if (program) glDeleteProgram(program);
+    }
+};
+
 std::filesystem::file_time_type shaderWriteTime(const std::filesystem::path& path) {
     std::error_code error;
     const auto time = std::filesystem::last_write_time(path, error);
     return error ? std::filesystem::file_time_type::min() : time;
+}
+
+void watchSource(const std::filesystem::path& path, std::vector<std::filesystem::path>& paths,
+    std::vector<std::filesystem::file_time_type>& times) {
+    if (std::find(paths.begin(), paths.end(), path) == paths.end()) {
+        paths.push_back(path);
+        times.push_back(shaderWriteTime(path));
+    }
 }
 
 } // namespace
@@ -28,7 +53,8 @@ std::filesystem::file_time_type shaderWriteTime(const std::filesystem::path& pat
 std::string Shader::expandIncludes(
     const std::filesystem::path& path,
     int depth,
-    std::vector<std::filesystem::path>& dependencies
+    std::vector<std::filesystem::path>& dependencies,
+    std::vector<std::filesystem::file_time_type>& times
 ) {
     // GLSL 3.30 has no `#include`; 4.6 added one and the project's contract is 3.30 Core. Expanding
     // it here is what lets a shader and the C++ code that has to agree with it read the *same file*
@@ -42,9 +68,7 @@ std::string Shader::expandIncludes(
     if (depth > maximumDepth) {
         throw std::runtime_error("Shader include nesting is too deep at " + path.string());
     }
-    if (std::find(dependencies.begin(), dependencies.end(), path) == dependencies.end()) {
-        dependencies.push_back(path);
-    }
+    watchSource(path, dependencies, times);
     std::istringstream input(readFile(path));
     std::ostringstream output;
     std::string line;
@@ -71,11 +95,13 @@ std::string Shader::expandIncludes(
         // rather than to the including file, so both habits exist here and a shader should not have
         // to know which one it is standing in.
         std::filesystem::path resolved = path.parent_path() / requested;
+        watchSource(resolved, dependencies, times);
         if (!std::filesystem::is_regular_file(resolved)) {
             constexpr int maximumAncestors = 6;
             std::filesystem::path directory = path.parent_path();
             for (int level = 0; level < maximumAncestors; ++level) {
                 const std::filesystem::path candidate = directory / requested;
+                watchSource(candidate, dependencies, times);
                 if (std::filesystem::is_regular_file(candidate)) {
                     resolved = candidate;
                     break;
@@ -91,174 +117,135 @@ std::string Shader::expandIncludes(
         // Each included file is wrapped in a `#line` pair so a compiler error inside it still names
         // the real file and line rather than a position in the expanded text.
         output << "#line 1 \"" << resolved.generic_string() << "\"\n";
-        output << expandIncludes(resolved, depth + 1, dependencies);
+        output << expandIncludes(resolved, depth + 1, dependencies, times);
         output << "#line 1 \"" << path.generic_string() << "\"\n";
     }
     return output.str();
 }
 
-Shader::Shader(const std::filesystem::path& vertexPath, const std::filesystem::path& fragmentPath) {
-    stagePaths_[0] = vertexPath;
-    stagePaths_[2] = fragmentPath;
-    // Expanded once here and reused at every point that needs the text, so the compile step, the
-    // reload step and the dependency list can never disagree about what the shader is. One
-    // dependency list per stage keeps a shared header's change attributed to the stages that
-    // actually include it.
-    const std::string vertexSource = expandIncludes(vertexPath, 0, includedPaths_[0]);
-    const std::string fragmentSource = expandIncludes(fragmentPath, 0, includedPaths_[2]);
-    const unsigned int vertexShader = compile(GL_VERTEX_SHADER, vertexSource, vertexPath);
-    const unsigned int fragmentShader = compile(GL_FRAGMENT_SHADER, fragmentSource, fragmentPath);
+Shader::Shader(const std::filesystem::path& vertexPath, const std::filesystem::path& fragmentPath)
+    : Shader(std::array<std::filesystem::path, 3>{vertexPath, {}, fragmentPath}) {}
 
-    program_ = glCreateProgram();
-    glAttachShader(program_, vertexShader);
-    glAttachShader(program_, fragmentShader);
-    glLinkProgram(program_);
+Shader::Shader(const std::filesystem::path& vertexPath, const std::filesystem::path& geometryPath,
+    const std::filesystem::path& fragmentPath)
+    : Shader(std::array<std::filesystem::path, 3>{vertexPath, geometryPath, fragmentPath}) {}
 
-    int linked = GL_FALSE;
-    glGetProgramiv(program_, GL_LINK_STATUS, &linked);
-    if (linked != GL_TRUE) {
-        int logLength = 0;
-        glGetProgramiv(program_, GL_INFO_LOG_LENGTH, &logLength);
-        std::vector<char> log(static_cast<std::size_t>(std::max(logLength, 1)));
-        glGetProgramInfoLog(program_, logLength, nullptr, log.data());
-        glDeleteShader(vertexShader);
-        glDeleteShader(fragmentShader);
-        glDeleteProgram(program_);
-        program_ = 0;
-        throw std::runtime_error("Shader link failed:\n" + std::string(log.data()));
-    }
-
-    glDetachShader(program_, vertexShader);
-    glDetachShader(program_, fragmentShader);
-    glDeleteShader(vertexShader);
-    glDeleteShader(fragmentShader);
-    captureWriteTimes();
+Shader::Shader(std::array<std::filesystem::path, 3> paths) : stagePaths_(std::move(paths)) {
+    CompilationResources resources;
+    resources.program = buildProgram(stagePaths_, watchedSources_);
+    if (snapshotChanged(watchedSources_)) throw std::runtime_error("Shader sources changed during construction");
     shaderRegistry().push_back(this);
+    ++shaderRegistryRevision();
+    program_ = resources.program;
+    resources.program = 0;
 }
 
-Shader::Shader(
-    const std::filesystem::path& vertexPath,
-    const std::filesystem::path& geometryPath,
-    const std::filesystem::path& fragmentPath
-) {
-    stagePaths_[0] = vertexPath;
-    stagePaths_[1] = geometryPath;
-    stagePaths_[2] = fragmentPath;
-    hasGeometryStage_ = true;
-    const unsigned int vertexShader = compile(
-        GL_VERTEX_SHADER, expandIncludes(vertexPath, 0, includedPaths_[0]), vertexPath);
-    const unsigned int geometryShader = compile(
-        GL_GEOMETRY_SHADER, expandIncludes(geometryPath, 0, includedPaths_[1]), geometryPath);
-    const unsigned int fragmentShader = compile(
-        GL_FRAGMENT_SHADER, expandIncludes(fragmentPath, 0, includedPaths_[2]), fragmentPath);
-
-    program_ = glCreateProgram();
-    glAttachShader(program_, vertexShader);
-    glAttachShader(program_, geometryShader);
-    glAttachShader(program_, fragmentShader);
-    glLinkProgram(program_);
+unsigned int Shader::buildProgram(const std::array<std::filesystem::path, 3>& paths, SourceSnapshot& snapshot) {
+    // Capture times before reading, then recheck before publishing GPU programs.
+    for (std::size_t i = 0; i < paths.size(); ++i)
+        if (!paths[i].empty()) watchSource(paths[i], snapshot.paths[i], snapshot.times[i]);
+    std::array<std::string, 3> sources;
+    for (std::size_t i = 0; i < paths.size(); ++i)
+        if (!paths[i].empty()) sources[i] = expandIncludes(paths[i], 0, snapshot.paths[i], snapshot.times[i]);
+    CompilationResources resources;
+    const std::array<unsigned int, 3> types{GL_VERTEX_SHADER, GL_GEOMETRY_SHADER, GL_FRAGMENT_SHADER};
+    for (std::size_t i = 0; i < paths.size(); ++i)
+        if (!paths[i].empty()) resources.stages[i] = compile(types[i], sources[i], paths[i]);
+    resources.program = glCreateProgram();
+    if (!resources.program) throw std::runtime_error("Cannot allocate Shader program");
+    for (auto stage : resources.stages) if (stage) glAttachShader(resources.program, stage);
+    glLinkProgram(resources.program);
     int linked = GL_FALSE;
-    glGetProgramiv(program_, GL_LINK_STATUS, &linked);
+    glGetProgramiv(resources.program, GL_LINK_STATUS, &linked);
     if (linked != GL_TRUE) {
-        int logLength = 0;
-        glGetProgramiv(program_, GL_INFO_LOG_LENGTH, &logLength);
-        std::vector<char> log(static_cast<std::size_t>(std::max(logLength, 1)));
-        glGetProgramInfoLog(program_, logLength, nullptr, log.data());
-        glDeleteProgram(program_);
-        program_ = 0;
-        glDeleteShader(vertexShader);
-        glDeleteShader(geometryShader);
-        glDeleteShader(fragmentShader);
-        throw std::runtime_error("Shader link failed:\n" + std::string(log.data()));
+        int length = 0;
+        glGetProgramiv(resources.program, GL_INFO_LOG_LENGTH, &length);
+        std::vector<char> log(static_cast<std::size_t>(std::max(length, 1)));
+        glGetProgramInfoLog(resources.program, length, nullptr, log.data());
+        throw std::runtime_error("Shader link failed (" + paths[2].string() + "):\n" + log.data());
     }
-    glDetachShader(program_, vertexShader);
-    glDetachShader(program_, geometryShader);
-    glDetachShader(program_, fragmentShader);
-    glDeleteShader(vertexShader);
-    glDeleteShader(geometryShader);
-    glDeleteShader(fragmentShader);
-    captureWriteTimes();
-    shaderRegistry().push_back(this);
+    for (auto stage : resources.stages) if (stage) glDetachShader(resources.program, stage);
+    const auto program = resources.program;
+    resources.program = 0;
+    return program;
 }
 
 Shader::~Shader() {
     auto& registry = shaderRegistry();
     registry.erase(std::remove(registry.begin(), registry.end(), this), registry.end());
-    if (program_ != 0U) {
-        glDeleteProgram(program_);
-    }
+    ++shaderRegistryRevision();
+    if (program_) glDeleteProgram(program_);
 }
 
-Shader::ReloadReport Shader::reloadChangedShaders() {
-    ReloadReport report;
-    const std::vector<Shader*> shaders = shaderRegistry();
-    for (Shader* shader : shaders) {
-        if (shader == nullptr) continue;
-        std::string error;
-        if (shader->reloadIfChanged(error)) {
-            ++report.reloaded;
-        } else if (!error.empty()) {
-            ++report.failed;
-            if (!report.message.empty()) report.message += '\n';
-            report.message += error;
-        }
-    }
-    return report;
-}
-
-bool Shader::stageChanged(std::size_t stage) const {
-    if (stage >= stagePaths_.size()) return false;
-    // A shared header changing has to reload the shaders that include it, not only the stage file
-    // that was edited. Without this the include expansion would silently break hot reload for every
-    // shader that shares code -- which is the feature the expansion exists to enable.
-    for (std::size_t index = 0; index < includedPaths_[stage].size(); ++index) {
-        const auto recorded = index < includedWriteTimes_[stage].size()
-            ? includedWriteTimes_[stage][index]
-            : std::filesystem::file_time_type::min();
-        if (shaderWriteTime(includedPaths_[stage][index]) != recorded) return true;
+bool Shader::snapshotChanged(const SourceSnapshot& snapshot) {
+    for (std::size_t stage = 0; stage < snapshot.paths.size(); ++stage) {
+        if (snapshot.paths[stage].size() != snapshot.times[stage].size()) return true;
+        for (std::size_t i = 0; i < snapshot.paths[stage].size(); ++i)
+            if (shaderWriteTime(snapshot.paths[stage][i]) != snapshot.times[stage][i]) return true;
     }
     return false;
 }
 
-bool Shader::reloadIfChanged(std::string& error) {
-    bool changed = false;
-    for (std::size_t index = 0; index < stagePaths_.size(); ++index) {
-        if (stagePaths_[index].empty()) continue;
-        changed |= shaderWriteTime(stagePaths_[index]) != writeTimes_[index];
-        changed |= stageChanged(index);
+Shader::ReloadReport Shader::reloadChangedShaders(bool retryPending) {
+    ReloadReport report;
+    const auto shaders = shaderRegistry();
+    static std::size_t failedRegistryRevision = 0;
+    bool changed = false, pending = false;
+    for (const auto* shader : shaders) {
+        changed = changed || snapshotChanged(shader->watchedSources_);
+        pending = pending || shader->reloadPending_;
+        if (shader->reloadPending_) ++report.pending;
     }
-    if (!changed) return false;
-
-    try {
-        if (hasGeometryStage_) {
-            Shader candidate(stagePaths_[0], stagePaths_[1], stagePaths_[2]);
-            std::swap(program_, candidate.program_);
-        } else {
-            Shader candidate(stagePaths_[0], stagePaths_[2]);
-            std::swap(program_, candidate.program_);
+    if (!changed && !(pending && (retryPending || failedRegistryRevision != shaderRegistryRevision()))) return report;
+    struct Candidate {
+        Shader* target;
+        unsigned int program{0};
+        SourceSnapshot sources;
+        explicit Candidate(Shader* shader) : target(shader) {}
+        ~Candidate() { if (program) glDeleteProgram(program); }
+    };
+    std::vector<std::unique_ptr<Candidate>> candidates;
+    for (auto* shader : shaders) {
+        if (!shader->reloadPending_ && !snapshotChanged(shader->watchedSources_)) continue;
+        auto candidate = std::make_unique<Candidate>(shader);
+        try {
+            candidate->program = buildProgram(shader->stagePaths_, candidate->sources);
+        } catch (const std::exception& error) {
+            ++report.failed;
+            if (!report.message.empty()) report.message += '\n';
+            report.message += error.what();
         }
-        captureWriteTimes();
-        return true;
-    } catch (const std::exception& exception) {
-        captureWriteTimes();
-        error = exception.what();
-        return false;
+        candidates.push_back(std::move(candidate));
     }
-}
-
-void Shader::captureWriteTimes() {
-    for (std::size_t index = 0; index < stagePaths_.size(); ++index) {
-        writeTimes_[index] = stagePaths_[index].empty()
-            ? std::filesystem::file_time_type::min()
-            : shaderWriteTime(stagePaths_[index]);
-        includedWriteTimes_[index].clear();
-        includedWriteTimes_[index].reserve(includedPaths_[index].size());
-        for (const std::filesystem::path& dependency : includedPaths_[index]) {
-            includedWriteTimes_[index].push_back(shaderWriteTime(dependency));
+    // No allocation or file reads occur during publication; a changed input rejects
+    // the complete batch just like a compiler error.
+    for (const auto& candidate : candidates) {
+        if (snapshotChanged(candidate->sources)) {
+            ++report.failed;
+            report.message += "\nShader sources changed while preparing: " + candidate->target->stagePaths_[2].string();
         }
     }
+    if (report.failed) {
+        report.retained = candidates.size();
+        report.pending = candidates.size();
+        report.message = "Reload transaction rejected; retained " + std::to_string(report.retained)
+            + " program(s).\n" + report.message;
+        for (auto& candidate : candidates) {
+            candidate->target->watchedSources_ = std::move(candidate->sources);
+            candidate->target->reloadPending_ = true;
+        }
+        failedRegistryRevision = shaderRegistryRevision();
+        return report; // Candidate destructors release every uncommitted program.
+    }
+    for (auto& candidate : candidates) {
+        std::swap(candidate->program, candidate->target->program_);
+        std::swap(candidate->sources, candidate->target->watchedSources_);
+        candidate->target->reloadPending_ = false;
+    }
+    report.reloaded = candidates.size();
+    report.pending = 0;
+    return report;
 }
-
 void Shader::use() const {
     glUseProgram(program_);
 }
@@ -347,7 +334,9 @@ std::string Shader::readFile(const std::filesystem::path& path) {
 }
 
 unsigned int Shader::compile(unsigned int type, const std::string& source, const std::filesystem::path& path) {
-    const unsigned int shader = glCreateShader(type);
+    CompilationResources resources;
+    const unsigned int shader = resources.stages[0] = glCreateShader(type);
+    if (!shader) throw std::runtime_error("Cannot allocate Shader stage: " + path.string());
     const char* sourcePointer = source.c_str();
     glShaderSource(shader, 1, &sourcePointer, nullptr);
     glCompileShader(shader);
@@ -359,9 +348,9 @@ unsigned int Shader::compile(unsigned int type, const std::string& source, const
         glGetShaderiv(shader, GL_INFO_LOG_LENGTH, &logLength);
         std::vector<char> log(static_cast<std::size_t>(std::max(logLength, 1)));
         glGetShaderInfoLog(shader, logLength, nullptr, log.data());
-        glDeleteShader(shader);
         throw std::runtime_error("Shader compile failed (" + path.string() + "):\n" + log.data());
     }
+    resources.stages[0] = 0;
     return shader;
 }
 

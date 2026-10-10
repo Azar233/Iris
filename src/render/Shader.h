@@ -16,6 +16,8 @@ public:
         std::size_t reloaded{0U};
         std::size_t failed{0U};
         std::string message;
+        std::size_t retained{0U};
+        std::size_t pending{0U};
     };
 
     Shader(const std::filesystem::path& vertexPath, const std::filesystem::path& fragmentPath);
@@ -46,9 +48,17 @@ public:
     // ask the CPU for the value the shader is about to compute at each sample, and it cannot know
     // that name in advance.
     void setFloatByName(const char* name, float value) const;
-    static ReloadReport reloadChangedShaders();
+    // One context-thread transaction for every changed/pending registered program.
+    static ReloadReport reloadChangedShaders(bool retryPending = false);
 
 private:
+    struct SourceSnapshot {
+        std::array<std::vector<std::filesystem::path>, 3> paths;
+        std::array<std::vector<std::filesystem::file_time_type>, 3> times;
+    };
+    explicit Shader(std::array<std::filesystem::path, 3> paths);
+    static unsigned int buildProgram(const std::array<std::filesystem::path, 3>& paths, SourceSnapshot& snapshot);
+    static bool snapshotChanged(const SourceSnapshot& snapshot);
     static std::string readFile(const std::filesystem::path& path);
     // Resolves `#include "name"` relative to the including file and inlines the result, recording
     // every file it touched. GLSL 3.30 has no include of its own, and expanding it here is what lets
@@ -56,21 +66,14 @@ private:
     static std::string expandIncludes(
         const std::filesystem::path& path,
         int depth,
-        std::vector<std::filesystem::path>& dependencies
+        std::vector<std::filesystem::path>& dependencies,
+        std::vector<std::filesystem::file_time_type>& times
     );
     static unsigned int compile(unsigned int type, const std::string& source, const std::filesystem::path& path);
     int uniformLocation(const char* name) const;
-    bool reloadIfChanged(std::string& error);
-    // Whether a stage file *or anything it includes* is newer than when it was last compiled.
-    bool stageChanged(std::size_t stage) const;
-    void captureWriteTimes();
 
     unsigned int program_{0};
     std::array<std::filesystem::path, 3> stagePaths_{};
-    std::array<std::filesystem::file_time_type, 3> writeTimes_{};
-    // Every file expanded into each stage, so a change to a shared header reloads the shaders that
-    // use it rather than only the stage files that were edited.
-    std::array<std::vector<std::filesystem::path>, 3> includedPaths_{};
-    std::array<std::vector<std::filesystem::file_time_type>, 3> includedWriteTimes_{};
-    bool hasGeometryStage_{false};
+    SourceSnapshot watchedSources_;
+    bool reloadPending_{false};
 };

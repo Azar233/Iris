@@ -1019,7 +1019,9 @@ int Application::run(const std::filesystem::path& initialModel) {
     bool bufferAcceptancePassed = true;
     if (bufferAcceptance || std::getenv("MYRENDERER_BUFFER_DRAWER_INTERACTION")) focusBuffersTab_ = true;
     const bool lightUiInteraction = std::getenv("MYRENDERER_LIGHT_UI_INTERACTION") != nullptr;
-    int smokeTestFrames = std::getenv("MYRENDERER_SMOKE_TEST") == nullptr ? -1 : (lightUiInteraction ? 16 : 5);
+    bool shaderTransactionDone = false, shaderTransactionPassed = true;
+    int smokeTestFrames = std::getenv("MYRENDERER_SMOKE_TEST") == nullptr ? -1
+        : (!shaderTransactionSources_.empty() ? 12 : (lightUiInteraction ? 16 : 5));
     const auto cpuPreviewSmokeDeadline = std::chrono::steady_clock::now()
         + std::chrono::seconds(30);
     const auto thumbnailDeadline = std::chrono::steady_clock::now() + std::chrono::seconds(30);
@@ -1120,6 +1122,12 @@ int Application::run(const std::filesystem::path& initialModel) {
             && !scene_.entities().empty()) {
             lightAcceptancePassed = runLightEntityAcceptance(std::filesystem::u8path(lightAcceptanceDirectory));
             lightAcceptanceDone = true;
+            pendingScreenshotWarmupFrames_ = pendingEditorScreenshotWarmupFrames_ = 2;
+        }
+        if (!shaderTransactionSources_.empty() && !shaderTransactionDone && !pendingModelImport_.has_value()
+            && !scene_.entities().empty()) {
+            shaderTransactionPassed = shaderTransactionAcceptance();
+            shaderTransactionDone = true;
             pendingScreenshotWarmupFrames_ = pendingEditorScreenshotWarmupFrames_ = 2;
         }
         ImGui_ImplOpenGL3_NewFrame();
@@ -1353,6 +1361,8 @@ int Application::run(const std::filesystem::path& initialModel) {
     shutdown();
     if (lightUiInteraction && !lightUiInteractionComplete_) std::cerr << "Light UI incomplete: phase=" << lightUiInteractionPhase_ << ", lights=" << scene_.lightEntityCount() << "\n";
     return recoveryPassed && appendPassed && interactionsPassed && pluginsPassed && pluginParametersPassed
+        && (shaderTransactionSources_.empty() || (shaderTransactionDone && shaderTransactionPassed))
+        && (!std::getenv("MYRENDERER_SHADER_TRANSACTION_UI_RETRY") || shaderRetryInteractionComplete_)
         && referenceComparisonPassed && cpuPreviewSmokePassed && thumbnailAcceptancePassed
         && (!bufferAcceptance || (bufferAcceptancePhase == 3 && bufferAcceptancePassed))
         && (!std::getenv("MYRENDERER_BUFFER_DRAWER_INTERACTION") || bufferDrawerInteractionComplete_)
@@ -1556,11 +1566,21 @@ void Application::initializeGui() {
 }
 
 void Application::initializeRenderer() {
+    auto shaderDirectory = sourceRoot_ / "shaders";
+    if (const char* directory = std::getenv("MYRENDERER_SHADER_TRANSACTION_DIRECTORY")) {
+        if (!*directory) throw std::runtime_error("Shader transaction output directory is empty");
+        shaderTransactionOutput_ = std::filesystem::absolute(std::filesystem::u8path(directory));
+        shaderTransactionSources_ = shaderTransactionOutput_ / ("sources-"
+            + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
+        std::filesystem::create_directories(shaderTransactionOutput_);
+        std::filesystem::copy(shaderDirectory, shaderTransactionSources_, std::filesystem::copy_options::recursive);
+        shaderDirectory = shaderTransactionSources_;
+    }
     renderer_ = std::make_unique<Renderer>(
-        sourceRoot_ / "shaders" / "basic.vert",
-        sourceRoot_ / "shaders" / "basic.frag",
-        sourceRoot_ / "shaders" / "debug_lines.vert",
-        sourceRoot_ / "shaders" / "debug_lines.frag"
+        shaderDirectory / "basic.vert",
+        shaderDirectory / "basic.frag",
+        shaderDirectory / "debug_lines.vert",
+        shaderDirectory / "debug_lines.frag"
     );
     if (cloudMarchExtinctionOverridden_) {
         renderer_->setCloudMarchExtinction(cloudMarchExtinctionOverride_);
@@ -1937,6 +1957,7 @@ void Application::drawInspectorPanel() {
                 nullptr,
                 showRenderer ? ImGuiTabItemFlags_SetSelected : 0
             )) {
+            if (!shaderTransactionSources_.empty()) ImGui::SetNextItemOpen(false, ImGuiCond_Always);
             if (EditorUi::section("Stage", true)) {
                 EditorUi::Checkbox(EditorUi::label("Ground receiver"), &showGroundPlane_);
                 EditorUi::ColorEdit3(EditorUi::label("Ground color"), &groundColor_.x);
@@ -1944,6 +1965,7 @@ void Application::drawInspectorPanel() {
                 EditorUi::Checkbox(EditorUi::label("Comparison object"), &showComparisonObject_);
             }
 
+            if (!shaderTransactionSources_.empty()) ImGui::SetNextItemOpen(false, ImGuiCond_Always);
             if (EditorUi::section("Material", true)) {
                 EditorUi::ColorEdit3(EditorUi::label("Base color tint"), &rendererSettings_.baseColor.x);
                 EditorUi::SliderFloat("Ambient", &rendererSettings_.ambientStrength, 0.0f, 1.0f);
@@ -1952,6 +1974,7 @@ void Application::drawInspectorPanel() {
                 EditorUi::SliderFloat("Shininess", &rendererSettings_.shininess, 1.0f, 256.0f, "%.0f", ImGuiSliderFlags_Logarithmic);
             }
 
+            if (!shaderTransactionSources_.empty()) ImGui::SetNextItemOpen(true, ImGuiCond_Always);
             if (EditorUi::section("Shader development")) {
                 EditorUi::Checkbox(EditorUi::label("Shader hot reload"), &rendererSettings_.shaderHotReloadEnabled);
                 if (renderer_ != nullptr) {
@@ -1959,8 +1982,23 @@ void Application::drawInspectorPanel() {
                         ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.36f, 0.30f, 1.0f));
                         ImGui::TextWrapped("%s", renderer_->shaderReloadStatus().c_str());
                         ImGui::PopStyleColor();
+                        if (ImGui::Button(EditorUi::chinese ? "重试 Shader 重载" : "Retry Shader reload"))
+                            editorSession_.request(EditorCommand{EditorCommandType::RetryShaderReload});
+                        if (std::getenv("MYRENDERER_SHADER_TRANSACTION_UI_RETRY") && shaderRetryInteractionPhase_ < 4) {
+                            auto& io = ImGui::GetIO();
+                            if (shaderRetryInteractionPhase_ < 2 || ImGui::IsWindowAppearing()) {
+                                ++shaderRetryInteractionPhase_;
+                            } else if (shaderRetryInteractionPhase_ == 2) {
+                                const auto a = ImGui::GetItemRectMin(), b = ImGui::GetItemRectMax();
+                                io.AddFocusEvent(true); io.AddMousePosEvent((a.x+b.x)*0.5f, (a.y+b.y)*0.5f);
+                                io.AddMouseButtonEvent(0,true);
+                                ++shaderRetryInteractionPhase_;
+                            } else { io.AddMouseButtonEvent(0,false); ++shaderRetryInteractionPhase_; }
+                        }
                     } else {
-                        ImGui::TextDisabled("%s", renderer_->shaderReloadStatus().c_str());
+                        ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled));
+                        ImGui::TextWrapped("%s", renderer_->shaderReloadStatus().c_str());
+                        ImGui::PopStyleColor();
                     }
                 }
             }
@@ -2239,6 +2277,7 @@ void Application::drawInspectorPanel() {
                 );
                 ImGui::EndDisabled();
             }
+            if (!shaderTransactionSources_.empty()) ImGui::SetNextItemOpen(false, ImGuiCond_Always);
             if (EditorUi::section("Lighting & environment", true)) {
             const bool enscapeAvailable = iris::builtinRenderPlugins().contains(iris::enscapePluginId)
                 &&iris::pluginEnabled(rendererSettings_.renderPlugins,iris::enscapePluginId);

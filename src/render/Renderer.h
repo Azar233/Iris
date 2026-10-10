@@ -324,6 +324,8 @@ public:
     TextureCache& textureCache();
     const std::string& shaderReloadStatus() const { return shaderReloadStatus_; }
     bool shaderReloadFailed() const { return shaderReloadFailed_; }
+    bool reloadShaderResources(bool retryPending = false);
+    std::size_t historyInvalidationRevision() const { return historyInvalidationRevision_; }
 
     // The march's extinction is otherwise fixed at the calibrated constant below. This setter exists
     // for measurement, not for authoring: the shape calibration has to sweep it without a rebuild per
@@ -450,5 +452,6 @@ private:
     std::size_t shaderReloadPollFrame_{0U};
     std::string shaderReloadStatus_{"Watching shader files"};
     bool shaderReloadFailed_{false};
+    std::size_t historyInvalidationRevision_{0};
     OpenGlStateCache stateCache_;
 };

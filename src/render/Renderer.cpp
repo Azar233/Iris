@@ -215,16 +215,7 @@ void Renderer::render(
     width = std::max(width, 1);
     height = std::max(height, 1);
     if (settings.shaderHotReloadEnabled && shaderReloadPollFrame_++ % 15U == 0U) {
-        const Shader::ReloadReport reload = Shader::reloadChangedShaders();
-        if (reload.failed > 0U) {
-            shaderReloadFailed_ = true;
-            shaderReloadStatus_ = reload.message;
-        } else if (reload.reloaded > 0U) {
-            shaderReloadFailed_ = false;
-            shaderReloadStatus_ = "Reloaded " + std::to_string(reload.reloaded)
-                + " shader program(s)";
-            invalidateTemporalHistory();
-        }
+        reloadShaderResources();
     }
     renderTarget_->resize(width, height,
         settings.enscapeCubeShaderEnabled ? 1 : settings.msaaSamples);
@@ -1814,11 +1805,31 @@ unsigned int Renderer::colorTexture() const {
 }
 
 void Renderer::invalidateTemporalHistory() {
+    ++historyInvalidationRevision_;
     if (postProcessor_) postProcessor_->invalidateHistory();
     previousViewProjectionValid_ = false;
     temporalFrameIndex_ = 0U;
     cloudHistoryInvalidated_ = true;
     if (enscapeCubeRenderer_) enscapeCubeRenderer_->invalidateHistory();
+}
+
+bool Renderer::reloadShaderResources(bool retryPending) {
+    const auto report = Shader::reloadChangedShaders(retryPending);
+    if (report.failed) {
+        shaderReloadFailed_ = true;
+        shaderReloadStatus_ = report.message;
+        return false;
+    }
+    if (report.reloaded) {
+        stateCache_.invalidate();
+        invalidateTemporalHistory();
+        shaderReloadFailed_ = false;
+        shaderReloadStatus_ = "Committed " + std::to_string(report.reloaded) + " shader program(s)";
+    } else if (shaderReloadFailed_ && report.pending == 0) {
+        shaderReloadFailed_ = false;
+        shaderReloadStatus_ = "Pending Shader reload canceled; prior programs retained";
+    }
+    return true;
 }
 
 TextureCache& Renderer::textureCache() {

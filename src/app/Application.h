@@ -87,6 +87,7 @@ private:
     bool editorInteractionRegression();
     bool pluginActivationRegression();
     bool pluginParameterRegression();
+    bool shaderTransactionAcceptance();
     void drawInspectorPanel();
     void drawViewportPanel();
     void drawBufferPreviewPanel();
@@ -166,6 +167,10 @@ private:
     bool bufferDrawerInteractionComplete_{false};
     int lightUiInteractionPhase_{0};
     bool lightUiInteractionComplete_{false};
+    std::filesystem::path shaderTransactionSources_;
+    std::filesystem::path shaderTransactionOutput_;
+    int shaderRetryInteractionPhase_{0};
+    bool shaderRetryInteractionComplete_{false};
     bool focusPluginsTab_{false};
     int pendingGlslControlsScrollFrames_{0};
     bool focusAssetsTab_{false};

@@ -815,6 +815,17 @@ void Application::processEditorCommands() {
                 if (renderer_ != nullptr) renderer_->invalidateTemporalHistory();
                 break;
             }
+            case EditorCommandType::RetryShaderReload: {
+                const auto revision = renderer_->historyInvalidationRevision();
+                const bool accepted = renderer_->reloadShaderResources(true);
+                statusMessage_ = renderer_->shaderReloadStatus();
+                if (std::getenv("MYRENDERER_SHADER_TRANSACTION_UI_RETRY") && !accepted
+                    && renderer_->historyInvalidationRevision() == revision) {
+                    shaderRetryInteractionComplete_ = true;
+                    std::cout << "Shader transaction retry UI interaction: PASS\n";
+                }
+                break;
+            }
             case EditorCommandType::SetRenderPluginParameter: {
                 ModuleParameterOverride parameter;
                 parameter.id = command.pluginParameterId;
@@ -3107,6 +3118,108 @@ SceneEntityId Application::pickEntity(const std::vector<RenderItem>& items,
     glUseProgram(program); glBindVertexArray(vao); glPixelStorei(GL_PACK_ALIGNMENT, packAlignment);
     if (!complete) throw std::runtime_error("Editor picking framebuffer is incomplete");
     return hit > 0 && hit <= items.size() ? items[hit - 1].entityId : invalidSceneEntityId;
+}
+
+bool Application::shaderTransactionAcceptance() {
+    try {
+        const auto check = [](bool ok, const char* message) { if (!ok) throw std::runtime_error(message); };
+        const auto normalization = glm::scale(glm::mat4(1), glm::vec3(modelNormalizationScale_))
+            * glm::translate(glm::mat4(1), -modelCenter_);
+        syncSceneEntities(normalization);
+        auto settings = rendererSettings_;
+        settings.shaderHotReloadEnabled = false; settings.temporalAaEnabled = false;
+        settings.water.timeSeconds = 1.25f;
+        settings.enscapeCubeShaderEnabled = true;
+        renderer_->render(scene_.buildRenderItems(), camera_, settings, 320, 180);
+        settings.enscapeCubeShaderEnabled = false;
+        const auto draw = [&]() {
+            renderer_->render(scene_.buildRenderItems(), camera_, settings, 320, 180);
+            glFinish(); check(glGetError() == GL_NO_ERROR, "Shader transaction render GL error");
+        };
+        const auto pixels = [&]() {
+            GLint texture=0, pack=0; glGetIntegerv(GL_TEXTURE_BINDING_2D,&texture); glGetIntegerv(GL_PACK_ALIGNMENT,&pack);
+            std::vector<unsigned char> bytes(320U*180U*4U);
+            glBindTexture(GL_TEXTURE_2D, renderer_->colorTexture()); glPixelStorei(GL_PACK_ALIGNMENT,1);
+            glGetTexImage(GL_TEXTURE_2D,0,GL_RGBA,GL_UNSIGNED_BYTE,bytes.data());
+            glBindTexture(GL_TEXTURE_2D,static_cast<GLuint>(texture)); glPixelStorei(GL_PACK_ALIGNMENT,pack);
+            return bytes;
+        };
+        const auto oceanBaseline=pixels();
+        std::string error;
+        draw(); const auto baseline=pixels();
+        check(renderer_->saveScreenshot(shaderTransactionOutput_/"before.png",error), "Shader baseline save failed");
+        check(renderer_->hasRenderPluginInstance(iris::enscapePluginId) && renderer_->hasRenderPluginInstance(iris::postProcessPluginId),
+            "Both real plugin owners were not initialized");
+        const auto composite = shaderTransactionSources_/"postprocess.frag";
+        const auto blur = shaderTransactionSources_/"bloom_blur.frag";
+        const auto oceanImage=shaderTransactionSources_/"third_party/enscape_cube/pass_image.frag";
+        const auto read = [](const auto& path) { std::ifstream in(path,std::ios::binary); return std::string(std::istreambuf_iterator<char>(in),{}); };
+        const auto compositeSource=read(composite), blurSource=read(blur);
+        const auto oceanSource=read(oceanImage);
+        auto oceanReplacement=oceanSource;
+        const std::string oceanCall="mainImage(fragColor, gl_FragCoord.xy);";
+        const auto oceanPosition=oceanReplacement.find(oceanCall);
+        check(oceanPosition!=std::string::npos,"Ocean acceptance output not found");
+        oceanReplacement.replace(oceanPosition,oceanCall.size(),oceanCall+" fragColor=vec4(0.7,0.0,0.9,1.0);");
+        auto replacement=compositeSource;
+        const std::string output="fragmentColor = vec4(color, 1.0);";
+        const auto position=replacement.rfind(output);
+        check(position!=std::string::npos,"Composite acceptance output not found");
+        replacement.replace(position,output.size(),"fragmentColor = vec4(0.0, 1.0, 0.0, 1.0);");
+        int timestamp=2;
+        const auto write = [&](const auto& path, const std::string& text) {
+            std::ofstream file(path,std::ios::binary|std::ios::trunc); file<<text; file.close();
+            check(static_cast<bool>(file),"Shader fixture write failed");
+            std::filesystem::last_write_time(path,std::filesystem::file_time_type::clock::now()+std::chrono::seconds(timestamp++));
+        };
+        write(composite,replacement); write(oceanImage,oceanReplacement);
+        write(blur,"#version 330 core\nintentional compile failure\n");
+        const auto history=renderer_->historyInvalidationRevision(), memory=renderer_->estimatedRenderMemoryBytes();
+        check(!renderer_->reloadShaderResources() && renderer_->shaderReloadFailed()
+            && renderer_->historyInvalidationRevision()==history && renderer_->estimatedRenderMemoryBytes()==memory,
+            "Failed transaction changed history or plugin resources");
+        draw(); check(pixels()==baseline,"Valid composite escaped a failed shader batch");
+        check(renderer_->saveScreenshot(shaderTransactionOutput_/"retained.png",error),"Retained frame save failed");
+        settings.enscapeCubeShaderEnabled=true; draw();
+        check(pixels()==oceanBaseline,"Valid ocean pass escaped failed cross-plugin transaction");
+        settings.enscapeCubeShaderEnabled=false; draw();
+        const auto recoveryHistory=renderer_->historyInvalidationRevision();
+        write(blur,blurSource);
+        check(renderer_->reloadShaderResources() && !renderer_->shaderReloadFailed()
+            && renderer_->historyInvalidationRevision()==recoveryHistory+1,"Recovery did not commit/reset history once");
+        draw(); check(pixels()!=baseline,"Recovered shader batch did not change actual GPU output");
+        check(renderer_->saveScreenshot(shaderTransactionOutput_/"recovered.png",error),"Recovered frame save failed");
+        settings.enscapeCubeShaderEnabled=true; draw();
+        check(pixels()!=oceanBaseline,"Recovered ocean program did not change GPU output");
+        settings.enscapeCubeShaderEnabled=false;
+        // Restore only our private copies, then leave the requested UI state visible.
+        write(composite,compositeSource); write(oceanImage,oceanSource);
+        check(renderer_->reloadShaderResources(),"Original shader recovery failed");
+        draw(); check(pixels()==baseline,"Restoring original sources changed fixed output");
+        // Exercise cancellation through the real renderer diagnostics, not only
+        // the registry: a removed failed owner must not leave a stale error.
+        const auto canceledSource=shaderTransactionSources_/"canceled.frag";
+        write(canceledSource,"#version 330 core\nout vec4 color;\nvoid main(){color=vec4(1.0);}\n");
+        const auto cancellationHistory=renderer_->historyInvalidationRevision();
+        {
+            Shader canceled(shaderTransactionSources_/"fullscreen.vert",canceledSource);
+            write(canceledSource,"#version 330 core\ninvalid fragment\n");
+            check(!renderer_->reloadShaderResources(),"Canceled owner fixture did not fail");
+        }
+        check(renderer_->reloadShaderResources() && !renderer_->shaderReloadFailed()
+            && renderer_->historyInvalidationRevision()==cancellationHistory,"Canceled reload left error/history side effects");
+        if (std::getenv("MYRENDERER_SHADER_TRANSACTION_UI_RETRY")) {
+            write(composite,replacement); write(oceanImage,oceanReplacement);
+            write(blur,"#version 330 core\nintentional compile failure\n");
+            check(!renderer_->reloadShaderResources(),"Failure UI fixture was not rejected");
+        }
+        rendererSettings_.shaderHotReloadEnabled=false;
+        focusRendererTab_=true;
+        std::cout<<"Shader transaction real plugins / retained pixels-resources-history / recovery / restoration: PASS\n";
+        return true;
+    } catch (const std::exception& error) {
+        std::cerr<<"Shader transaction acceptance: "<<error.what()<<'\n'; return false;
+    }
 }
 
 bool Application::pluginParameterRegression() {
