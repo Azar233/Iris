@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <filesystem>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "module/RuntimeScene.h"
@@ -40,9 +41,17 @@ struct SimulationCacheKey {
 };
 
 struct SimulationCacheEntity {
+    SimulationCacheEntity() = default;
+    SimulationCacheEntity(SceneEntityId identity, SceneTransform pose, glm::vec3 color)
+        : id(identity), transform(std::move(pose)), tint(color) {}
+    SimulationCacheEntity(SceneEntityId identity, SceneTransform pose, glm::vec3 color,
+                          std::optional<SceneLightComponent> component)
+        : id(identity), transform(std::move(pose)), tint(color), light(std::move(component)), lightRecorded(true) {}
     SceneEntityId id{invalidSceneEntityId};
     SceneTransform transform;
     glm::vec3 tint{1.0f};
+    std::optional<SceneLightComponent> light;
+    bool lightRecorded{false}; // Missing legacy field preserves the input component.
 };
 
 struct SimulationCacheFrame {

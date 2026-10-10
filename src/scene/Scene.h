@@ -2,6 +2,8 @@
 
 #include <cstdint>
 #include <string>
+#include <optional>
+#include "scene/Light.h"
 #include <vector>
 
 #include <glm/mat4x4.hpp>
@@ -33,6 +35,7 @@ struct SceneEntity {
     glm::mat4 worldTransform{1.0f};
     glm::mat4 previousWorldTransform{1.0f};
     glm::vec3 tint{1.0f};
+    std::optional<SceneLightComponent> light;
     bool visible{true};
     bool enabledByPreset{true};
     bool castsShadow{true};
@@ -54,6 +57,9 @@ public:
         const GpuModel* model = nullptr,
         std::string modelResource = {}
     );
+    SceneEntityId createLightEntity(std::string name, const SceneLightComponent& light);
+    std::size_t lightEntityCount() const;
+    std::vector<LocalLight> buildLocalLights() const;
     SceneEntityId duplicateEntity(SceneEntityId source);
     bool destroyEntity(SceneEntityId id);
     bool setParent(SceneEntityId child, SceneEntityId parent);

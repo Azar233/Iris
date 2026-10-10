@@ -729,6 +729,17 @@ if(BUILD_TESTING)
         target_compile_options(MyRendererSceneDocumentTests PRIVATE -Wall -Wextra -Wpedantic)
     endif()
     add_test(NAME scene-document-repeat-load COMMAND MyRendererSceneDocumentTests)
+    add_executable(IrisLightEntityTests tests/LightEntityTests.cpp
+        src/scene/Scene.cpp src/scene/SceneDocument.cpp src/module/RuntimeScene.cpp src/module/SimulationCache.cpp)
+    target_include_directories(IrisLightEntityTests PRIVATE src ${assimp_SOURCE_DIR}/contrib/rapidjson/include)
+    target_link_libraries(IrisLightEntityTests PRIVATE glm::glm glad_gl_core_33 MyRendererCloudNoise)
+    if(MSVC)
+        target_compile_options(IrisLightEntityTests PRIVATE /W4 /permissive- /utf-8)
+    else()
+        target_compile_options(IrisLightEntityTests PRIVATE -Wall -Wextra -Wpedantic)
+    endif()
+    add_test(NAME scene-light-entities COMMAND IrisLightEntityTests)
+
 
     add_executable(MyRendererPathTracingTests tests/PathTracingFoundationTests.cpp)
     target_link_libraries(MyRendererPathTracingTests PRIVATE MyRendererPathTracing)
@@ -1701,3 +1712,30 @@ set(CPACK_COMPONENTS_ALL Runtime)
 set(CPACK_ARCHIVE_COMPONENT_INSTALL ON)
 set(CPACK_COMPONENTS_GROUPING ALL_COMPONENTS_IN_ONE)
 include(CPack)
+
+# Real-context inspection: unchanged scene pixels, GL state and resource lifetime.
+add_custom_target(gpu-buffer-preview-acceptance
+    COMMAND ${CMAKE_COMMAND} -E env
+        MYRENDERER_SMOKE_TEST=1 MYRENDERER_RENDER_PATH=1 MYRENDERER_SSAO=1
+        MYRENDERER_RENDER_WIDTH=320 MYRENDERER_RENDER_HEIGHT=180
+        MYRENDERER_BUFFER_PREVIEW_ACCEPTANCE=1
+        $<TARGET_FILE:MyRenderer> ${CMAKE_CURRENT_SOURCE_DIR}/assets/models/pbr_material_test.gltf
+    COMMAND ${CMAKE_COMMAND} -E env
+        MYRENDERER_SMOKE_TEST=1 MYRENDERER_RENDER_PATH=1 MYRENDERER_SSAO=1
+        MYRENDERER_RENDER_WIDTH=320 MYRENDERER_RENDER_HEIGHT=180
+        MYRENDERER_BUFFER_DRAWER_INTERACTION=1
+        $<TARGET_FILE:MyRenderer> ${CMAKE_CURRENT_SOURCE_DIR}/assets/models/pbr_material_test.gltf
+    DEPENDS MyRenderer WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    COMMENT "Checking real GPU buffer inspection state, pixels and resource lifecycle")
+add_custom_target(buffer-preview-capture
+    COMMAND ${CMAKE_COMMAND} -DRENDERER=$<TARGET_FILE:MyRenderer>
+        -DSOURCE_DIR=${CMAKE_CURRENT_SOURCE_DIR} -DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/buffer-previews
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/tools/BufferPreviewCapture.cmake
+    DEPENDS MyRenderer WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    COMMENT "Capturing real channel PNGs and compact editor inspection states")
+add_custom_target(light-entity-acceptance
+    COMMAND ${CMAKE_COMMAND} -DRENDERER=$<TARGET_FILE:MyRenderer>
+        -DBATCH=$<TARGET_FILE:MyRendererBatch> -DSOURCE_DIR=${CMAKE_CURRENT_SOURCE_DIR}
+        -DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/light-entities -P ${CMAKE_CURRENT_SOURCE_DIR}/tools/LightEntityAcceptance.cmake
+    DEPENDS MyRenderer MyRendererBatch WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    COMMENT "Checking scene light entities and rendering compatibility")

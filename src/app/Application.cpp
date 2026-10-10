@@ -269,6 +269,8 @@ int Application::runRasterSequence(const RenderJob& job) {
         }
         inputManifest.validate();
         renderer_->invalidateTemporalHistory();
+        const auto lights = frameScene.buildLocalLights();
+        frameSettings.localLights.insert(frameSettings.localLights.end(), lights.begin(), lights.end());
         const auto frameItems = frameScene.buildRenderItems();
         for (int sample = 0; sample <= job.rasterWarmupFrames; ++sample) {
             renderer_->render(frameItems, camera, frameSettings,
@@ -977,6 +979,7 @@ int Application::run(const std::filesystem::path& initialModel) {
         if (const char* tab = std::getenv("MYRENDERER_EDITOR_SCREENSHOT_TAB")) {
             focusObjectTab_ = std::strcmp(tab, "object") == 0;
             focusRendererTab_ = std::strcmp(tab, "renderer") == 0;
+            focusBuffersTab_ = std::strcmp(tab, "buffers") == 0;
             focusPluginsTab_ = std::strcmp(tab, "plugins") == 0;
             focusAssetsTab_ = std::strcmp(tab, "assets") == 0;
             focusRenderQueueTab_ = std::strcmp(tab, "render-queue") == 0;
@@ -990,6 +993,10 @@ int Application::run(const std::filesystem::path& initialModel) {
         if (const char* folders = std::getenv("MYRENDERER_EDITOR_SCREENSHOT_FOLDERS")) {
             contentFoldersExpanded_ = std::strcmp(folders, "collapsed") != 0;
         }
+    }
+    if (const char* directory = std::getenv("MYRENDERER_BUFFER_EXPORT")) {
+        pendingBufferExportDirectory_ = std::filesystem::absolute(directory).lexically_normal();
+        focusBuffersTab_ = true;
     }
     const char* recoveryModelValue = std::getenv("MYRENDERER_RECOVERY_TEST");
     const std::filesystem::path recoveryModel = recoveryModelValue == nullptr
@@ -1005,7 +1012,14 @@ int Application::run(const std::filesystem::path& initialModel) {
         contentCategory_ = static_cast<int>(WorkspaceAssetCategory::Scenes);
         resetEditorLayout_ = true;
     }
-    int smokeTestFrames = std::getenv("MYRENDERER_SMOKE_TEST") == nullptr ? -1 : 5;
+    const char* lightAcceptanceDirectory = std::getenv("MYRENDERER_LIGHT_ENTITY_TEST");
+    bool lightAcceptanceDone = false, lightAcceptancePassed = true;
+    const bool bufferAcceptance = std::getenv("MYRENDERER_BUFFER_PREVIEW_ACCEPTANCE") != nullptr;
+    int bufferAcceptancePhase = 0;
+    bool bufferAcceptancePassed = true;
+    if (bufferAcceptance || std::getenv("MYRENDERER_BUFFER_DRAWER_INTERACTION")) focusBuffersTab_ = true;
+    const bool lightUiInteraction = std::getenv("MYRENDERER_LIGHT_UI_INTERACTION") != nullptr;
+    int smokeTestFrames = std::getenv("MYRENDERER_SMOKE_TEST") == nullptr ? -1 : (lightUiInteraction ? 16 : 5);
     const auto cpuPreviewSmokeDeadline = std::chrono::steady_clock::now()
         + std::chrono::seconds(30);
     const auto thumbnailDeadline = std::chrono::steady_clock::now() + std::chrono::seconds(30);
@@ -1102,6 +1116,12 @@ int Application::run(const std::filesystem::path& initialModel) {
             updatePrismReelFrame();
         }
 
+        if (lightAcceptanceDirectory && !lightAcceptanceDone && !pendingModelImport_.has_value()
+            && !scene_.entities().empty()) {
+            lightAcceptancePassed = runLightEntityAcceptance(std::filesystem::u8path(lightAcceptanceDirectory));
+            lightAcceptanceDone = true;
+            pendingScreenshotWarmupFrames_ = pendingEditorScreenshotWarmupFrames_ = 2;
+        }
         ImGui_ImplOpenGL3_NewFrame();
         ImGui_ImplGlfw_NewFrame();
         ImGui::NewFrame();
@@ -1114,6 +1134,7 @@ int Application::run(const std::filesystem::path& initialModel) {
         if (assetsPanelOpen_) drawAssetsPanel();
         drawViewportPanel();
         if (inspectorPanelOpen_) drawInspectorPanel();
+        else renderer_->clearBufferPreviews();
         processEditorCommands();
         drawAboutPopup();
         if (showImGuiDemo_) {
@@ -1152,6 +1173,58 @@ int Application::run(const std::filesystem::path& initialModel) {
         glClearColor(0.035f, 0.04f, 0.055f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT);
         ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
+        if (bufferAcceptance && !pendingModelImport_.has_value() && !scene_.entities().empty()) {
+            auto require = [&](bool ok, const char* message) {
+                if (!ok) { bufferAcceptancePassed = false; std::cerr << "Buffer preview: " << message << '\n'; }
+            };
+            if (bufferAcceptancePhase == 0 && renderer_->bufferPreviewTextures()[0]) {
+                auto state = [] {
+                    std::array<GLint, 18> values{};
+                    const std::array<GLenum, 13> keys{GL_DRAW_FRAMEBUFFER_BINDING, GL_READ_FRAMEBUFFER_BINDING,
+                        GL_CURRENT_PROGRAM, GL_VERTEX_ARRAY_BINDING, GL_ACTIVE_TEXTURE, GL_TEXTURE_BINDING_2D,
+                        GL_PACK_ALIGNMENT, GL_DEPTH_WRITEMASK, GL_BLEND_SRC_RGB, GL_BLEND_DST_RGB,
+                        GL_BLEND_SRC_ALPHA, GL_BLEND_DST_ALPHA, GL_BLEND_EQUATION_RGB};
+                    for (std::size_t i = 0; i < keys.size(); ++i) glGetIntegerv(keys[i], &values[i]);
+                    glGetIntegerv(GL_VIEWPORT, values.data() + 13);
+                    values[17] = glIsEnabled(GL_DEPTH_TEST) | (glIsEnabled(GL_BLEND) << 1)
+                        | (glIsEnabled(GL_CULL_FACE) << 2) | (glIsEnabled(GL_SCISSOR_TEST) << 3)
+                        | (glIsEnabled(GL_FRAMEBUFFER_SRGB) << 4);
+                    return values;
+                };
+                auto pixels = [&] {
+                    GLint texture, pack; glGetIntegerv(GL_TEXTURE_BINDING_2D, &texture); glGetIntegerv(GL_PACK_ALIGNMENT, &pack);
+                    std::vector<unsigned char> rgba(static_cast<std::size_t>(renderer_->renderWidth()) * renderer_->renderHeight() * 4U);
+                    glBindTexture(GL_TEXTURE_2D, renderer_->colorTexture()); glPixelStorei(GL_PACK_ALIGNMENT, 1);
+                    glGetTexImage(GL_TEXTURE_2D, 0, GL_RGBA, GL_UNSIGNED_BYTE, rgba.data());
+                    glBindTexture(GL_TEXTURE_2D, static_cast<GLuint>(texture)); glPixelStorei(GL_PACK_ALIGNMENT, pack);
+                    return rgba;
+                };
+                const auto beforeState = state(); const auto beforePixels = pixels();
+                require(renderer_->updateBufferPreviews(96, 54), "Deferred preview unavailable");
+                require(state() == beforeState, "inspection leaked OpenGL state");
+                require(pixels() == beforePixels, "inspection changed final scene pixels");
+                require(renderer_->bufferPreviewTextures()[5] != 0U, "SSAO buffer missing when enabled");
+                rendererSettings_.renderPath = RenderPath::Forward;
+                bufferAcceptancePhase = 1;
+            } else if (bufferAcceptancePhase == 1) {
+                require(!renderer_->updateBufferPreviews(96, 54), "Forward exposed stale Deferred buffers");
+                require(std::all_of(renderer_->bufferPreviewTextures().begin(), renderer_->bufferPreviewTextures().end(),
+                    [](unsigned int id) { return id == 0U; }), "unavailable path retained a preview");
+                rendererSettings_.renderPath = RenderPath::Deferred; rendererSettings_.ssaoEnabled = false;
+                bufferAcceptancePhase = 2;
+            } else if (bufferAcceptancePhase == 2) {
+                require(renderer_->updateBufferPreviews(64, 36), "Deferred preview failed after path switch / resize");
+                require(renderer_->bufferPreviewTextures()[5] == 0U, "disabled SSAO retained an old image");
+                const auto ids = renderer_->bufferPreviewTextures();
+                renderer_->clearBufferPreviews();
+                for (auto id : ids) if (id) require(glIsTexture(id) == GL_FALSE, "closing inspection retained a GPU texture");
+                require(renderer_->updateBufferPreviews(160, 90), "preview failed after destroy / recreate");
+                require(glGetError() == GL_NO_ERROR, "OpenGL error during preview lifecycle");
+                std::cout << "Buffer preview acceptance: " << (bufferAcceptancePassed ? "PASS" : "FAIL") << '\n';
+                bufferAcceptancePhase = 3;
+            }
+        }
+
         const bool thumbnailReady = std::any_of(uploadedThumbnails_.begin(), uploadedThumbnails_.end(),
             [](const auto& entry) { return entry.second.texture != 0U; });
         if (!pendingEditorScreenshotPath_.empty() && !pendingModelImport_.has_value()
@@ -1277,8 +1350,13 @@ int Application::run(const std::filesystem::path& initialModel) {
             << ", uploads=" << uploadedThumbnails_.size() << ")\n";
     }
     shutdown();
+    if (lightUiInteraction && !lightUiInteractionComplete_) std::cerr << "Light UI incomplete: phase=" << lightUiInteractionPhase_ << ", lights=" << scene_.lightEntityCount() << "\n";
     return recoveryPassed && appendPassed && interactionsPassed && pluginsPassed
-        && referenceComparisonPassed && cpuPreviewSmokePassed && thumbnailAcceptancePassed ? 0 : 2;
+        && referenceComparisonPassed && cpuPreviewSmokePassed && thumbnailAcceptancePassed
+        && (!bufferAcceptance || (bufferAcceptancePhase == 3 && bufferAcceptancePassed))
+        && (!std::getenv("MYRENDERER_BUFFER_DRAWER_INTERACTION") || bufferDrawerInteractionComplete_)
+        && (!lightAcceptanceDirectory || (lightAcceptanceDone && lightAcceptancePassed))
+        && (!lightUiInteraction || lightUiInteractionComplete_) ? 0 : 2;
 }
 
 namespace {
@@ -1712,6 +1790,7 @@ void Application::drawInspectorPanel() {
         ImVec2(FLT_MAX, FLT_MAX)
     );
     if (!ImGui::Begin(EditorUi::label("Inspector###Inspector"))) {
+        renderer_->clearBufferPreviews();
         ImGui::End();
         return;
     }
@@ -1723,7 +1802,7 @@ void Application::drawInspectorPanel() {
             SceneEntity* selectedEntity = scene_.find(selectedSceneEntity_);
             if (selectedEntity) {
                 ImGui::TextWrapped("%s", selectedEntity->name.c_str());
-                ImGui::TextDisabled("Render entity #%llu",
+                ImGui::TextDisabled(selectedEntity->light ? "Light entity #%llu" : "Render entity #%llu",
                     static_cast<unsigned long long>(selectedEntity->id));
             }
             if (EditorUi::section("Transform", true)) {
@@ -1733,7 +1812,7 @@ void Application::drawInspectorPanel() {
                     SceneTransform editedTransform = selectedEntity->transform;
                     bool edited = EditorUi::DragFloat3(EditorUi::label("Position"), &editedTransform.translation.x, 0.01f);
                     edited |= EditorUi::DragFloat3(EditorUi::label("Rotation"), &editedTransform.rotationDegrees.x, 0.25f);
-                    edited |= EditorUi::DragFloat3(EditorUi::label("Scale"), &editedTransform.scale.x, 0.01f, 0.01f, 100.0f);
+                    if (!selectedEntity->light) edited |= EditorUi::DragFloat3(EditorUi::label("Scale"), &editedTransform.scale.x, 0.01f, 0.01f, 100.0f);
                     if (ImGui::Button(EditorUi::label("Reset transform"), ImVec2(-1.0f, 0.0f))) {
                         editedTransform.translation = glm::vec3(0.0f);
                         editedTransform.rotationDegrees = glm::vec3(0.0f);
@@ -1762,7 +1841,27 @@ void Application::drawInspectorPanel() {
                 }
             }
 
-            if (selectedEntity && EditorUi::section("Material", true)) {
+            if (selectedEntity && selectedEntity->light && EditorUi::section("Light", true)) {
+                auto light = *selectedEntity->light;
+                const char* types[]{"Point", "Spot"}; int type = static_cast<int>(light.type);
+                bool changed = EditorUi::Combo("Light type", &type, types, 2);
+                light.type = static_cast<LocalLightType>(type);
+                changed |= EditorUi::ColorEdit3("Light color", &light.color.x);
+                changed |= EditorUi::DragFloat("Intensity", &light.intensity, 0.1f, 0.0f, 10000.0f);
+                changed |= EditorUi::DragFloat("Range", &light.range, 0.05f, 0.05f, 1000.0f);
+                if (light.type == LocalLightType::Spot)
+                    changed |= EditorUi::SliderFloat("Outer half-angle", &light.outerAngleDegrees, 1.0f, 89.0f, "%.1f deg");
+                bool enabled = selectedEntity->visible;
+                if (EditorUi::Checkbox("Light enabled", &enabled)) editorSession_.request(EditorCommand{
+                    EditorCommandType::SetEntityVisibility, selectedEntity->id, 0U, enabled});
+                if (changed) {
+                    EditorCommand command{EditorCommandType::SetLightEntitySettings, selectedEntity->id};
+                    command.light = EditorDomain::captureLightEntitySettings(light); editorSession_.request(std::move(command));
+                }
+                if (rendererSettings_.enscapeCubeShaderEnabled)
+                    ImGui::TextWrapped("Procedural ocean does not use scene lights.");
+            }
+            if (selectedEntity && selectedEntity->model && EditorUi::section("Material", true)) {
                 glm::vec3 editedTint = selectedEntity->tint;
                 if (EditorUi::ColorEdit3(EditorUi::label("Entity tint"), &editedTint.x)) {
                     EditorCommand command{EditorCommandType::SetEntityTint, selectedEntity->id};
@@ -1779,7 +1878,7 @@ void Application::drawInspectorPanel() {
                 }
             }
 
-            if (selectedEntity && EditorUi::section("Lighting", true)) {
+            if (selectedEntity && !selectedEntity->light && EditorUi::section("Lighting", true)) {
                 bool visible = selectedEntity->visible;
                 if (EditorUi::Checkbox(EditorUi::label("Visibility"), &visible)) {
                     editorSession_.request(EditorCommand{
@@ -2861,6 +2960,15 @@ void Application::drawInspectorPanel() {
             }
             ImGui::EndTabItem();
         }
+        const bool showBuffers = focusBuffersTab_;
+        focusBuffersTab_ = false;
+        if (ImGui::BeginTabItem(EditorUi::chinese ? "缓冲###Buffers" : "Buffers###Buffers",
+                nullptr, showBuffers ? ImGuiTabItemFlags_SetSelected : 0)) {
+            drawBufferPreviewPanel();
+            ImGui::EndTabItem();
+        } else if (pendingBufferExportDirectory_.empty()) {
+            renderer_->clearBufferPreviews();
+        }
         ImGui::EndTabBar();
     }
     ImGui::End();
@@ -2926,6 +3034,11 @@ std::uint64_t Application::cpuPreviewInputSignature(int width, int height) const
         hashValue(hash, entity.visible);
         hashValue(hash, entity.enabledByPreset);
         hashValue(hash, entity.castsShadow);
+        if (entity.light) {
+            hashValue(hash, entity.light->type); hashValue(hash, entity.light->intensity);
+            hashValue(hash, entity.light->range); hashValue(hash, entity.light->outerAngleDegrees);
+            hashValue(hash, entity.light->color.x); hashValue(hash, entity.light->color.y); hashValue(hash, entity.light->color.z);
+        }
     }
 
     hashString(hash, activeModuleId_);
@@ -3459,6 +3572,8 @@ void Application::drawViewportPanel() {
             animatedCamera, previewSettings);
         previewCamera.setOrbitState(animatedCamera);
     }
+    const auto entityLights = viewportScene().buildLocalLights();
+    previewSettings.localLights.insert(previewSettings.localLights.end(), entityLights.begin(), entityLights.end());
     if (!presentationSnapshotCaptured_) {
         if (const char* destination = std::getenv("MYRENDERER_PRESENTATION_SNAPSHOT")) {
             // This diagnostic freezes presentation, not authoring. Restrict it
@@ -3680,10 +3795,80 @@ void Application::drawViewportPanel() {
         );
     }
 
+
+    SceneEntityId pickedLight = invalidSceneEntityId;
+    if (!rendererSettings_.enscapeCubeShaderEnabled && !hideSelectionOutlineForAutomation_) {
+        const auto imageMin = ImGui::GetItemRectMin();
+        const auto imageMax = ImGui::GetItemRectMax();
+        auto* draw = ImGui::GetWindowDrawList();
+        draw->PushClipRect(imageMin, imageMax, true);
+        const auto viewProjection = previewCamera.projectionMatrix(static_cast<float>(width) / height) * previewCamera.viewMatrix();
+        auto project = [&](const glm::vec3& world, ImVec2& point) {
+            const glm::vec4 clip = viewProjection * glm::vec4(world, 1.0f);
+            if (clip.w <= 0.001f || clip.z < -clip.w || clip.z > clip.w) return false;
+            const auto ndc = glm::vec3(clip) / clip.w;
+            point = ImVec2(imageMin.x + (ndc.x * 0.5f + 0.5f) * width,
+                           imageMin.y + (0.5f - ndc.y * 0.5f) * height);
+            return true;
+        };
+        auto segment = [&](glm::vec3 a, glm::vec3 b, ImU32 color) {
+            ImVec2 p, q; if (project(a, p) && project(b, q)) draw->AddLine(p, q, color, 1.5f);
+        };
+        float closest = 12.0f * 12.0f;
+        for (const auto& entity : viewportScene().entities()) {
+            if (!entity.light || !entity.enabledByPreset || (!entity.visible && entity.id != selectedSceneEntity_)) continue;
+            const auto& light = *entity.light;
+            const glm::vec3 origin(entity.worldTransform[3]);
+            ImVec2 center; if (!project(origin, center)) continue;
+            const bool selected = entity.id == selectedSceneEntity_;
+            const ImU32 color = entity.visible ? (selected ? IM_COL32(255, 225, 96, 255) : IM_COL32(255, 199, 100, 255)) : IM_COL32(150, 150, 150, 255);
+            draw->AddCircle(center, 6.0f, color, 12, 1.7f);
+            for (int i = 0; i < 8; ++i) {
+                const float angle = static_cast<float>(i) * 0.78539816f;
+                draw->AddLine(ImVec2(center.x + std::cos(angle) * 8, center.y + std::sin(angle) * 8),
+                              ImVec2(center.x + std::cos(angle) * 11, center.y + std::sin(angle) * 11), color);
+            }
+            if (selected) {
+                draw->AddText(ImVec2(center.x + 14, center.y - 7), color, entity.name.c_str());
+                if (light.type == LocalLightType::Point) {
+                    for (int plane = 0; plane < 3; ++plane) {
+                        glm::vec3 previous(0.0f);
+                        for (int i = 0; i <= 48; ++i) {
+                            const float angle = i * 6.2831853f / 48.0f;
+                            glm::vec3 offset(0); offset[(plane + 1) % 3] = std::cos(angle) * light.range;
+                            offset[(plane + 2) % 3] = std::sin(angle) * light.range;
+                            const auto point = origin + offset; if (i) segment(previous, point, color); previous = point;
+                        }
+                    }
+                } else {
+                    auto direction = glm::vec3(entity.worldTransform * glm::vec4(0, -1, 0, 0));
+                    direction = glm::length(direction) > 1e-6f ? glm::normalize(direction) : glm::vec3(0, -1, 0);
+                    auto tangent = glm::normalize(glm::cross(direction, std::abs(direction.y) < 0.9f ? glm::vec3(0, 1, 0) : glm::vec3(1, 0, 0)));
+                    const auto bitangent = glm::cross(direction, tangent);
+                    const float angle = glm::radians(light.outerAngleDegrees);
+                    const auto end = origin + direction * light.range * std::cos(angle);
+                    const float radius = light.range * std::sin(angle);
+                    glm::vec3 previous(0.0f);
+                    for (int i = 0; i <= 48; ++i) {
+                        const float a = i * 6.2831853f / 48.0f;
+                        const auto point = end + (tangent * std::cos(a) + bitangent * std::sin(a)) * radius;
+                        if (i) segment(previous, point, color);
+                        if (i % 12 == 0) segment(origin, point, color);
+                        previous = point;
+                    }
+                    segment(origin, end, color);
+                }
+            }
+            const auto mouse = ImGui::GetIO().MousePos;
+            const float distance = (mouse.x - center.x) * (mouse.x - center.x) + (mouse.y - center.y) * (mouse.y - center.y);
+            if (distance < closest) { closest = distance; pickedLight = entity.id; }
+        }
+        draw->PopClipRect();
+    }
     if (ImGui::IsItemHovered() && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
         const ImVec2 min = ImGui::GetItemRectMin();
         const ImVec2 mouse = ImGui::GetIO().MousePos;
-        selectEntity(pickEntity(renderItems, width, height,
+        selectEntity(pickedLight != invalidSceneEntityId ? pickedLight : pickEntity(renderItems, width, height,
             static_cast<int>(mouse.x - min.x), height - 1 - static_cast<int>(mouse.y - min.y)));
         ImGui::SetWindowFocus();
     }
@@ -5052,4 +5237,98 @@ void Application::updatePrismReelFrame() {
     }
     updatePrismDemoOptics();
     restorePrismHeroShot();
+}
+
+void Application::drawBufferPreviewPanel() {
+    const bool supported = viewportRenderMode_ == 0 && !rendererSettings_.enscapeCubeShaderEnabled
+        && rendererSettings_.renderPath == RenderPath::Deferred;
+    if (!supported) {
+        renderer_->clearBufferPreviews();
+        ImGui::TextWrapped(EditorUi::chinese ? "G-buffer 仅在常规 Deferred 实时路径中可用。" : "G-buffer requires the standard Deferred real-time path.");
+        if (viewportRenderMode_ == 0 && !rendererSettings_.enscapeCubeShaderEnabled
+            && ImGui::Button(EditorUi::chinese ? "切换到 Deferred" : "Switch to Deferred")) {
+            rendererSettings_.renderPath = RenderPath::Deferred;
+            renderer_->invalidateTemporalHistory();
+        }
+        if (!pendingBufferExportDirectory_.empty()) {
+            std::cerr << "Buffer export unavailable: requires standard Deferred rendering\n";
+            pendingBufferExportDirectory_.clear();
+        }
+        return;
+    }
+    if (std::getenv("MYRENDERER_BUFFERS_COLLAPSED")) ImGui::SetNextItemOpen(false, ImGuiCond_Once);
+    const bool gbufferOpen = ImGui::CollapsingHeader("G-buffer", ImGuiTreeNodeFlags_DefaultOpen);
+
+    // Exercise the actual ImGui input path in the opt-in drawer acceptance run.
+    if (std::getenv("MYRENDERER_BUFFER_DRAWER_INTERACTION") && !pendingModelImport_.has_value()
+        && !scene_.entities().empty()) {
+        static int phase = 0;
+        auto& io = ImGui::GetIO();
+        const ImVec2 a = ImGui::GetItemRectMin(), b = ImGui::GetItemRectMax();
+        if (phase == 0 || phase == 2) {
+            if (phase == 2 && gbufferOpen) throw std::runtime_error("G-buffer drawer did not close after mouse input");
+            io.AddFocusEvent(true);
+            io.AddMousePosEvent((a.x + b.x) * 0.5f, (a.y + b.y) * 0.5f);
+            io.AddMouseButtonEvent(0, true);
+            ++phase;
+        } else if (phase == 1 || phase == 3) {
+            io.AddMouseButtonEvent(0, false);
+            ++phase;
+        } else if (phase == 4) {
+            if (!gbufferOpen) throw std::runtime_error("G-buffer drawer did not reopen after mouse input");
+            bufferDrawerInteractionComplete_ = true;
+            std::cout << "Buffer drawer interaction: PASS (mouse close / reopen)\n";
+            ++phase;
+        }
+    }
+    const bool exportRequested = !pendingBufferExportDirectory_.empty();
+    if (!gbufferOpen && !exportRequested && !rendererSettings_.ssaoEnabled) {
+        renderer_->clearBufferPreviews();
+    } else {
+        const int w = exportRequested ? renderer_->renderWidth() : 384;
+        const int h = exportRequested ? renderer_->renderHeight()
+            : std::max(1, static_cast<int>(384.0f * renderer_->renderHeight() / std::max(renderer_->renderWidth(), 1)));
+        renderer_->updateBufferPreviews(w, h);
+    }
+    const auto& textures = renderer_->bufferPreviewTextures();
+    auto image = [&](int i, const char* title, const char* tip) {
+        if (textures[static_cast<std::size_t>(i)] == 0U) return;
+        ImGui::PushID(i);
+        if (ImGui::CollapsingHeader(title, ImGuiTreeNodeFlags_DefaultOpen)) {
+            const float w = std::clamp(ImGui::GetContentRegionAvail().x, 1.0f, 160.0f);
+            const float h = w * renderer_->renderHeight() / std::max(renderer_->renderWidth(), 1);
+            ImGui::Image(static_cast<ImTextureID>(textures[static_cast<std::size_t>(i)]), ImVec2(w, h), ImVec2(0, 1), ImVec2(1, 0));
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", tip);
+        }
+        ImGui::PopID();
+    };
+    if (gbufferOpen) {
+        ImGui::BeginDisabled(textures[0] == 0U);
+        if (ImGui::Button(EditorUi::chinese ? "导出通道 PNG" : "Export channel PNGs")) {
+            const auto screenshot = nextScreenshotPath();
+            pendingBufferExportDirectory_ = screenshot.parent_path() / ("buffers-" + screenshot.stem().string());
+            bufferExportWarmup_ = 0;
+        }
+        ImGui::EndDisabled();
+        image(0, "Albedo", "Linear base color, displayed without tone mapping.");
+        image(1, "Normal", "World-space normal encoded into RGB [0, 1].");
+        image(2, "Metallic / Roughness", "R: metallic, G: roughness, B: zero.");
+        image(3, "Depth (contrast)", "Contrast visualization of device depth; not metric linear depth.");
+        image(4, "Motion", "RG: signed UV motion x8 + 0.5; blue: valid history. Static pixels are black.");
+    }
+    if (ImGui::CollapsingHeader("SSAO", ImGuiTreeNodeFlags_DefaultOpen)) {
+        if (textures[5]) image(5, "Occlusion", "White: unoccluded, black: ambient occlusion. Resolved SSAO buffer.");
+        else ImGui::TextWrapped(EditorUi::chinese ? "SSAO 未启用。" : "SSAO is disabled.");
+        ImGui::Checkbox("Enable SSAO", &rendererSettings_.ssaoEnabled);
+    }
+    if (exportRequested && !pendingModelImport_.has_value() && !scene_.entities().empty() && textures[0]) {
+        if (bufferExportWarmup_ > 0) --bufferExportWarmup_;
+        else {
+            std::string error;
+            const bool saved = renderer_->saveBufferPreviews(pendingBufferExportDirectory_, error);
+            statusMessage_ = saved ? "Saved real GPU buffers: " + pendingBufferExportDirectory_.string() : "Buffer export failed: " + error;
+            std::cout << statusMessage_ << '\n';
+            pendingBufferExportDirectory_.clear();
+        }
+    }
 }

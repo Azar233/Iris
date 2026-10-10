@@ -26,6 +26,12 @@ SceneSnapshot captureSceneSnapshot(
     snapshotCamera.projection = camera.projectionMatrix(snapshotCamera.aspectRatio);
     snapshotCamera.verticalFieldOfViewRadians = glm::radians(camera.fieldOfView());
 
+    RendererSettings entitySettings;
+    entitySettings.localLights = scene.buildLocalLights();
+    if (!entitySettings.localLights.empty()) {
+        const auto entityLighting = captureSceneLighting(entitySettings, camera.position().y);
+        lighting.localLights.insert(lighting.localLights.end(), entityLighting.localLights.begin(), entityLighting.localLights.end());
+    }
     SceneSnapshotBuilder builder(snapshotCamera, std::move(lighting));
     for (const SceneEntity& entity : scene.entities()) {
         if (entity.model == nullptr || !entity.visible || !entity.enabledByPreset) continue;

@@ -17,6 +17,7 @@
 #include "render/OpenGlStateCache.h"
 #include "render/RenderPassSequence.h"
 #include "render/RenderItem.h"
+#include "scene/Light.h"
 #include "render/WaterWaves.h"
 #include "plugin/RenderPluginConfiguration.h"
 
@@ -101,21 +102,6 @@ enum class GBufferDebugView {
     MetallicRoughness = 3,
     Depth = 4,
     Ssao = 5
-};
-
-enum class LocalLightType {
-    Point = 0,
-    Spot = 1
-};
-
-struct LocalLight {
-    glm::vec3 position{0.0f};
-    float radius{3.0f};
-    glm::vec3 color{1.0f};
-    float intensity{8.0f};
-    glm::vec3 direction{0.0f, -1.0f, 0.0f};
-    float outerConeCosine{0.82f};
-    LocalLightType type{LocalLightType::Point};
 };
 
 struct GpuPassTiming {
@@ -289,6 +275,11 @@ public:
     void drawSelectionOutline(const std::vector<RenderItem>& items, const Camera& camera,
         std::uint64_t selected, bool cullBackFaces);
     unsigned int colorTexture() const;
+    // Read-only visualizations of this frame's Deferred attachments (no lighting re-render).
+    bool updateBufferPreviews(int width, int height);
+    void clearBufferPreviews();
+    const std::array<unsigned int, 6>& bufferPreviewTextures() const { return bufferPreviewTextures_; }
+    bool saveBufferPreviews(const std::filesystem::path& directory, std::string& error);
     bool hasRenderPluginInstance(const std::string& id) const;
     bool saveScreenshot(const std::filesystem::path& path, std::string& error) const;
     bool saveEditorScreenshot(
@@ -382,6 +373,10 @@ private:
     std::unique_ptr<EnvironmentMap> environmentMap_;
     std::unique_ptr<iris::RenderPlugin> enscapeCubeRenderer_;
     std::unique_ptr<GBuffer> gBuffer_;
+    std::unique_ptr<Shader> bufferPreviewShader_;
+    std::array<std::unique_ptr<RenderTarget>, 6> bufferPreviewTargets_;
+    std::array<unsigned int, 6> bufferPreviewTextures_{};
+    float bufferPreviewNearPlane_{0.05f};
     std::unique_ptr<OpticalPathDebugRenderer> opticalPathDebugRenderer_;
     std::unique_ptr<ShadowMap> shadowMap_;
     std::unique_ptr<SsaoRenderer> ssaoRenderer_;

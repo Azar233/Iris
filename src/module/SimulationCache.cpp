@@ -207,6 +207,21 @@ bool saveSimulationCache(
                 writer.EndArray();
                 writer.Key("tint");
                 writeVector(writer, entity.tint);
+                if (entity.lightRecorded) {
+                    writer.Key("light");
+                    if (!entity.light) writer.Null();
+                    else {
+                        if (!validSceneLight(*entity.light)) throw std::runtime_error("Invalid cached light");
+                        const auto& light = *entity.light;
+                        writer.StartObject();
+                        writer.Key("type"); writer.Int(static_cast<int>(light.type));
+                        writer.Key("color"); writeVector(writer, light.color);
+                        writer.Key("intensity"); writer.Double(light.intensity);
+                        writer.Key("range"); writer.Double(light.range);
+                        writer.Key("outerAngleDegrees"); writer.Double(light.outerAngleDegrees);
+                        writer.EndObject();
+                    }
+                }
                 writer.EndObject();
             }
             writer.EndArray();
@@ -312,6 +327,23 @@ bool loadSimulationCache(
                         }
                         SimulationCacheEntity entity;
                         entity.id = entityValue["id"].GetUint64();
+                        if (entityValue.HasMember("light")) {
+                            entity.lightRecorded = true;
+                            const auto& value = entityValue["light"];
+                            if (!value.IsNull()) {
+                                if (!value.IsObject() || !value.HasMember("type") || !value["type"].IsInt()
+                                    || !value.HasMember("color") || !value.HasMember("intensity") || !value["intensity"].IsNumber()
+                                    || !value.HasMember("range") || !value["range"].IsNumber()
+                                    || !value.HasMember("outerAngleDegrees") || !value["outerAngleDegrees"].IsNumber())
+                                    throw std::runtime_error("Invalid cached light fields");
+                                SceneLightComponent light; light.type = static_cast<LocalLightType>(value["type"].GetInt());
+                                if (!readVector(value["color"], light.color)) throw std::runtime_error("Invalid cached light color");
+                                light.intensity = value["intensity"].GetFloat(); light.range = value["range"].GetFloat();
+                                light.outerAngleDegrees = value["outerAngleDegrees"].GetFloat();
+                                if (!validSceneLight(light)) throw std::runtime_error("Invalid cached light values");
+                                entity.light = light;
+                            }
+                        }
                         if (!readVector(entityValue["translation"], entity.transform.translation)
                             || !readVector(entityValue["rotationDegrees"], entity.transform.rotationDegrees)
                             || !readVector(entityValue["scale"], entity.transform.scale)

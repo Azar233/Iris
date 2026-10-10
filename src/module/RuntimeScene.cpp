@@ -53,6 +53,7 @@ std::uint64_t RuntimeScene::resetFrom(const Scene& editScene) {
         target->worldTransform = source.worldTransform;
         target->previousWorldTransform = source.worldTransform;
         target->tint = source.tint;
+        target->light = source.light;
         target->visible = source.visible;
         target->castsShadow = source.castsShadow;
         target->instanceCandidate = source.instanceCandidate;
@@ -99,6 +100,14 @@ std::uint64_t sceneContentHash(const Scene& scene) {
         hash = mixUint64(hash, entity->visible ? 1U : 0U);
         hash = mixUint64(hash, entity->castsShadow ? 1U : 0U);
         hash = mixUint64(hash, entity->instanceCandidate ? 1U : 0U);
+        // Preserve old hashes for scenes without this additive component.
+        if (entity->light) {
+            const auto& light = *entity->light;
+            hash = mixUint64(hash, 0x4C49474854ULL);
+            hash = mixUint64(hash, static_cast<std::uint64_t>(light.type));
+            hash = mixVector(hash, light.color); hash = mixFloat(hash, light.intensity);
+            hash = mixFloat(hash, light.range); hash = mixFloat(hash, light.outerAngleDegrees);
+        }
     }
     return hash;
 }

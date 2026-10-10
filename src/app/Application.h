@@ -88,6 +88,8 @@ private:
     bool pluginActivationRegression();
     void drawInspectorPanel();
     void drawViewportPanel();
+    void drawBufferPreviewPanel();
+    bool runLightEntityAcceptance(const std::filesystem::path& directory);
     void updateViewportCameraNavigation();
     void drawModulePanel();
     // Aggregates the structured diagnostics the application already owns: import
@@ -157,6 +159,12 @@ private:
     bool loadedSceneDocument_{false};
     bool focusObjectTab_{false};
     bool focusRendererTab_{false};
+    bool focusBuffersTab_{false};
+    std::filesystem::path pendingBufferExportDirectory_;
+    int bufferExportWarmup_{3};
+    bool bufferDrawerInteractionComplete_{false};
+    int lightUiInteractionPhase_{0};
+    bool lightUiInteractionComplete_{false};
     bool focusPluginsTab_{false};
     int pendingGlslControlsScrollFrames_{0};
     bool focusAssetsTab_{false};

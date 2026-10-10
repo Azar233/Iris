@@ -586,6 +586,13 @@ void validateDocument(const SceneDocument& document) {
             throw std::runtime_error("Invalid module parameter '" + entry.id + "'");
         }
     }
+    std::size_t lightCount = 0;
+    for (const auto& entity : document.entities) if (entity.light) {
+        if (!validSceneLight(*entity.light)) throw std::runtime_error("Invalid entity light parameters");
+        ++lightCount;
+    }
+    if (lightCount && lightCount + document.renderer.localLights.size() > 64U)
+        throw std::runtime_error("Scene supports at most 64 combined local lights");
     std::unordered_map<SceneEntityId, SceneEntityId> parents;
     for (const SceneDocumentEntity& entity : document.entities) {
         if (entity.id == invalidSceneEntityId || !parents.emplace(entity.id, entity.parent).second) {
@@ -686,6 +693,16 @@ bool saveSceneDocument(
             writer.Key("model");
             const std::string relative = makeSceneRelativeResource(entity.modelResource, path);
             writer.String(relative.c_str(), static_cast<scene_json::SizeType>(relative.size()));
+            if (entity.light) {
+                const auto& light = *entity.light;
+                writer.Key("light"); writer.StartObject();
+                writer.Key("type"); writer.Int(static_cast<int>(light.type));
+                writer.Key("color"); writeVec3(writer, light.color);
+                writer.Key("intensity"); writer.Double(light.intensity);
+                writer.Key("range"); writer.Double(light.range);
+                writer.Key("outerAngleDegrees"); writer.Double(light.outerAngleDegrees);
+                writer.EndObject();
+            }
             writer.Key("transform"); writer.StartObject();
             writer.Key("translation"); writeVec3(writer, entity.transform.translation);
             writer.Key("rotationDegrees"); writeVec3(writer, entity.transform.rotationDegrees);
@@ -843,6 +860,16 @@ bool loadSceneDocument(
             entity.parent = parent == nullptr ? invalidSceneEntityId : parent->GetUint64();
             entity.name = readString(item, "name", "Entity");
             entity.modelResource = readString(item, "model");
+            if (const auto* value = optionalMember(item, "light"); value && !value->IsNull()) {
+                if (!value->IsObject()) throw std::runtime_error("Entity light must be an object");
+                SceneLightComponent light;
+                light.type = static_cast<LocalLightType>(readInt(*value, "type", 0));
+                light.color = readVec3(*value, "color", light.color);
+                light.intensity = readFloat(*value, "intensity", light.intensity);
+                light.range = readFloat(*value, "range", light.range);
+                light.outerAngleDegrees = readFloat(*value, "outerAngleDegrees", light.outerAngleDegrees);
+                entity.light = light;
+            }
             if (const scene_json::Value* transform = optionalMember(item, "transform")) {
                 entity.transform.translation = readVec3(*transform, "translation", entity.transform.translation);
                 entity.transform.rotationDegrees = readVec3(*transform, "rotationDegrees", entity.transform.rotationDegrees);

@@ -39,6 +39,8 @@ enum class EditorCommandType {
     OpenSceneAsset,
     ImportModelAsset,
     SelectRenderJobAsset,
+    AddLightEntity,
+    SetLightEntitySettings,
     SetEntityTransform,
     SetEntityTint,
     SetEntityCastsShadow,
@@ -343,6 +345,14 @@ struct EditorModuleParameterPayload {
     std::string text;
 };
 
+struct EditorLightEntitySettingsPayload {
+    int type{0};
+    EditorVector3Payload color{1.0f, 0.86f, 0.66f};
+    float intensity{20.0f};
+    float range{6.0f};
+    float outerAngleDegrees{35.0f};
+};
+
 // One command from the editor UI to the central entry point.
 //
 // Every domain payload below is filled in by name after construction
@@ -372,6 +382,7 @@ struct EditorCommand {
     EditorStageSettingsPayload stage;
     EditorMaterialSettingsPayload material;
     EditorDirectionalLightSettingsPayload directionalLight;
+    EditorLightEntitySettingsPayload light;
     EditorPbrEnvironmentSettingsPayload pbrEnvironment;
     EditorWaterSettingsPayload water;
     EditorShadingSettingsPayload shading;

@@ -3,6 +3,7 @@
 #include <filesystem>
 #include <cstdint>
 #include <string>
+#include <optional>
 #include <vector>
 
 #include "optics/PrismDemo.h"
@@ -22,6 +23,7 @@ struct SceneDocumentEntity {
     std::string modelResource;
     SceneTransform transform;
     glm::vec3 tint{1.0f};
+    std::optional<SceneLightComponent> light;
     bool visible{true};
     bool castsShadow{true};
     bool instanceCandidate{false};
@@ -72,3 +74,20 @@ std::filesystem::path resolveSceneResource(
     const std::string& resource,
     const std::filesystem::path& scenePath
 );
+
+// Shared logical Scene resolution for CPU batch lighting (same transforms as the editor).
+inline std::vector<LocalLight> resolveSceneLocalLights(const SceneDocument& document) {
+    Scene scene;
+    for (const auto& saved : document.entities) {
+        const auto id = scene.createEntityWithId(saved.id, saved.name);
+        auto* entity = scene.find(id);
+        if (!entity) continue;
+        entity->parent = saved.parent; entity->transform = saved.transform;
+        entity->light = saved.light; entity->visible = saved.visible;
+    }
+    scene.updateWorldTransforms();
+    auto lights = document.renderer.localLights;
+    const auto entities = scene.buildLocalLights();
+    lights.insert(lights.end(), entities.begin(), entities.end());
+    return lights;
+}

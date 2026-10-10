@@ -461,6 +461,35 @@ void Application::processEditorCommands() {
                 statusMessage_ = "Render Job selected for the Queue: " + path;
                 break;
             }
+            case EditorCommandType::AddLightEntity: {
+                if (command.value > 1U || pendingModelImport_.has_value()
+                    || scene_.lightEntityCount() + rendererSettings_.localLights.size() >= 64U) {
+                    statusMessage_ = "Cannot add light: import in progress or local light limit (64).";
+                    break;
+                }
+                SceneLightComponent light; light.type = static_cast<LocalLightType>(command.value);
+                const auto id = scene_.createLightEntity(light.type == LocalLightType::Spot ? "Spot Light" : "Point Light", light);
+                if (auto* entity = scene_.find(id)) entity->transform.translation = modelPosition_ + glm::vec3(0, 2.2f, 1.0f);
+                scene_.updateWorldTransforms(); selectEntity(id);
+                cpuPreviewRestartRequested_ = true; renderer_->invalidateTemporalHistory();
+                statusMessage_ = "Added editable light entity.";
+                break;
+            }
+            case EditorCommandType::SetLightEntitySettings: {
+                auto* entity = scene_.find(static_cast<SceneEntityId>(command.entity));
+                SceneLightComponent light;
+                light.type = static_cast<LocalLightType>(command.light.type);
+                light.color = glm::vec3(command.light.color.x, command.light.color.y, command.light.color.z);
+                light.range = command.light.range; light.intensity = command.light.intensity;
+                light.outerAngleDegrees = command.light.outerAngleDegrees;
+                if (!entity || !entity->light || !validSceneLight(light)) {
+                    statusMessage_ = "Rejected invalid light parameters."; break;
+                }
+                entity->light = light;
+                ++moduleInputRevision_;
+                cpuPreviewRestartRequested_ = true; renderer_->invalidateTemporalHistory();
+                break;
+            }
             case EditorCommandType::SetEntityTransform: {
                 SceneEntity* entity = scene_.find(static_cast<SceneEntityId>(command.entity));
                 const auto finite = [](const EditorVector3Payload& value) {
@@ -494,6 +523,7 @@ void Application::processEditorCommands() {
                     command.transform.scale.y,
                     command.transform.scale.z
                 );
+                if (scene_.lightEntityCount()) ++moduleInputRevision_;
                 editedEntities_.insert(entity->id);
                 entity->motionHistoryValid = false;
                 cpuPreviewRestartRequested_ = true;
@@ -512,6 +542,7 @@ void Application::processEditorCommands() {
                     std::clamp(command.color.y, 0.0f, 1.0f),
                     std::clamp(command.color.z, 0.0f, 1.0f)
                 );
+                if (scene_.lightEntityCount()) ++moduleInputRevision_;
                 editedEntities_.insert(entity->id);
                 cpuPreviewRestartRequested_ = true;
                 if (renderer_ != nullptr) renderer_->invalidateTemporalHistory();
@@ -520,6 +551,7 @@ void Application::processEditorCommands() {
             case EditorCommandType::SetEntityCastsShadow:
                 if (SceneEntity* entity = scene_.find(static_cast<SceneEntityId>(command.entity))) {
                     entity->castsShadow = command.flag;
+                    if (scene_.lightEntityCount()) ++moduleInputRevision_;
                     editedEntities_.insert(entity->id);
                     cpuPreviewRestartRequested_ = true;
                     if (renderer_ != nullptr) renderer_->invalidateTemporalHistory();
@@ -1242,7 +1274,12 @@ void Application::processEditorCommands() {
                 break;
             }
             case EditorCommandType::DuplicateEntity:
+                if (const auto* source = scene_.find(command.entity); source && source->light
+                    && scene_.lightEntityCount() + rendererSettings_.localLights.size() >= 64U) {
+                    statusMessage_ = "Local light limit reached (64)."; break;
+                }
                 selectEntity(scene_.duplicateEntity(static_cast<SceneEntityId>(command.entity)));
+                cpuPreviewRestartRequested_ = true; renderer_->invalidateTemporalHistory();
                 break;
             case EditorCommandType::DeleteEntity:
                 if (selectedSceneEntity_ == static_cast<SceneEntityId>(command.entity)) deleteSelectedEntity();
@@ -1250,6 +1287,7 @@ void Application::processEditorCommands() {
             case EditorCommandType::SetEntityVisibility:
                 if (SceneEntity* entity = scene_.find(static_cast<SceneEntityId>(command.entity))) {
                     entity->visible = command.flag;
+                    if (scene_.lightEntityCount()) ++moduleInputRevision_;
                     editedEntities_.insert(entity->id);
                     cpuPreviewRestartRequested_ = true;
                     if (renderer_ != nullptr) renderer_->invalidateTemporalHistory();
@@ -1267,6 +1305,7 @@ void Application::processEditorCommands() {
                     break;
                 }
                 if (previousParent != parentId) {
+                    if (scene_.lightEntityCount()) ++moduleInputRevision_;
                     // A parent change affects the whole subtree, including temporal data.
                     for (const SceneEntity& candidate : scene_.entities()) {
                         SceneEntityId ancestor = candidate.id;
@@ -1360,6 +1399,39 @@ void Application::drawScenePanel() {
     if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal) && !currentScenePath_.empty()) {
         ImGui::SetTooltip("%s", currentScenePath_.u8string().c_str());
     }
+    ImGui::BeginDisabled(pendingModelImport_.has_value());
+    if (ImGui::Button(EditorUi::chinese ? "添加灯光" : "Add Light")) ImGui::OpenPopup("AddSceneLight");
+    const bool lightUi = std::getenv("MYRENDERER_LIGHT_UI_INTERACTION") != nullptr && !pendingModelImport_.has_value();
+    if (lightUi && lightUiInteractionPhase_ < 2) {
+        auto& io = ImGui::GetIO();
+        if (lightUiInteractionPhase_ == 0) {
+            const auto a = ImGui::GetItemRectMin(), b = ImGui::GetItemRectMax();
+            io.AddFocusEvent(true); io.AddMousePosEvent((a.x + b.x) / 2, (a.y + b.y) / 2);
+            io.AddMouseButtonEvent(0, true);
+        } else io.AddMouseButtonEvent(0, false);
+        ++lightUiInteractionPhase_;
+    } else if (lightUi && lightUiInteractionPhase_ >= 4 && !lightUiInteractionComplete_) {
+        const auto* selected = scene_.find(selectedSceneEntity_);
+        if (selected && selected->light && selected->light->type == LocalLightType::Point) {
+            lightUiInteractionComplete_ = true;
+            std::cout << "Light entity UI interaction: PASS (Add Light -> Point)\n";
+        }
+    }
+
+    if (ImGui::BeginPopup("AddSceneLight")) {
+        if (ImGui::MenuItem("Point Light")) editorSession_.request(EditorCommand{EditorCommandType::AddLightEntity, 0U, 0U});
+        if (lightUi && lightUiInteractionPhase_ == 2 && !ImGui::IsWindowAppearing()) {
+            const auto a = ImGui::GetItemRectMin(), b = ImGui::GetItemRectMax();
+            ImGui::GetIO().AddMousePosEvent((a.x + b.x) / 2, (a.y + b.y) / 2);
+            ImGui::GetIO().AddMouseButtonEvent(0, true); ++lightUiInteractionPhase_;
+        } else if (lightUi && lightUiInteractionPhase_ == 3) {
+            ImGui::GetIO().AddMouseButtonEvent(0, false); ++lightUiInteractionPhase_;
+        }
+
+        if (ImGui::MenuItem("Spot Light")) editorSession_.request(EditorCommand{EditorCommandType::AddLightEntity, 0U, 1U});
+        ImGui::EndPopup();
+    }
+    ImGui::EndDisabled();
     ImGui::Separator();
     if (!scene_.entities().empty()) {
         const char* rootLabel = EditorUi::chinese
@@ -1406,7 +1478,7 @@ void Application::drawScenePanel() {
                 | (selectedSceneEntity_ == entity.id ? ImGuiTreeNodeFlags_Selected : 0);
             if (hasChildren) flags |= ImGuiTreeNodeFlags_DefaultOpen;
             else flags |= ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_NoTreePushOnOpen;
-            const bool open = ImGui::TreeNodeEx("##SceneEntity", flags, "%s", entity.name.c_str());
+            const bool open = ImGui::TreeNodeEx("##SceneEntity", flags, "%s%s", entity.light ? (entity.light->type == LocalLightType::Spot ? "[Spot] " : "[Point] ") : "", entity.name.c_str());
             if (ImGui::IsItemClicked(ImGuiMouseButton_Left)
                 || (ImGui::IsItemFocused() && ImGui::IsKeyPressed(ImGuiKey_Enter))) {
                 selectEntity(entity.id);
@@ -2538,6 +2610,7 @@ void Application::selectEntity(SceneEntityId id) {
 void Application::deleteSelectedEntity() {
     const auto id = selectedSceneEntity_;
     if (!scene_.destroyEntity(id)) return;
+    cpuPreviewRestartRequested_ = true; renderer_->invalidateTemporalHistory();
     editedEntities_.erase(id);
     if (id == primaryEntity_) primaryEntity_ = invalidSceneEntityId;
     if (id == comparisonEntity_) { comparisonEntity_ = invalidSceneEntityId; showComparisonObject_ = false; }
@@ -2618,11 +2691,11 @@ SceneDocument Application::captureSceneDocument() const {
         entity.name = source.name;
         entity.parent = source.parent;
         entity.modelResource = source.modelResource;
-        if (entity.modelResource.empty() && source.model == groundModel_.get()) {
+        if (entity.modelResource.empty() && source.model != nullptr && source.model == groundModel_.get()) {
             entity.modelResource = builtinGroundResource;
-        } else if (entity.modelResource.empty() && source.model == glassBackdropModel_.get()) {
+        } else if (entity.modelResource.empty() && source.model != nullptr && source.model == glassBackdropModel_.get()) {
             entity.modelResource = builtinGlassBackdropResource;
-        } else if (entity.modelResource.empty() && source.model == model_.get()) {
+        } else if (entity.modelResource.empty() && source.model != nullptr && source.model == model_.get()) {
             entity.modelResource = currentModelPath_.generic_u8string();
         } else if (entity.modelResource.empty() && source.model != nullptr) {
             const auto matching = std::find_if(
@@ -2634,6 +2707,7 @@ SceneDocument Application::captureSceneDocument() const {
             if (matching != scene_.entities().end()) entity.modelResource = matching->modelResource;
         }
         entity.transform = source.transform;
+        entity.light = source.light;
         entity.tint = source.tint;
         entity.visible = source.visible && source.enabledByPreset;
         entity.castsShadow = source.castsShadow;
@@ -2826,6 +2900,7 @@ bool Application::openScene(const std::filesystem::path& path) {
             if (id == invalidSceneEntityId) throw std::runtime_error("Could not restore scene entity ID");
             SceneEntity* entity = scene_.find(id);
             entity->transform = saved.transform;
+            entity->light = saved.light;
             entity->tint = saved.tint;
             entity->visible = saved.visible;
             entity->enabledByPreset = true;
@@ -4084,4 +4159,73 @@ bool Application::editorInteractionRegression() {
         std::cerr << "Editor interaction validation: FAIL: " << error.what() << '\n';
         return false;
     }
+}
+
+bool Application::runLightEntityAcceptance(const std::filesystem::path& directory) {
+    try {
+        const auto check = [](bool ok, const char* message) { if (!ok) throw std::runtime_error(message); };
+        std::filesystem::create_directories(directory);
+        const auto normalization = glm::scale(glm::mat4(1), glm::vec3(modelNormalizationScale_))
+            * glm::translate(glm::mat4(1), -modelCenter_);
+        syncSceneEntities(normalization);
+        rendererSettings_.localLights.clear();
+        rendererSettings_.ambientStrength = 0.02f;
+        rendererSettings_.diffuseStrength = rendererSettings_.specularStrength = 1.0f;
+        rendererSettings_.lightDirection = glm::vec3(0, 1, 0);
+        camera_.setOrbitPose(glm::vec3(0, 0.25f, 0), -34, 22, 6.7f, 48);
+        rendererSettings_.pbrEnabled = true; rendererSettings_.iblEnabled = false;
+        rendererSettings_.showGrid = rendererSettings_.showAxes = false;
+        rendererSettings_.skyboxEnabled = false; rendererSettings_.ssaoEnabled = false;
+        auto submit = [&](EditorCommand command) { editorSession_.request(std::move(command)); processEditorCommands(); };
+        submit(EditorCommand{EditorCommandType::AddLightEntity, 0U, 0U});
+        const auto point = selectedSceneEntity_;
+        check(scene_.find(point) && scene_.find(point)->light && scene_.find(point)->light->type == LocalLightType::Point,
+              "point creation failed");
+        auto settings = *scene_.find(point)->light; settings.color = glm::vec3(1.0f, 0.56f, 0.2f); settings.intensity = 65;
+        EditorCommand edit{EditorCommandType::SetLightEntitySettings, point}; edit.light = EditorDomain::captureLightEntitySettings(settings); submit(edit);
+        EditorCommand pose{EditorCommandType::SetEntityTransform, point};
+        pose.transform.translation = {1.0f, 1.6f, 1.0f}; submit(pose);
+        const auto group = scene_.createEntity("Light rig");
+        scene_.find(group)->transform.translation.x = 0.3f;
+        submit(EditorCommand{EditorCommandType::SetEntityParent, point, group}); scene_.updateWorldTransforms();
+        check(std::abs(scene_.buildLocalLights()[0].position.x - 1.3f) < 1e-5f, "parent light transform failed");
+        submit(EditorCommand{EditorCommandType::AddLightEntity, 0U, 1U});
+        const auto spot = selectedSceneEntity_;
+        settings = *scene_.find(spot)->light; settings.color = glm::vec3(0.25f, 0.65f, 1.0f);
+        settings.range = 3.5f; settings.intensity = 85; settings.outerAngleDegrees = 28;
+        edit = EditorCommand{EditorCommandType::SetLightEntitySettings, spot}; edit.light = EditorDomain::captureLightEntitySettings(settings); submit(edit);
+        pose = EditorCommand{EditorCommandType::SetEntityTransform, spot}; pose.transform.translation = {-0.9f, 1.8f, 0.15f}; submit(pose);
+        auto bad = edit; bad.light.range = -1; submit(bad);
+        check(scene_.find(spot)->light->range == 3.5f, "invalid command mutated light");
+        submit(EditorCommand{EditorCommandType::DuplicateEntity, spot});
+        const auto duplicate = selectedSceneEntity_;
+        check(duplicate != spot && scene_.lightEntityCount() == 3, "light duplicate failed");
+        submit(EditorCommand{EditorCommandType::DeleteEntity, duplicate});
+        check(scene_.lightEntityCount() == 2, "light delete failed");
+        submit(EditorCommand{EditorCommandType::SetEntityVisibility, point, 0U, false});
+        check(scene_.buildLocalLights().size() == 1, "disabled light remained active");
+        submit(EditorCommand{EditorCommandType::SetEntityVisibility, point, 0U, true});
+        scene_.updateWorldTransforms();
+        auto document = captureSceneDocument();
+        std::string error;
+        check(saveSceneTo(directory / "entities.myscene"), "entity scene save failed");
+        auto legacy = document;
+        legacy.renderer.localLights = resolveSceneLocalLights(document);
+        for (auto& entity : legacy.entities) entity.light.reset();
+        check(saveSceneDocument(directory / "legacy.myscene", legacy, error), "legacy comparison save failed");
+        auto off = document;
+        for (auto& entity : off.entities) if (entity.light) entity.visible = false;
+        check(saveSceneDocument(directory / "disabled.myscene", off, error), "disabled comparison save failed");
+        auto invalid = document;
+        for (auto& entity : invalid.entities) if (entity.light) { entity.light->range = -1; break; }
+        check(!saveSceneDocument(directory / "invalid.myscene", invalid, error), "invalid parameters saved");
+        check(openScene(directory / "entities.myscene"), "saved entity scene reopen failed");
+        check(scene_.find(spot) && scene_.find(spot)->light && scene_.lightEntityCount() == 2, "reopen lost lights");
+        selectEntity(spot);
+        const auto renderLights = scene_.buildLocalLights();
+        check(renderLights.size() == 2 && glm::length(renderLights[0].position - legacy.renderer.localLights[0].position) < 1e-5f,
+              "GUI and batch logical lighting differ");
+        std::cout << "Light entity command/persistence acceptance: PASS\n";
+        return true;
+    } catch (const std::exception& error) { std::cerr << "Light entity acceptance: " << error.what() << '\n'; return false; }
 }

@@ -44,6 +44,7 @@ SceneEntityId Scene::createEntityWithId(
 SceneEntityId Scene::duplicateEntity(SceneEntityId source) {
     const SceneEntity* original = find(source);
     if (original == nullptr) return invalidSceneEntityId;
+    if (original->light && lightEntityCount() >= 64U) return invalidSceneEntityId;
     SceneEntity copy = *original;
     copy.id = nextId_++;
     copy.name += " Copy";
@@ -163,4 +164,31 @@ glm::mat4 Scene::resolveWorldTransform(
     }
     resolving.pop_back();
     return result;
+}
+
+SceneEntityId Scene::createLightEntity(std::string name, const SceneLightComponent& light) {
+    if (!validSceneLight(light) || lightEntityCount() >= 64U) return invalidSceneEntityId;
+    const auto id = createEntity(std::move(name));
+    if (auto* entity = find(id)) { entity->light = light; entity->castsShadow = false; }
+    return id;
+}
+std::size_t Scene::lightEntityCount() const {
+    return static_cast<std::size_t>(std::count_if(entities_.begin(), entities_.end(),
+        [](const SceneEntity& entity) { return entity.light.has_value(); }));
+}
+std::vector<LocalLight> Scene::buildLocalLights() const {
+    std::vector<LocalLight> lights;
+    for (const auto& entity : entities_) {
+        if (!entity.light || !entity.visible || !entity.enabledByPreset) continue;
+        const auto& component = *entity.light;
+        LocalLight light;
+        light.type = component.type;
+        light.position = glm::vec3(entity.worldTransform[3]);
+        auto direction = glm::vec3(entity.worldTransform * glm::vec4(0, -1, 0, 0));
+        light.direction = glm::length(direction) > 1e-6f ? glm::normalize(direction) : glm::vec3(0, -1, 0);
+        light.color = component.color; light.intensity = component.intensity; light.radius = component.range;
+        light.outerConeCosine = std::cos(glm::radians(component.outerAngleDegrees));
+        lights.push_back(light);
+    }
+    return lights;
 }

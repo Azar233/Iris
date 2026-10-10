@@ -196,6 +196,7 @@ void Renderer::render(
     int width,
     int height
 ) {
+    bufferPreviewNearPlane_ = camera.nearPlane();
     cpuPassTimings_.clear();
     RendererSettings settings = requestedSettings;
     std::string pluginError;
@@ -1854,7 +1855,9 @@ int Renderer::renderHeight() const {
 }
 
 std::size_t Renderer::estimatedRenderMemoryBytes() const {
-    return renderTarget_->estimatedBytes()
+    std::size_t previewBytes = 0;
+    for (const auto& target : bufferPreviewTargets_) if (target) previewBytes += target->estimatedBytes();
+    return previewBytes + renderTarget_->estimatedBytes()
         + gBuffer_->estimatedBytes()
         + (postProcessor_ ? postProcessor_->estimatedBytes() : 0U)
         + selectionOutline_->estimatedBytes()
@@ -1904,4 +1907,98 @@ void Renderer::drawSelectionOutline(const std::vector<RenderItem>& items, const 
     if (enscapeCubeActive_) return;
     selectionOutline_->draw(*renderTarget_, items, camera, selected, cullBackFaces);
     stateCache_.invalidate();
+}
+void Renderer::clearBufferPreviews() {
+    bufferPreviewTextures_.fill(0U);
+    for (auto& target : bufferPreviewTargets_) target.reset();
+}
+
+bool Renderer::updateBufferPreviews(int width, int height) {
+    if (enscapeCubeActive_ || activeRenderPath_ != RenderPath::Deferred || gBuffer_->framebuffer() == 0U) {
+        clearBufferPreviews();
+        return false;
+    }
+    // The inspection pass is outside scene rendering: restore all state it touches before ImGui.
+    struct Restore {
+        OpenGlStateCache& cache;
+        RenderState state;
+        GLint drawFbo{}, readFbo{}, viewport[4]{}, program{}, vao{}, active{}, textures[2]{}, pack{};
+        GLboolean scissor{}, srgb{};
+        GLenum alphaEquation{GL_FUNC_ADD};
+        explicit Restore(OpenGlStateCache& c) : cache(c) {
+            state.depthTest = glIsEnabled(GL_DEPTH_TEST) != 0;
+            state.blend = glIsEnabled(GL_BLEND) != 0;
+            state.cull = glIsEnabled(GL_CULL_FACE) != 0;
+            GLboolean mask; glGetBooleanv(GL_DEPTH_WRITEMASK, &mask); state.depthWrite = mask != 0;
+            auto get = [](GLenum key) { GLint v; glGetIntegerv(key, &v); return static_cast<GLenum>(v); };
+            state.depthFunction = get(GL_DEPTH_FUNC);
+            state.blendSourceRgb = get(GL_BLEND_SRC_RGB); state.blendDestinationRgb = get(GL_BLEND_DST_RGB);
+            state.blendSourceAlpha = get(GL_BLEND_SRC_ALPHA); state.blendDestinationAlpha = get(GL_BLEND_DST_ALPHA);
+            state.blendEquation = get(GL_BLEND_EQUATION_RGB); alphaEquation = get(GL_BLEND_EQUATION_ALPHA);
+            state.cullFace = get(GL_CULL_FACE_MODE); state.frontFace = get(GL_FRONT_FACE);
+            GLint modes[2]; glGetIntegerv(GL_POLYGON_MODE, modes); state.polygonMode = static_cast<GLenum>(modes[0]);
+            glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &drawFbo); glGetIntegerv(GL_READ_FRAMEBUFFER_BINDING, &readFbo);
+            glGetIntegerv(GL_VIEWPORT, viewport); glGetIntegerv(GL_CURRENT_PROGRAM, &program);
+            glGetIntegerv(GL_VERTEX_ARRAY_BINDING, &vao); glGetIntegerv(GL_ACTIVE_TEXTURE, &active);
+            glGetIntegerv(GL_PACK_ALIGNMENT, &pack);
+            scissor = glIsEnabled(GL_SCISSOR_TEST); srgb = glIsEnabled(GL_FRAMEBUFFER_SRGB);
+            for (int i = 0; i < 2; ++i) { glActiveTexture(GL_TEXTURE0 + i); glGetIntegerv(GL_TEXTURE_BINDING_2D, &textures[i]); }
+            glActiveTexture(GL_TEXTURE0);
+        }
+        ~Restore() {
+            cache.invalidate(); cache.apply(state);
+            glBlendEquationSeparate(state.blendEquation, alphaEquation); cache.invalidate();
+            glBindFramebuffer(GL_DRAW_FRAMEBUFFER, static_cast<GLuint>(drawFbo));
+            glBindFramebuffer(GL_READ_FRAMEBUFFER, static_cast<GLuint>(readFbo));
+            glViewport(viewport[0], viewport[1], viewport[2], viewport[3]);
+            glUseProgram(static_cast<GLuint>(program)); glBindVertexArray(static_cast<GLuint>(vao));
+            for (int i = 0; i < 2; ++i) { glActiveTexture(GL_TEXTURE0 + i); glBindTexture(GL_TEXTURE_2D, static_cast<GLuint>(textures[i])); }
+            glActiveTexture(static_cast<GLenum>(active)); glPixelStorei(GL_PACK_ALIGNMENT, pack);
+            if (scissor) glEnable(GL_SCISSOR_TEST); else glDisable(GL_SCISSOR_TEST);
+            if (srgb) glEnable(GL_FRAMEBUFFER_SRGB); else glDisable(GL_FRAMEBUFFER_SRGB);
+        }
+    } restore(stateCache_);
+    width = std::clamp(width, 1, 4096); height = std::clamp(height, 1, 4096);
+    if (!bufferPreviewShader_) bufferPreviewShader_ = std::make_unique<Shader>(
+        shaderDirectory_ / "fullscreen.vert", shaderDirectory_ / "buffer_preview.frag");
+    const bool ssaoReady = std::find(activePassNames_.begin(), activePassNames_.end(), "SSAO") != activePassNames_.end();
+    const std::array<unsigned int, 6> sources{gBuffer_->albedoTexture(), gBuffer_->normalTexture(),
+        gBuffer_->materialTexture(), gBuffer_->depthTexture(), gBuffer_->motionTexture(),
+        ssaoReady ? ssaoRenderer_->texture() : 0U};
+    RenderPassSequence sequence(width, height);
+    for (std::size_t i = 0; i < sources.size(); ++i) {
+        if (sources[i] == 0U) { bufferPreviewTextures_[i] = 0U; bufferPreviewTargets_[i].reset(); continue; }
+        if (!bufferPreviewTargets_[i]) bufferPreviewTargets_[i] = std::make_unique<RenderTarget>();
+        bufferPreviewTargets_[i]->resize(width, height, 1);
+        RenderPassContext context("Buffer visualization");
+        context.inputs = {"Resolved G-buffer / SSAO"}; context.outputs = {"Display PNG / UI preview"};
+        context.viewportWidth = width; context.viewportHeight = height;
+        context.state.depthTest = false; context.state.depthWrite = false;
+        sequence.add(std::move(context), [&, i] {
+            bufferPreviewTargets_[i]->bindFinal(); glViewport(0, 0, width, height);
+            bufferPreviewShader_->use(); bufferPreviewShader_->setInt("uSource", 0);
+            bufferPreviewShader_->setInt("uDepth", 1); bufferPreviewShader_->setInt("uMode", static_cast<int>(i));
+            bufferPreviewShader_->setFloat("uNear", bufferPreviewNearPlane_);
+            glActiveTexture(GL_TEXTURE0); glBindTexture(GL_TEXTURE_2D, sources[i]);
+            glActiveTexture(GL_TEXTURE1); glBindTexture(GL_TEXTURE_2D, gBuffer_->depthTexture());
+            glBindVertexArray(fullscreenVertexArray_); glDrawArrays(GL_TRIANGLES, 0, 3);
+            bufferPreviewTextures_[i] = bufferPreviewTargets_[i]->colorTexture();
+        });
+    }
+    glDisable(GL_SCISSOR_TEST); glDisable(GL_FRAMEBUFFER_SRGB);
+    sequence.run([&](std::size_t, const RenderPassContext& context) { stateCache_.invalidate(); stateCache_.apply(context.state); });
+    return true;
+}
+
+bool Renderer::saveBufferPreviews(const std::filesystem::path& directory, std::string& error) {
+    static constexpr std::array<const char*, 6> names{"albedo", "normal", "material", "depth", "motion", "ssao"};
+    if (bufferPreviewTextures_[0] == 0U) { error = "No current Deferred buffers to export"; return false; }
+    std::error_code ec; std::filesystem::create_directories(directory, ec);
+    if (ec) { error = ec.message(); return false; }
+    GLint readFbo = 0, pack = 0; glGetIntegerv(GL_READ_FRAMEBUFFER_BINDING, &readFbo); glGetIntegerv(GL_PACK_ALIGNMENT, &pack);
+    bool success = true;
+    for (std::size_t i = 0; i < names.size() && success; ++i)
+        if (bufferPreviewTextures_[i] != 0U) success = bufferPreviewTargets_[i]->savePng(directory / (std::string(names[i]) + ".png"), error);
+    glBindFramebuffer(GL_READ_FRAMEBUFFER, static_cast<GLuint>(readFbo)); glPixelStorei(GL_PACK_ALIGNMENT, pack);
+    return success;
 }

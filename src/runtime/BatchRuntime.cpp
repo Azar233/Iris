@@ -62,9 +62,11 @@ pathtracer::SceneSnapshot loadSnapshot(const RenderJob& job, const SceneDocument
         / static_cast<float>(job.renderSettings.height);
     snapshotCamera.projection = camera.projectionMatrix(snapshotCamera.aspectRatio);
     snapshotCamera.verticalFieldOfViewRadians = glm::radians(camera.fieldOfView());
+    auto lightingSettings = document.renderer;
+    lightingSettings.localLights = resolveSceneLocalLights(document);
     pathtracer::SceneSnapshotBuilder builder(
         snapshotCamera,
-        pathtracer::captureSceneLighting(document.renderer, snapshotCamera.position.y)
+        pathtracer::captureSceneLighting(lightingSettings, snapshotCamera.position.y)
     );
 
     std::unordered_map<SceneEntityId, std::size_t> indices;
@@ -120,6 +122,7 @@ Scene sceneForModule(const SceneDocument& document) {
         if (target == nullptr) continue;
         target->parent = entity.parent;
         target->transform = entity.transform;
+        target->light = entity.light;
         target->tint = entity.tint;
         target->visible = entity.visible;
         target->castsShadow = entity.castsShadow;
@@ -137,6 +140,7 @@ void applyModuleResult(const Scene& scene, SceneDocument& document) {
         const SceneEntity* source = scene.find(entity.id);
         if (source == nullptr) continue;
         entity.transform = source->transform;
+        entity.light = source->light;
         entity.tint = source->tint;
     }
 }

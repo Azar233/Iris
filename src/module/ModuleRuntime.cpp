@@ -343,7 +343,7 @@ bool ModuleRuntime::bakeSimulation(
         // frame must not depend on guessing which fields a module may touch.
         for (const SceneEntity& entity : runtimeScene_.scene().entities()) {
             record.entities.push_back(SimulationCacheEntity{
-                entity.id, entity.transform, entity.tint
+                entity.id, entity.transform, entity.tint, entity.light
             });
         }
         cache.frames.push_back(std::move(record));
@@ -367,6 +367,7 @@ bool ModuleRuntime::applyCachedFrame(const SimulationCacheFrame& frame, std::str
         }
         entity->transform = cached.transform;
         entity->tint = cached.tint;
+        if (cached.lightRecorded) entity->light = cached.light;
         entity->motionHistoryValid = false;
     }
     scene.updateWorldTransforms();

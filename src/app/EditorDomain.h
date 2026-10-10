@@ -26,6 +26,15 @@
 
 namespace EditorDomain {
 
+inline EditorLightEntitySettingsPayload captureLightEntitySettings(const SceneLightComponent& light) {
+    EditorLightEntitySettingsPayload value;
+    value.type = static_cast<int>(light.type);
+    value.color = {light.color.x, light.color.y, light.color.z};
+    value.intensity = light.intensity; value.range = light.range;
+    value.outerAngleDegrees = light.outerAngleDegrees;
+    return value;
+}
+
 inline glm::vec3 clampColor(const EditorVector3Payload& color) {
     return glm::vec3(
         std::clamp(color.x, 0.0f, 1.0f),
