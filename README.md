@@ -6,6 +6,8 @@
 
 当前研发转向可扩展引擎架构，暂停场景画质扩展；计划和验证状态见 [插件架构路线](ARCHITECTURE_ROADMAP.md)。实验分支不自动合并 `main`。现有图像与场景保留作展示和迁移回归输入。
 
+2026-10-10 进度：A1、A2-A 与 A2-B1 已验收；新增 Point/Spot 灯光实体（创建、编辑、启停、保存与实时/CPU 渲染）和 G-buffer/SSAO 通道预览及 PNG 导出。当前架构主线为 A2-B2 通用参数与事务资源合同；局部灯光阴影、体积光和 Vulkan 尚未实现。
+
 <p align="center">A C++17 real-time and offline rendering playground.</p>
 
 <p align="center">

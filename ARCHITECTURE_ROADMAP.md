@@ -52,8 +52,39 @@ A2-A 只验证有序逻辑计划，不是自动执行的通用 Render Graph；�
 
 - A0：当前成果已提交并推送，检查点 `63039f2`；远端 main 仍为 `b135c6e4e6f94ae8cf77d68491024199b37ff622`。
 - A1：最小静态插件可行性验证及 GitHub CI 通过，提交 38b1995。
-- A2-A：后处理第二插件与资源/Pass 合同本地验收及 GitHub CI 通过，提交 71c866a。A2-B1：GUI 启停与 Scene 配置切片本地验收完成；最终双编译器 30/30、真实 ImGui 输入、应用命令/GPU 释放重建/保存重开、Job 无产物拒绝、GPU smoke 与十套既有图像回归通过。MSVC 默认 NPR 迁移前后图 SHA 相同，跨编译器横向对比不宣称逐位一致；没有改 Shader 或基线。下一项 A2-B2，父项 A2 未完成。A3/A4/P1/M3 尚未开始。
+- A2-A：后处理第二插件与资源/Pass 合同本地验收及 GitHub CI 通过，提交 71c866a。A2-B1：GUI 启停与 Scene 配置切片本地验收及 GitHub CI 通过，提交 4ba850c；最终双编译器 30/30、真实 ImGui 输入、应用命令/GPU 释放重建/保存重开、Job 无产物拒绝、GPU smoke 与十套既有图像回归通过。MSVC 默认 NPR 迁移前后图 SHA 相同，跨编译器横向对比不宣称逐位一致；没有改 Shader 或基线。下一项 A2-B2，父项 A2 未完成。A3/A4/P1/M3 尚未开始。
 - 本文件用于 GitHub 上的共享计划；本地详细 `todolist.md`/`docs` 继续受 Git ignore 管理，没有强制加入历史资料。
+
+## 附加工作与进度同步（2026-10-10）
+
+此次整理已有 DBG-1 与 L1 工作，不扩展 A2 的范围。两项功能共用 Application 与 Renderer 接入代码；功能提交为 `1cd8619`，进度记录单独提交到当前实验分支。对应新提交的远端 CI 状态另查，不继承旧提交的成功状态。
+
+| 工作包 | 新增能力 | 已有验收证据与范围 |
+| --- | --- | --- |
+| DBG-1 | Inspector → Buffers 的五个 G-buffer 通道、独立 SSAO 预览和真实附件 PNG 导出 | GPU 状态恢复、最终图像字节一致、resize/释放/重建、真实抽屉鼠标输入与六种 UI 状态通过；Deferred / screen-space 回归通过 |
+| L1 | Point / Spot Scene 实体，层级创建、选择、变换、复制、删除、颜色/强度/范围/锥角与启停 | 保存重开、旧数组兼容、Module/缓存与 CPU Snapshot 贯通；双编译器各 31/31，Forward / Deferred / CPU 内部数组等价与开关贡献、GPU smoke 和相关图像回归通过 |
+
+DBG-1 输出为 8-bit 可视化 PNG，Depth 是设备深度对比度图；不提供浮点附件、ShadowMap/BloomMap 专用预览。L1 实时局部灯光尚无阴影，无体积散射、Directional 实体或视口拖动 TRS；CPU 使用既有遮挡采样。两项均未做新增性能基准，也未生成新的发布 ZIP。
+
+复现入口：
+
+```powershell
+cmake --build build-ci-msvc --config Release --parallel 6
+ctest --test-dir build-ci-msvc -C Release --output-on-failure
+cmake --build build-mingw --parallel 6
+ctest --test-dir build-mingw --output-on-failure
+cmake --build build-ci-msvc --config Release --target gpu-smoke gpu-buffer-preview-acceptance buffer-preview-capture light-entity-acceptance
+```
+
+两套 CTest 应串行执行：既有 Render Job 测试共用固定临时目录，并行跨构建执行会互相覆盖产物。GPU 验收串行运行；构建复制资产时也不要同时运行读取这些资产的测试。详细图像与历史日志保留在本地 `docs/buffer-preview-inspector.md`、`docs/light-entities.md` 和 `output/`；这些忽略路径不加入提交。
+
+2026-10-10 整理复验：MSVC / GCC Release 全目标构建成功；串行 CTest 各 31/31，退出码 0，耗时 46.55 s / 36.47 s。最初跨构建并行运行两套 CTest 时，`render-job-runtime` 因共享临时产物失败；串行重跑通过，未改断言或图像基线。
+
+最终 `gpu-smoke`、`gpu-buffer-preview-acceptance`、`buffer-preview-capture`、`light-entity-acceptance` 全部退出码 0。真实抽屉/Add Light 输入、六通道与禁用 SSAO 无旧图、最终图 SHA 不变、保存重开以及 Forward / Deferred / CPU 的旧数组等价与启停贡献均通过。GPU 首次启动因与测试并行读取时资产复制失败，串行重跑通过；未修改源码以绕过检查。本次未重新运行图像回归套件，沿用 2026-10-09 对同一功能代码的专项记录；未做性能基准或新 ZIP。
+
+后续主线仍为 A2-B2 通用参数 schema/保存/动态面板、事务资源替换与剩余输入资源合同。灯光后续拆为 L1-B 编辑增强、L2 实时局部阴影、L3 可选体积光；L3 依赖 A2-B2 / L2，均未开始，不因本次推送勾选。
+
+## 既有架构迁移证据
 
 迁移对照为 01 / 1280×720 / 1.25 s / 64 帧预热，检查点与插件 PNG SHA-256 均为 `CF455627E64FE7C2C04B963B01F02538B341F62546118894C8AE7036B5A1EBF2`。最终 240 帧测量 GPU P95 8.299520→6.778880 ms，满足预设上限 9.129472 ms；时钟/温度会影响单次值，不宣称插件化加速。无 Shader 算法或基线变化，无新 ZIP。
 
