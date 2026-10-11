@@ -1,5 +1,6 @@
 #pragma once
 #include <imgui.h>
+#include "app/StatePaths.h"
 #include <algorithm>
 #include <cfloat>
 #include <filesystem>
@@ -11,9 +12,9 @@ namespace EditorUi {
 inline constexpr ImVec2 minimumDockedPanelSize{260.0f, 120.0f};
 inline bool chinese = true;
 inline bool chineseFontAvailable = false;
-inline void setLanguage(bool value) { chinese = value; std::ofstream("MyRenderer.language") << (value ? "zh-CN" : "en"); }
+inline void setLanguage(bool value) { chinese = value; std::ofstream(iris::stateFile("language", "MyRenderer.language")) << (value ? "zh-CN" : "en"); }
 inline void initialize(ImGuiIO& io) {
-  std::string language; std::ifstream("MyRenderer.language") >> language; chinese = language != "en";
+  std::string language; std::ifstream(iris::stateFile("language", "MyRenderer.language")) >> language; chinese = language != "en";
   for (const char* font : {"C:/Windows/Fonts/msyh.ttc", "C:/Windows/Fonts/simhei.ttf", "C:/Windows/Fonts/simsun.ttc"}) {
     if (std::filesystem::exists(font) && io.Fonts->AddFontFromFileTTF(font, 16.0f, nullptr, io.Fonts->GetGlyphRangesChineseFull())) { chineseFontAvailable = true; break; }
   }

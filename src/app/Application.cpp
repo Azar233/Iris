@@ -1,5 +1,6 @@
 #include "app/Application.h" // Raster capture metadata is published with each frame.
 #include "plugin/ShaderScene.h"
+#include "app/StatePaths.h"
 #include "runtime/RasterFrameReport.h"
 #include "optics/CloudLightingLut.h"
 #include "optics/CloudNoiseVolume.h"
@@ -131,15 +132,18 @@ double percentile(std::vector<double> values, double fraction) {
 }
 
 std::filesystem::path renderQueueStatePath() {
+    if (const char* overridePath = std::getenv("IRIS_RENDER_QUEUE_STATE")) {
+        return std::filesystem::absolute(overridePath).lexically_normal();
+    }
     if (const char* overridePath = std::getenv("MYRENDERER_RENDER_QUEUE_STATE")) {
         return std::filesystem::absolute(overridePath).lexically_normal();
     }
 #ifdef _WIN32
     if (const char* localAppData = std::getenv("LOCALAPPDATA")) {
-        return std::filesystem::path(localAppData) / "MyRenderer" / "render-queue.json";
+        return iris::stateFile("render-queue.json", std::filesystem::u8path(localAppData) / "MyRenderer" / "render-queue.json");
     }
 #endif
-    return std::filesystem::temp_directory_path() / "MyRenderer" / "render-queue.json";
+    return iris::stateFile("render-queue.json", std::filesystem::temp_directory_path() / "MyRenderer" / "render-queue.json");
 }
 
 } // namespace
@@ -321,7 +325,7 @@ int Application::run(const std::filesystem::path& initialModel) {
             benchmarkWarmupFrames_ = std::max(std::atoi(value), 4);
         }
         benchmarkOutputPath_ = std::getenv("MYRENDERER_BENCHMARK_OUTPUT") == nullptr
-            ? std::filesystem::absolute("prism-benchmark.json")
+            ? sourceRoot_ / ".local" / "benchmarks" / "prism.json"
             : std::filesystem::absolute(std::getenv("MYRENDERER_BENCHMARK_OUTPUT"));
     }
     if (const char* value = std::getenv("MYRENDERER_PRISM_REEL_DIR")) {
@@ -1512,7 +1516,8 @@ void Application::initializeGui() {
     const bool automatedRun = std::getenv("MYRENDERER_SMOKE_TEST") != nullptr
         || benchmarkMode_ || prismReelMode_;
     // Hidden regression/benchmark windows must not overwrite the interactive layout.
-    io.IniFilename = automatedRun ? nullptr : "MyRenderer.editor.v2.ini";
+    static const auto layoutFilename = iris::stateFile("editor.ini", "MyRenderer.editor.v2.ini").u8string();
+    io.IniFilename = automatedRun ? nullptr : layoutFilename.c_str();
 
     EditorUi::initialize(io);
     ImGui::StyleColorsDark();
@@ -4663,7 +4668,7 @@ std::filesystem::path Application::resolvePath(const std::filesystem::path& path
 }
 
 std::filesystem::path Application::nextScreenshotPath() const {
-    const std::filesystem::path directory = sourceRoot_ / "screenshots";
+    const std::filesystem::path directory = sourceRoot_ / ".local" / "captures";
     const std::string stem = currentModelPath_.empty() ? "viewport" : currentModelPath_.stem().string();
     for (std::size_t sequence = 1; sequence < 10000U; ++sequence) {
         const std::filesystem::path candidate = directory

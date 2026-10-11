@@ -1,8 +1,8 @@
-﻿param([string]$BuildDirectory = 'build-ci-msvc', [ValidateSet('m2b','m2c','m2d')][string]$Stage='m2b')
+param([string]$BuildDirectory = 'build-ci-msvc', [ValidateSet('m2b','m2c','m2d')][string]$Stage='m2b')
 $ErrorActionPreference = 'Stop'
 $root = Split-Path $PSScriptRoot -Parent
 $exe = Join-Path $root "$BuildDirectory/Release/Iris.exe"
-$comparator = Join-Path $root "$BuildDirectory/Release/MyRendererImageComparison.exe"
+$comparator = Join-Path $root "$BuildDirectory/Release/IrisImageComparison.exe"
 $outputRoot = Join-Path $root "$BuildDirectory/$Stage-scene-job"
 # Raster output publication deliberately refuses overwrites; preserve earlier
 # evidence and give each acceptance attempt its own output transaction.

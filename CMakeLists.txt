@@ -3,6 +3,7 @@ cmake_minimum_required(VERSION 3.20)
 project(Iris VERSION 0.1.0 LANGUAGES C CXX)
 
 include(CTest)
+include(cmake/IrisCTest.cmake)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -12,11 +13,8 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 # CMake 4.x compatible without weakening this project's own minimum version.
 set(CMAKE_POLICY_VERSION_MINIMUM 3.10)
 
-# Build stamp reported by every module manifest. It is fixed for one configure, so
-# the GUI and the batch CLI built together always agree, while a reconfigure cannot
-# silently reuse a simulation cache produced by an older binary.
-string(TIMESTAMP MYRENDERER_BUILD_STAMP "%Y%m%d%H%M%S" UTC)
-set(MYRENDERER_BUILD_ID "${PROJECT_VERSION}+${MYRENDERER_BUILD_STAMP}")
+# Shared, content-based module/host identity; unchanged configure inputs reuse it.
+include(cmake/IrisBuildIdentity.cmake)
 
 include(FetchContent)
 
@@ -200,7 +198,7 @@ else()
     target_compile_options(MyRendererBatchRuntime PRIVATE -Wall -Wextra -Wpedantic)
 endif()
 
-add_executable(MyRendererBatch tools/MyRendererBatch.cpp)
+add_executable(MyRendererBatch tools/IrisBatch.cpp)
 target_link_libraries(MyRendererBatch PRIVATE MyRendererBatchRuntime MyRendererModules)
 
 # Statically linked module set (P1-0C). The parameter / registry / runtime-scene
@@ -353,11 +351,11 @@ if(WIN32)
     enable_language(RC)
     set(MYRENDERER_ICON_PATH "${CMAKE_CURRENT_SOURCE_DIR}/assets/icons/iris.ico")
     configure_file(
-        resources/MyRenderer.rc.in
-        "${CMAKE_CURRENT_BINARY_DIR}/MyRenderer.rc"
+        src/platform/Iris.rc.in
+        "${CMAKE_CURRENT_BINARY_DIR}/Iris.rc"
         @ONLY
     )
-    target_sources(MyRenderer PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/MyRenderer.rc")
+    target_sources(MyRenderer PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/Iris.rc")
     target_link_libraries(MyRenderer PRIVATE comdlg32 shell32 ole32 uuid)
 endif()
 
@@ -389,9 +387,12 @@ target_link_libraries(MyRenderer PRIVATE
 )
 
 if(BUILD_TESTING)
+    add_executable(IrisStatePathsTests tests/StatePathsTests.cpp)
+    target_include_directories(IrisStatePathsTests PRIVATE src)
+    iris_add_test(NAME iris-state-paths COMMAND IrisStatePathsTests)
     add_executable(IrisShaderSceneTests tests/ShaderSceneTests.cpp tests/ShaderSceneTextureCpuTests.cpp)
     target_link_libraries(IrisShaderSceneTests PRIVATE IrisParameters glad_gl_core_33)
-    add_test(NAME shader-scene-package COMMAND IrisShaderSceneTests ${CMAKE_CURRENT_SOURCE_DIR}/assets/shader-scenes/textures)
+    iris_add_test(NAME shader-scene-package COMMAND IrisShaderSceneTests ${CMAKE_CURRENT_SOURCE_DIR}/assets/shader-scenes/textures)
     add_executable(IrisShaderSceneGpuTests tests/ShaderSceneGpuTests.cpp tests/ShaderSceneMultiPassTests.cpp tests/ShaderSceneEntryTests.cpp tests/ShaderSceneTextureGpuTests.cpp
         src/render/Shader.cpp src/render/Camera.cpp src/render/RenderTarget.cpp src/render/OpenGlStateCache.cpp
         src/scene/Scene.cpp src/scene/SceneDocument.cpp)
@@ -454,33 +455,30 @@ else()
 endif()
 
 add_custom_command(TARGET MyRenderer POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E copy_directory
-            ${CMAKE_CURRENT_SOURCE_DIR}/shaders
-            $<TARGET_FILE_DIR:MyRenderer>/shaders
-    COMMAND ${CMAKE_COMMAND} -E copy_directory
-            ${CMAKE_CURRENT_SOURCE_DIR}/assets
-            $<TARGET_FILE_DIR:MyRenderer>/assets
-    COMMENT "Copying shaders and model assets"
+    COMMAND ${CMAKE_COMMAND} "-DSOURCE_DIR=${CMAKE_CURRENT_SOURCE_DIR}"
+            "-DDESTINATION_DIR=$<TARGET_FILE_DIR:MyRenderer>"
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/SyncRuntimeAssets.cmake
+    COMMENT "Synchronizing changed Iris runtime assets"
 )
 
 if(BUILD_TESTING)
     add_executable(MyRendererRenderJobTests tests/RenderJobTests.cpp)
     add_executable(IrisRenderPluginRegistryTests tests/RenderPluginRegistryTests.cpp)
     target_link_libraries(IrisRenderPluginRegistryTests PRIVATE IrisRenderPluginHost)
-    add_test(NAME render-plugin-registry COMMAND IrisRenderPluginRegistryTests)
+    iris_add_test(NAME render-plugin-registry COMMAND IrisRenderPluginRegistryTests)
     add_executable(IrisRenderPluginContractTests tests/RenderPluginContractTests.cpp)
     target_link_libraries(IrisRenderPluginContractTests PRIVATE IrisRenderPluginHost)
-    add_test(NAME render-plugin-contract COMMAND IrisRenderPluginContractTests)
+    iris_add_test(NAME render-plugin-contract COMMAND IrisRenderPluginContractTests)
     add_executable(IrisRenderPluginConfigurationTests tests/RenderPluginConfigurationTests.cpp)
     target_link_libraries(IrisRenderPluginConfigurationTests PRIVATE IrisRenderPluginHost)
-    add_test(NAME render-plugin-configuration COMMAND IrisRenderPluginConfigurationTests)
+    iris_add_test(NAME render-plugin-configuration COMMAND IrisRenderPluginConfigurationTests)
     add_executable(IrisRenderPluginParameterTests tests/RenderPluginParameterTests.cpp src/scene/Scene.cpp src/scene/SceneDocument.cpp)
     target_include_directories(IrisRenderPluginParameterTests PRIVATE src ${assimp_SOURCE_DIR}/contrib/rapidjson/include)
     target_link_libraries(IrisRenderPluginParameterTests PRIVATE IrisRenderPluginHost MyRendererCloudNoise glad_gl_core_33)
-    add_test(NAME render-plugin-parameters COMMAND IrisRenderPluginParameterTests)
+    iris_add_test(NAME render-plugin-parameters COMMAND IrisRenderPluginParameterTests)
     add_executable(IrisRenderPluginPanelTests tests/RenderPluginPanelTests.cpp src/app/RenderPluginPanel.cpp)
     target_link_libraries(IrisRenderPluginPanelTests PRIVATE IrisRenderPluginHost imgui_backend glad_gl_core_33)
-    add_test(NAME render-plugin-panel COMMAND IrisRenderPluginPanelTests)
+    iris_add_test(NAME render-plugin-panel COMMAND IrisRenderPluginPanelTests)
     add_executable(IrisStoredPluginGpuTests tests/StoredPluginGpuTests.cpp src/app/RenderPluginPanel.cpp
         src/scene/Scene.cpp src/scene/SceneDocument.cpp src/render/Camera.cpp src/render/RenderTarget.cpp)
     target_include_directories(IrisStoredPluginGpuTests PRIVATE src ${assimp_SOURCE_DIR}/contrib/rapidjson/include
@@ -532,9 +530,9 @@ if(BUILD_TESTING)
     else()
         target_compile_options(MyRendererRenderJobTests PRIVATE -Wall -Wextra -Wpedantic)
     endif()
-    add_test(NAME render-job-runtime COMMAND MyRendererRenderJobTests)
+    iris_add_test(NAME render-job-runtime COMMAND MyRendererRenderJobTests)
 
-    add_test(
+    iris_add_test(
         NAME batch-output-override
         COMMAND ${CMAKE_COMMAND}
                 -DBATCH=$<TARGET_FILE:MyRendererBatch>
@@ -552,7 +550,7 @@ if(BUILD_TESTING)
     else()
         target_compile_options(MyRendererRasterCaptureTests PRIVATE -Wall -Wextra -Wpedantic)
     endif()
-    add_test(NAME raster-capture-contract COMMAND MyRendererRasterCaptureTests)
+    iris_add_test(NAME raster-capture-contract COMMAND MyRendererRasterCaptureTests)
     add_custom_target(cloud-determinism-acceptance
         COMMAND ${CMAKE_COMMAND}
             -DRENDERER=$<TARGET_FILE:MyRenderer>
@@ -573,7 +571,7 @@ if(BUILD_TESTING)
     else()
         target_compile_options(MyRendererRenderQueueTests PRIVATE -Wall -Wextra -Wpedantic)
     endif()
-    add_test(NAME render-queue-runtime COMMAND MyRendererRenderQueueTests)
+    iris_add_test(NAME render-queue-runtime COMMAND MyRendererRenderQueueTests)
 
     add_executable(MyRendererEditorSessionTests
         tests/EditorSessionTests.cpp
@@ -585,7 +583,7 @@ if(BUILD_TESTING)
     else()
         target_compile_options(MyRendererEditorSessionTests PRIVATE -Wall -Wextra -Wpedantic)
     endif()
-    add_test(NAME editor-session COMMAND MyRendererEditorSessionTests)
+    iris_add_test(NAME editor-session COMMAND MyRendererEditorSessionTests)
 
     add_executable(MyRendererCameraNavigationTests
         tests/CameraNavigationTests.cpp
@@ -598,7 +596,7 @@ if(BUILD_TESTING)
     else()
         target_compile_options(MyRendererCameraNavigationTests PRIVATE -Wall -Wextra -Wpedantic)
     endif()
-    add_test(NAME camera-navigation COMMAND MyRendererCameraNavigationTests)
+    iris_add_test(NAME camera-navigation COMMAND MyRendererCameraNavigationTests)
 
     # Cascade fitting is pure matrix math, so it is verified without an OpenGL context: the split
     # scheme, the sub-frustum corners, the box containment and the texel-grid stability are the
@@ -614,7 +612,7 @@ if(BUILD_TESTING)
     else()
         target_compile_options(MyRendererShadowCascadeTests PRIVATE -Wall -Wextra -Wpedantic)
     endif()
-    add_test(NAME shadow-cascade-fitting COMMAND MyRendererShadowCascadeTests)
+    iris_add_test(NAME shadow-cascade-fitting COMMAND MyRendererShadowCascadeTests)
 
     add_executable(MyRendererWaterWavesTests
         tests/WaterWavesTests.cpp
@@ -627,7 +625,7 @@ if(BUILD_TESTING)
     else()
         target_compile_options(MyRendererWaterWavesTests PRIVATE -Wall -Wextra -Wpedantic)
     endif()
-    add_test(NAME water-wave-synthesis COMMAND MyRendererWaterWavesTests)
+    iris_add_test(NAME water-wave-synthesis COMMAND MyRendererWaterWavesTests)
 
     add_executable(MyRendererAtmosphereTests tests/AtmosphereTests.cpp)
     target_link_libraries(MyRendererAtmosphereTests PRIVATE MyRendererPathTracing)
@@ -637,7 +635,7 @@ if(BUILD_TESTING)
     else()
         target_compile_options(MyRendererAtmosphereTests PRIVATE -Wall -Wextra -Wpedantic)
     endif()
-    add_test(NAME atmosphere-model COMMAND MyRendererAtmosphereTests)
+    iris_add_test(NAME atmosphere-model COMMAND MyRendererAtmosphereTests)
 
     # The CPU reference raymarcher is the golden value the GPU march is checked against, so its own
     # contracts are tested separately from the analytic sky it shares a density field with.
@@ -649,8 +647,8 @@ if(BUILD_TESTING)
     else()
         target_compile_options(MyRendererCloudTests PRIVATE -Wall -Wextra -Wpedantic)
     endif()
-    add_test(NAME cloud-reference COMMAND MyRendererCloudTests)
-    add_test(NAME cloud-shape-acceptance COMMAND MyRendererCloudCalibration
+    iris_add_test(NAME cloud-reference COMMAND MyRendererCloudTests)
+    iris_add_test(NAME cloud-shape-acceptance COMMAND MyRendererCloudCalibration
         --acceptance ${CMAKE_CURRENT_BINARY_DIR}/cloud-calibration)
     set_tests_properties(cloud-shape-acceptance PROPERTIES TIMEOUT 60)
 
@@ -661,7 +659,7 @@ if(BUILD_TESTING)
     else()
         target_compile_options(MyRendererTimelineTests PRIVATE -Wall -Wextra -Wpedantic)
     endif()
-    add_test(NAME runtime-timeline COMMAND MyRendererTimelineTests)
+    iris_add_test(NAME runtime-timeline COMMAND MyRendererTimelineTests)
 
     add_executable(MyRendererModuleTests
         tests/ModuleRuntimeTests.cpp
@@ -674,7 +672,7 @@ if(BUILD_TESTING)
     else()
         target_compile_options(MyRendererModuleTests PRIVATE -Wall -Wextra -Wpedantic)
     endif()
-    add_test(NAME module-runtime COMMAND MyRendererModuleTests)
+    iris_add_test(NAME module-runtime COMMAND MyRendererModuleTests)
 
     add_executable(MyRendererWorkspaceAssetsTests
         tests/WorkspaceAssetsTests.cpp
@@ -686,7 +684,7 @@ if(BUILD_TESTING)
     else()
         target_compile_options(MyRendererWorkspaceAssetsTests PRIVATE -Wall -Wextra -Wpedantic)
     endif()
-    add_test(NAME workspace-assets COMMAND MyRendererWorkspaceAssetsTests)
+    iris_add_test(NAME workspace-assets COMMAND MyRendererWorkspaceAssetsTests)
 
     add_executable(MyRendererAssetThumbnailTests
         tests/AssetThumbnailTests.cpp
@@ -704,7 +702,7 @@ if(BUILD_TESTING)
     else()
         target_compile_options(MyRendererAssetThumbnailTests PRIVATE -Wall -Wextra -Wpedantic)
     endif()
-    add_test(NAME asset-thumbnails COMMAND MyRendererAssetThumbnailTests)
+    iris_add_test(NAME asset-thumbnails COMMAND MyRendererAssetThumbnailTests)
     add_custom_target(asset-thumbnail-layout-acceptance
         COMMAND ${CMAKE_COMMAND} -E env
             MYRENDERER_SMOKE_TEST=1
@@ -742,7 +740,7 @@ if(BUILD_TESTING)
     else()
         target_compile_options(MyRendererAssetTests PRIVATE -Wall -Wextra -Wpedantic)
     endif()
-    add_test(NAME asset-import COMMAND MyRendererAssetTests)
+    iris_add_test(NAME asset-import COMMAND MyRendererAssetTests)
 
     add_executable(MyRendererSceneTests
         tests/SceneDrawListTests.cpp
@@ -755,7 +753,7 @@ if(BUILD_TESTING)
     else()
         target_compile_options(MyRendererSceneTests PRIVATE -Wall -Wextra -Wpedantic)
     endif()
-    add_test(NAME scene-draw-list COMMAND MyRendererSceneTests)
+    iris_add_test(NAME scene-draw-list COMMAND MyRendererSceneTests)
 
     add_executable(MyRendererSceneGraphTests
         tests/SceneTests.cpp
@@ -768,7 +766,7 @@ if(BUILD_TESTING)
     else()
         target_compile_options(MyRendererSceneGraphTests PRIVATE -Wall -Wextra -Wpedantic)
     endif()
-    add_test(NAME scene-graph COMMAND MyRendererSceneGraphTests)
+    iris_add_test(NAME scene-graph COMMAND MyRendererSceneGraphTests)
 
     add_executable(MyRendererSceneDocumentTests
         tests/SceneDocumentTests.cpp
@@ -787,7 +785,7 @@ if(BUILD_TESTING)
     else()
         target_compile_options(MyRendererSceneDocumentTests PRIVATE -Wall -Wextra -Wpedantic)
     endif()
-    add_test(NAME scene-document-repeat-load COMMAND MyRendererSceneDocumentTests)
+    iris_add_test(NAME scene-document-repeat-load COMMAND MyRendererSceneDocumentTests)
     add_executable(IrisLightEntityTests tests/LightEntityTests.cpp
         src/scene/Scene.cpp src/scene/SceneDocument.cpp src/module/RuntimeScene.cpp src/module/SimulationCache.cpp)
     target_include_directories(IrisLightEntityTests PRIVATE src ${assimp_SOURCE_DIR}/contrib/rapidjson/include)
@@ -797,7 +795,7 @@ if(BUILD_TESTING)
     else()
         target_compile_options(IrisLightEntityTests PRIVATE -Wall -Wextra -Wpedantic)
     endif()
-    add_test(NAME scene-light-entities COMMAND IrisLightEntityTests)
+    iris_add_test(NAME scene-light-entities COMMAND IrisLightEntityTests)
 
 
     add_executable(MyRendererPathTracingTests tests/PathTracingFoundationTests.cpp)
@@ -807,20 +805,20 @@ if(BUILD_TESTING)
     else()
         target_compile_options(MyRendererPathTracingTests PRIVATE -Wall -Wextra -Wpedantic)
     endif()
-    add_test(NAME path-tracing-foundation COMMAND MyRendererPathTracingTests)
+    iris_add_test(NAME path-tracing-foundation COMMAND MyRendererPathTracingTests)
     add_executable(MyRendererProgressiveTests tests/ProgressiveRenderingTests.cpp)
     target_link_libraries(MyRendererProgressiveTests PRIVATE MyRendererPathTracing)
     target_include_directories(MyRendererProgressiveTests PRIVATE ${assimp_SOURCE_DIR}/contrib/stb)
-    add_test(NAME path-tracing-progressive COMMAND MyRendererProgressiveTests)
+    iris_add_test(NAME path-tracing-progressive COMMAND MyRendererProgressiveTests)
     set_tests_properties(path-tracing-progressive PROPERTIES TIMEOUT 30)
     add_executable(MyRendererCpuPreviewTests tests/CpuProgressivePreviewTests.cpp)
     target_link_libraries(MyRendererCpuPreviewTests PRIVATE MyRendererPathTracing)
     target_include_directories(MyRendererCpuPreviewTests PRIVATE ${assimp_SOURCE_DIR}/contrib/stb)
-    add_test(NAME cpu-progressive-preview COMMAND MyRendererCpuPreviewTests)
+    iris_add_test(NAME cpu-progressive-preview COMMAND MyRendererCpuPreviewTests)
     set_tests_properties(cpu-progressive-preview PROPERTIES TIMEOUT 30)
     add_executable(MyRendererDenoisingTests tests/DenoisingTests.cpp)
     target_link_libraries(MyRendererDenoisingTests PRIVATE MyRendererPathTracing)
-    add_test(NAME path-tracing-denoising COMMAND MyRendererDenoisingTests)
+    iris_add_test(NAME path-tracing-denoising COMMAND MyRendererDenoisingTests)
     set_tests_properties(path-tracing-denoising PROPERTIES TIMEOUT 30)
     add_custom_target(path-tracing-regression
         COMMAND MyRendererProgressiveTests
@@ -853,10 +851,10 @@ if(BUILD_TESTING)
     # able to run the CPU suite.
     add_executable(MyRendererCloudCaptureInputTests tests/CloudCaptureInputTests.cpp)
     target_link_libraries(MyRendererCloudCaptureInputTests PRIVATE MyRendererCloudNoise)
-    add_test(NAME cloud-capture-inputs COMMAND MyRendererCloudCaptureInputTests)
+    iris_add_test(NAME cloud-capture-inputs COMMAND MyRendererCloudCaptureInputTests)
     add_executable(MyRendererCloudNoiseTests tests/CloudNoiseVolumeTests.cpp)
     target_link_libraries(MyRendererCloudNoiseTests PRIVATE MyRendererCloudNoise)
-    add_test(NAME cloud-noise-asset COMMAND MyRendererCloudNoiseTests)
+    iris_add_test(NAME cloud-noise-asset COMMAND MyRendererCloudNoiseTests)
     add_executable(MyRendererCloudNoiseGpuTests
         tests/CloudNoiseGpuTests.cpp src/render/CloudNoiseTexture.cpp
         src/render/Shader.cpp src/render/OpenGlStateCache.cpp)
@@ -1003,7 +1001,7 @@ if(BUILD_TESTING)
     else()
         target_compile_options(MyRendererPrismOpticsTests PRIVATE -Wall -Wextra -Wpedantic)
     endif()
-    add_test(NAME prism-optics COMMAND MyRendererPrismOpticsTests)
+    iris_add_test(NAME prism-optics COMMAND MyRendererPrismOpticsTests)
 
     add_executable(MyRendererImageComparison tests/ImageComparison.cpp)
     target_include_directories(MyRendererImageComparison PRIVATE
@@ -1747,7 +1745,7 @@ install(
     PATTERN "models/textures/spot*" EXCLUDE
     PATTERN "models/textures/hmap.jpg" EXCLUDE
 )
-install(FILES README.md ARCHITECTURE_ROADMAP.md LICENSE THIRD_PARTY_NOTICES.md ASSET_LICENSES.md DESTINATION . COMPONENT Runtime)
+install(FILES README.md WORKSPACE.md ARCHITECTURE_ROADMAP.md LICENSE THIRD_PARTY_NOTICES.md ASSET_LICENSES.md DESTINATION . COMPONENT Runtime)
 install(FILES ${glfw_SOURCE_DIR}/LICENSE.md DESTINATION licenses RENAME GLFW-LICENSE.md COMPONENT Runtime)
 install(FILES ${glm_SOURCE_DIR}/copying.txt DESTINATION licenses RENAME GLM-LICENSE.txt COMPONENT Runtime)
 install(FILES ${MYRENDERER_GLAD_FETCH_SOURCE_DIR}/LICENSE DESTINATION licenses RENAME GLAD-LICENSE.txt COMPONENT Runtime)
@@ -1811,3 +1809,6 @@ add_custom_target(render-plugin-parameter-gpu-acceptance
     DEPENDS MyRenderer WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
     COMMENT "Checking typed plugin edits, real GPU output and save-reopen transactions")
 endif()
+
+# Labels and executable branding apply after every project target/test exists.
+include(cmake/IrisVerification.cmake)

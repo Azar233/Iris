@@ -2,7 +2,7 @@ param([string]$BuildDirectory='build-ci-msvc')
 $ErrorActionPreference='Stop'
 $root=Split-Path $PSScriptRoot -Parent
 $exe=Join-Path $root "$BuildDirectory/Release/Iris.exe"
-$cmp=Join-Path $root "$BuildDirectory/Release/MyRendererImageComparison.exe"
+$cmp=Join-Path $root "$BuildDirectory/Release/IrisImageComparison.exe"
 $out=Join-Path $root "$BuildDirectory/ocean-realism/$([guid]::NewGuid().ToString('N').Substring(0,8))"
 New-Item -ItemType Directory -Force $out | Out-Null
 $saved=@{}

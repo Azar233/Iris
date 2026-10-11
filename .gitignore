@@ -13,6 +13,8 @@
 
 # Local dependency/tool caches
 /.cache/
+/.local/
+/CMakeUserPresets.json
 
 # Local AI assistants, skills, planning and development notes
 /.agents/
@@ -49,6 +51,10 @@ SKILL.md
 /MyRenderer.editor.v2.ini
 /MyRenderer.language
 /MyRenderer.recent-scene
+/Iris.ini
+/Iris.editor.ini
+/Iris.language
+/Iris.recent-scene
 /screenshots/
 /todolist.md
 *.log

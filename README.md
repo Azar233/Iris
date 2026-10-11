@@ -85,9 +85,9 @@ Iris 是一个独立的图形学与渲染实验平台，将实时光栅化、CPU
 git clone https://github.com/Azar233/Iris.git
 cd Iris
 python -m pip install "Jinja2>=2.7,<4.0"
-cmake -S . -B build -G "Visual Studio 17 2022" -A x64 -T host=x64
-cmake --build build --config Release --parallel
-.\build\Release\Iris.exe
+cmake --preset msvc
+cmake --build --preset msvc --parallel
+.\build-ci-msvc\Release\Iris.exe
 ```
 
 启动后，通过 `File > Open bundled scene` 打开体积云、海面或光照实验场景。右键拖动旋转相机，中键平移，滚轮缩放；点击视口后可用 `W/A/S/D` 移动。
@@ -101,8 +101,8 @@ GLSL 海面来自 Thomas / @Thomas_ensc 的 Enscape Cube，海面过程署名 Al
 原生云海保留在 `assets/scenes/fixtures/28_native_ocean_clouds.myscene`，`06_ocean_clouds_hero.renderjob` 继续验证原生昼夜序列；新 `07_glsl_ocean_clouds.renderjob` 输出 0～23 帧 / 24 FPS 的 GLSL 海浪短序列。24 帧只限定导出任务，实时浏览不受此限制。旧 Cloud Lab 与 Ocean Weather Hero 可见入口已移除。原生天空 CPU 重建并行优化与自然场景合同继续保留。
 
 ```powershell
-.\build\Release\Iris.exe assets/scenes/01_ocean_clouds_hero.myscene
-.\build\Release\Iris.exe raster-sequence assets/renderjobs/07_glsl_ocean_clouds.renderjob --output "output/hero/frame_{frame:04}"
+.\build-ci-msvc\Release\Iris.exe assets/scenes/01_ocean_clouds_hero.myscene
+.\build-ci-msvc\Release\Iris.exe raster-sequence assets/renderjobs/07_glsl_ocean_clouds.renderjob --output ".local/renders/hero/frame_{frame:04}"
 ```
 
 ### 使用 Windows Release ZIP
@@ -113,8 +113,8 @@ GLSL 海面来自 Thomas / @Thomas_ensc 的 Enscape Cube，海面过程署名 Al
 
 ```powershell
 .\Iris.exe assets/scenes/fixtures/26_module_workflow.myscene
-.\IrisBatch.exe render-sequence assets/renderjobs/01_cpu_reference.renderjob --output "output/cpu/frame_{frame:04}"
-.\Iris.exe raster-sequence assets/renderjobs/04_coastal_sequence.renderjob --output "output/coastal/frame_{frame:04}"
+.\IrisBatch.exe render-sequence assets/renderjobs/01_cpu_reference.renderjob --output ".local/renders/cpu/frame_{frame:04}"
+.\Iris.exe raster-sequence assets/renderjobs/04_coastal_sequence.renderjob --output ".local/renders/coastal/frame_{frame:04}"
 ```
 
 示例 Job 保留源码工作流的默认输出路径；解压包推荐使用 `--output` 指定结果目录。CPU 示例输出 2 帧及 AOV，海面示例输出 13 帧 Beauty PNG；格式、缓存和 Queue 边界见下方支持矩阵。Vulkan/GPU PT、PhysX 和曲面细分尚未实现；CPU PT 尚未完整支持原生水面与空中透视，原生云海已完成云形与高度照明切片，海面与整幅作品的最终视觉定稿仍在后续阶段。
@@ -122,9 +122,11 @@ GLSL 海面来自 Thomas / @Thomas_ensc 的 Enscape Cube，海面过程署名 Al
 批量渲染与验证：
 
 ```powershell
-.\build\Release\IrisBatch.exe render-sequence assets/renderjobs/01_cpu_reference.renderjob
-ctest --test-dir build -C Release --output-on-failure
+.\build-ci-msvc\Release\IrisBatch.exe render-sequence assets/renderjobs/01_cpu_reference.renderjob
+ctest --preset msvc
 ```
+
+目录、Iris 状态迁移和按领域的最小验证入口见 [项目工作区说明](WORKSPACE.md)。普通开发 CI 构建与 CPU 检查，发布打包单独触发。
 
 ## 工作流与 Job 支持范围
 
@@ -144,8 +146,8 @@ File 菜单、快捷键与资源浏览器通过共享命令执行新建、保存
 固定示例：[模块场景](assets/scenes/fixtures/26_module_workflow.myscene)与[对应 Job](assets/renderjobs/05_module_workflow.renderjob)，使用 Turntable、22.5 度/帧、Z 轴和 Seed 20260919。可在 GUI 保存重开并预览，再由 Batch 输出；自动验收核对两者的第 12 帧图像、参数、FPS、Seed、API 与 Build ID。
 
 ```powershell
-.\build\Release\Iris.exe assets/scenes/fixtures/26_module_workflow.myscene
-.\build\Release\IrisBatch.exe render-frame assets/renderjobs/05_module_workflow.renderjob 12
+.\build-ci-msvc\Release\Iris.exe assets/scenes/fixtures/26_module_workflow.myscene
+.\build-ci-msvc\Release\IrisBatch.exe render-frame assets/renderjobs/05_module_workflow.renderjob 12
 cmake --build build --config Release --target workflow-acceptance
 ```
 

@@ -1,0 +1,18 @@
+# Record owning targets at declaration time. CTest's JSON omits an executable
+# command if that executable has not been built yet (notably on a fresh tree).
+function(iris_add_test)
+    add_test(${ARGV})
+    cmake_parse_arguments(iris_test "" "NAME" "COMMAND" ${ARGV})
+    set(iris_owners "")
+    foreach(iris_argument IN LISTS iris_test_COMMAND)
+        if(TARGET "${iris_argument}")
+            list(APPEND iris_owners "${iris_argument}")
+        endif()
+        if(iris_argument MATCHES "\\$<TARGET_FILE:([^>]+)>")
+            list(APPEND iris_owners "${CMAKE_MATCH_1}")
+        endif()
+    endforeach()
+    list(REMOVE_DUPLICATES iris_owners)
+    string(JOIN "," iris_owner_record ${iris_owners})
+    set_property(GLOBAL APPEND PROPERTY IRIS_TEST_OWNERS "${iris_test_NAME}|${iris_owner_record}")
+endfunction()

@@ -3,6 +3,20 @@ name: Windows CI
 on:
   push:
   pull_request:
+  workflow_dispatch:
+    inputs:
+      package:
+        description: Build and upload the release ZIP
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: iris-windows-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 jobs:
   build-and-test:
@@ -32,12 +46,14 @@ jobs:
         run: cmake --build build --config Release --parallel
 
       - name: CPU tests
-        run: ctest --test-dir build -C Release --output-on-failure
+        run: ctest --test-dir build -C Release --output-on-failure --parallel 1
 
       - name: Package
-        run: cmake --build build --config Release --target package
+        if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && inputs.package)
+        run: cpack -C Release --config build/CPackConfig.cmake -B build
 
       - name: Upload release ZIP
+        if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && inputs.package)
         uses: actions/upload-artifact@v4
         with:
           name: Iris-Windows-x64

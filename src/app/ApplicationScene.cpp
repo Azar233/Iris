@@ -1,5 +1,6 @@
 #include "app/Application.h"
 #include "plugin/ShaderScene.h"
+#include "app/StatePaths.h"
 #include "optics/CloudNoiseVolume.h"
 #include "optics/CloudLightingLut.h"
 
@@ -3042,12 +3043,13 @@ bool Application::openScene(const std::filesystem::path& path) {
 }
 
 void Application::rememberRecentScene(const std::filesystem::path& path) {
-    std::ofstream stream("MyRenderer.recent-scene", std::ios::binary | std::ios::trunc);
+    if (benchmarkMode_ || prismReelMode_ || std::getenv("MYRENDERER_SMOKE_TEST")) return;
+    std::ofstream stream(iris::stateFile("recent-scene", "MyRenderer.recent-scene"), std::ios::binary | std::ios::trunc);
     if (stream) stream << path.generic_u8string();
 }
 
 std::filesystem::path Application::recentScenePath() const {
-    std::ifstream stream("MyRenderer.recent-scene", std::ios::binary);
+    std::ifstream stream(iris::stateFile("recent-scene", "MyRenderer.recent-scene"), std::ios::binary);
     std::string value;
     std::getline(stream, value);
     return value.empty() ? std::filesystem::path{} : std::filesystem::u8path(value);

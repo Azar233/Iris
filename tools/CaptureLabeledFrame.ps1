@@ -1,6 +1,6 @@
 param(
     [string]$BuildDirectory='build-ci-msvc',
-    [string]$RenderDocCommand='output/renderdoc/portable/RenderDoc_1.46_64/renderdoccmd.exe',
+    [string]$RenderDocCommand='.local/tools/renderdoc/portable/RenderDoc_1.46_64/renderdoccmd.exe',
     [string]$Fixture='assets/models/cube.obj',
     [string]$ExpectedLabel='World axes overlay|Tone map and bloom|Sky background|Opaque forward',
     [string]$OutputDirectoryName='a2-frame-capture'
