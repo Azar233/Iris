@@ -26,6 +26,8 @@
 
 A1 是可行性实验，不代表通用插件平台完成。首次迁移不修改 Shader 算法，保留 `.myscene` 旧 Enscape 开关/参数，仍借用 RendererSettings；跨插件配置、通用服务依赖图、动态 UI 与材质扩展在 A2/A3 才实现。只有 A2 证明第二种能力可接入后，才扩展全面迁移。
 
+2026-10-11 A3 首个单 Image 切片已验收：严格 `.shaderscene` v1、包内有界 float 初始值、项目 Camera/时间/分辨率、单 Pass display 输出和 Orbit 模板，通过现有打开/拖入/Scene 相对引用/PNG 捕获运行。双编译器最终 CTest 各 33/33、真实 GL 失败保留/恢复/resize/discard 清零、双尺寸应用往返和重复输出、既有十套图像/Stylized/PT 与带 ShaderScene Image Label 的 RDC 通过；未改基线。A3 父项未完成：mainImage 包装、运行参数覆盖 UI、多 Pass/纹理/反馈、文件工作台、Job 和模型材质 Shader 继续按后续切片推进；当前 Job 明确拒绝且无输出。
+
 PBR/NPR 是着色或管线能力，光追是执行技术，可以组合；后端、管线和效果不混成互斥枚举。Material/Light/Camera 数据合同保持共享，CPU/GPU 支持差异明确诊断。现有 SceneModule 只控制运行场景/模拟，不直接扩充为持有 GL 对象的渲染插件。
 
 ## A2 分包与当前范围（2026-10-08）
@@ -39,7 +41,7 @@ A1 的 GitHub CI 已成功，当前实现基准为 `38b1995`。A2 分成两个�
   - **A2-B2b1（2026-10-10，验收完成）**：同一上下文线程中变更/待处理 Shader Program 整批准备与发布，编译或链接失败保留所有旧程序与历史；修复 include、创建缺失依赖或释放阻塞 owner 后可恢复。构造/候选失败采用 RAII 清理；Renderer 面板显示日志并支持真实命令重试。双编译器全构建、CTest 各 32/32、真实 GL 编译/链接失败与恢复、跨 Enscape/Postprocess 旧图保留与提交贡献、双尺寸重试 UI、GPU smoke、十套既有图像回归及两插件 GPU 生命周期专项通过。未改 Shader 算法、阈值或基线。全局批次可能被闲置插件错误阻塞；这不是整个插件实例/纹理的事务替换，未新增性能测量或发布包。
   - **A2-B2b2（2026-10-11，验收完成）**：支持未绑定参数按插件 ID/schemaVersion 独立存储，CPU schema 目录显式注册并供 Scene codec 使用；新插件无需为每个参数增加 RendererSettings 字段。共享命令、动态控件与 frame 读取沿用现有路径，绑定值仍由原字段拥有。双编译器全构建/CTest 各 32/32、两内置插件 OFF 参数与控件 2/2、三种构建的真实 GL 值消费/重开/重建/拒绝/双尺寸与 260 px 面板、旧参数 GUI/GPU/Raster+CPU Job 验收、GPU smoke/十套图像回归及两插件生命周期专项通过。测试插件不加入正式目录，没有 Shader 算法或基线修改。
   - **A2 收口（2026-10-11，本地验收完成）**：补 Asset 路径/过滤/相对保存与显式 CPU schema 迁移；全/半分辨率云/光束进入统一 frame 校验并实际消费，私有噪声与 LUT 用 Generated 声明；完整候选实例提前准备 Shader/FBO/纹理，检查资源身份和取消/过期后才替换，失败保留旧参数/owner/画面/历史，提供真实重建命令。三种构建（MSVC/GCC ON、MSVC 两插件 OFF）全构建/CTest 各 32/32、真实资源/Shader/双尺寸控件/两插件生命周期、OFF 双管线无产物拒绝及 CPU Job、十套图像/Stylized/CPU PT/Module/云/GUI+Batch 对照通过；真实 RenderDoc 1.46 帧与标签检查通过，原生固定图 SHA 不变。当前原生 CPU P50/P95 1.7346/2.5829 ms、GPU 0.660480/1.193984 ms，GPU P95 在原门槛 1.597728 ms 内；CPU 高于历史 A2-A，未做前一 HEAD 的同轮隔离对照，不归因或宣称零开销。交付提交及 CI 单独核对。
-  - **完成边界**：A2-A/B/B2 合同在静态 OpenGL 范围内收口；现有 18 个字段绑定作为兼容适配保留，没有两份值。自动物理 Render Graph、DLL ABI/热卸载、用户包发现和跨后端 RHI 不属于 A2；A3/A4 尚未开始。
+  - **完成边界**：A2-A/B/B2 合同在静态 OpenGL 范围内收口；现有 18 个字段绑定作为兼容适配保留，没有两份值。自动物理 Render Graph、DLL ABI/热卸载、用户包发现和跨后端 RHI 不属于 A2；A3 已开始单 Image 资源包切片，A4 尚未开始。
 
 A2-A 只验证有序逻辑计划，不是自动执行的通用 Render Graph；私有 Bloom ping-pong/TAA 等仍由插件执行，半分辨率云与光束的资源校验仍沿用原有生产者和旧设置桥。HDR/深度/运动/法线等帧大小绑定由新接口检查并消费。关闭后处理插件意味着原生 Raster 管线不支持，需明确拒绝；Enscape 全屏场景仍可运行，不悄悄跳过色调映射。
 
@@ -57,7 +59,7 @@ A2-A 只验证有序逻辑计划，不是自动执行的通用 Render Graph；�
 
 - A0：当前成果已提交并推送，检查点 `63039f2`；远端 main 仍为 `b135c6e4e6f94ae8cf77d68491024199b37ff622`。
 - A1：最小静态插件可行性验证及 GitHub CI 通过，提交 38b1995。
-- A2-A：后处理第二插件与资源/Pass 合同本地验收及 GitHub CI 通过，提交 71c866a。A2-B1：GUI 启停与 Scene 配置切片本地验收及 GitHub CI 通过，提交 4ba850c；最终双编译器 30/30、真实 ImGui 输入、应用命令/GPU 释放重建/保存重开、Job 无产物拒绝、GPU smoke 与十套既有图像回归通过。MSVC 默认 NPR 迁移前后图 SHA 相同，跨编译器横向对比不宣称逐位一致；没有改 Shader 或基线。这是此前 A2-B1 的验收记录；当前 A2 已本地收口，交付 CI 另核对。下一项 A3，A3/A4/P1/M3 尚未开始。
+- A2-A：后处理第二插件与资源/Pass 合同本地验收及 GitHub CI 通过，提交 71c866a。A2-B1：GUI 启停与 Scene 配置切片本地验收及 GitHub CI 通过，提交 4ba850c；最终双编译器 30/30、真实 ImGui 输入、应用命令/GPU 释放重建/保存重开、Job 无产物拒绝、GPU smoke 与十套既有图像回归通过。MSVC 默认 NPR 迁移前后图 SHA 相同，跨编译器横向对比不宣称逐位一致；没有改 Shader 或基线。这是此前 A2-B1 的验收记录；当前 A2 已本地收口，交付 CI 另核对。A3 已推进单 Image ShaderScene 包与共享打开/捕获入口；多 Pass、反馈、文件工作台、任务输出及模型材质 Shader 仍未完成。A4/P1/M3 尚未开始。
 - 本文件用于 GitHub 上的共享计划；本地详细 `todolist.md`/`docs` 继续受 Git ignore 管理，没有强制加入历史资料。
 
 ## 附加工作与进度同步（2026-10-10）

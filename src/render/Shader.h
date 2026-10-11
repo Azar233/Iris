@@ -12,6 +12,10 @@
 
 class Shader {
 public:
+    struct SourcePolicy {
+        std::filesystem::path fragmentRoot;
+        std::vector<std::pair<std::string, unsigned int>> uniforms;
+    };
     struct ReloadReport {
         std::size_t reloaded{0U};
         std::size_t failed{0U};
@@ -21,6 +25,7 @@ public:
     };
 
     Shader(const std::filesystem::path& vertexPath, const std::filesystem::path& fragmentPath);
+    Shader(const std::filesystem::path& vertexPath, const std::filesystem::path& fragmentPath, SourcePolicy policy);
     Shader(
         const std::filesystem::path& vertexPath,
         const std::filesystem::path& geometryPath,
@@ -57,8 +62,8 @@ private:
         std::array<std::vector<std::filesystem::path>, 3> paths;
         std::array<std::vector<std::filesystem::file_time_type>, 3> times;
     };
-    explicit Shader(std::array<std::filesystem::path, 3> paths);
-    static unsigned int buildProgram(const std::array<std::filesystem::path, 3>& paths, SourceSnapshot& snapshot);
+    explicit Shader(std::array<std::filesystem::path, 3> paths, SourcePolicy policy = {});
+    static unsigned int buildProgram(const std::array<std::filesystem::path, 3>& paths, SourceSnapshot& snapshot, const SourcePolicy& policy);
     static bool snapshotChanged(const SourceSnapshot& snapshot);
     static std::string readFile(const std::filesystem::path& path);
     // Resolves `#include "name"` relative to the including file and inlines the result, recording
@@ -68,12 +73,14 @@ private:
         const std::filesystem::path& path,
         int depth,
         std::vector<std::filesystem::path>& dependencies,
-        std::vector<std::filesystem::file_time_type>& times
+        std::vector<std::filesystem::file_time_type>& times,
+        const std::filesystem::path& root = {}
     );
     static unsigned int compile(unsigned int type, const std::string& source, const std::filesystem::path& path);
     int uniformLocation(const char* name) const;
 
     unsigned int program_{0};
+    SourcePolicy sourcePolicy_;
     std::array<std::filesystem::path, 3> stagePaths_{};
     SourceSnapshot watchedSources_;
     bool reloadPending_{false};

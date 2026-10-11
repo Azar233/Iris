@@ -14,6 +14,8 @@ A2-B2b2 提供未绑定参数的独立值存储与可扩展 CPU schema 目录：
 
 A2 收口提供完整候选插件的 Shader/FBO/纹理准备与失败保留、取消/过期检查、全/半分辨率输入校验及 Plugins 页的资源重建命令。三种构建 CTest 各 32/32，真实 GPU、旧输入/Job、图像与 CPU PT/Module/云回归、带标签帧捕获和既有 GPU 性能门槛通过；源代码与 CI 交付状态见共享路线。
 
+A3 首个单 Image 切片提供版本化 `.shaderscene` 包、严格路径/float 参数校验、项目 Camera/时间/分辨率输入，以及打开、拖入、`.myscene` 相对引用保存与失败保留。运行 `build-ci-msvc/Release/Iris.exe assets/shader-scenes/orbit/orbit.shaderscene` 可预览自制 Orbit 包；新包只需 JSON 与 GLSL。当前支持 GLSL `main()` 与 display RGBA8 预览/PNG，参数覆盖 UI、多 Pass/反馈、mainImage 包装、Job 和模型材质 Shader 尚未实现。模板与输入约定见 [Orbit 包说明](assets/shader-scenes/orbit/README.md)。
+
 <p align="center">A C++17 real-time and offline rendering playground.</p>
 
 <p align="center">

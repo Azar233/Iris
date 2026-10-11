@@ -130,6 +130,7 @@ struct EnscapeCubeSettings {
 struct RendererSettings {
     iris::RenderPluginConfiguration renderPlugins;
     iris::RenderPluginParameterStore renderPluginValues;
+    std::string shaderSceneResource; // Empty selects the existing native/Enscape pipelines.
     bool enscapeCubeShaderEnabled{false};
     EnscapeCubeSettings enscapeCube;
     glm::vec3 backgroundColor{0.055f, 0.065f, 0.085f};
@@ -327,6 +328,8 @@ public:
     bool shaderReloadFailed() const { return shaderReloadFailed_; }
     bool reloadShaderResources(bool retryPending = false);
     bool rebuildPluginResources(const std::string& id, const RendererSettings& settings);
+    std::unique_ptr<iris::RenderPlugin> prepareShaderScene(const RendererSettings& settings);
+    void publishShaderScene(std::unique_ptr<iris::RenderPlugin> candidate, const std::string& resource);
     const std::string& pluginResourceStatus() const { return pluginResourceStatus_; }
     std::size_t historyInvalidationRevision() const { return historyInvalidationRevision_; }
 
@@ -377,6 +380,8 @@ private:
     std::unique_ptr<SelectionOutline> selectionOutline_;
     std::unique_ptr<EnvironmentMap> environmentMap_;
     std::unique_ptr<iris::RenderPlugin> enscapeCubeRenderer_;
+    std::unique_ptr<iris::RenderPlugin> shaderSceneRenderer_;
+    std::string shaderSceneResource_;
     std::unique_ptr<GBuffer> gBuffer_;
     std::unique_ptr<Shader> bufferPreviewShader_;
     std::array<std::unique_ptr<RenderTarget>, 6> bufferPreviewTargets_;

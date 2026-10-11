@@ -54,8 +54,16 @@ std::string Shader::expandIncludes(
     const std::filesystem::path& path,
     int depth,
     std::vector<std::filesystem::path>& dependencies,
-    std::vector<std::filesystem::file_time_type>& times
+    std::vector<std::filesystem::file_time_type>& times,
+    const std::filesystem::path& root
 ) {
+    if (!root.empty()) {
+        const auto relative = std::filesystem::canonical(path).lexically_relative(root);
+        if (relative.empty() || *relative.begin() == "..")
+            throw std::runtime_error("Shader input escapes package root: " + path.string());
+        if (std::filesystem::file_size(path) > 1048576)
+            throw std::runtime_error("Shader input exceeds 1 MiB: " + path.string());
+    }
     // GLSL 3.30 has no `#include`; 4.6 added one and the project's contract is 3.30 Core. Expanding
     // it here is what lets a shader and the C++ code that has to agree with it read the *same file*
     // -- which is the only way a CPU reference and a GPU pass are guaranteed to evaluate one model
@@ -96,7 +104,7 @@ std::string Shader::expandIncludes(
         // to know which one it is standing in.
         std::filesystem::path resolved = path.parent_path() / requested;
         watchSource(resolved, dependencies, times);
-        if (!std::filesystem::is_regular_file(resolved)) {
+        if (root.empty() && !std::filesystem::is_regular_file(resolved)) {
             constexpr int maximumAncestors = 6;
             std::filesystem::path directory = path.parent_path();
             for (int level = 0; level < maximumAncestors; ++level) {
@@ -117,7 +125,7 @@ std::string Shader::expandIncludes(
         // Each included file is wrapped in a `#line` pair so a compiler error inside it still names
         // the real file and line rather than a position in the expanded text.
         output << "#line 1 \"" << resolved.generic_string() << "\"\n";
-        output << expandIncludes(resolved, depth + 1, dependencies, times);
+        output << expandIncludes(resolved, depth + 1, dependencies, times, root);
         output << "#line 1 \"" << path.generic_string() << "\"\n";
     }
     return output.str();
@@ -130,9 +138,13 @@ Shader::Shader(const std::filesystem::path& vertexPath, const std::filesystem::p
     const std::filesystem::path& fragmentPath)
     : Shader(std::array<std::filesystem::path, 3>{vertexPath, geometryPath, fragmentPath}) {}
 
-Shader::Shader(std::array<std::filesystem::path, 3> paths) : stagePaths_(std::move(paths)) {
+Shader::Shader(const std::filesystem::path& vertexPath, const std::filesystem::path& fragmentPath, SourcePolicy policy)
+    : Shader(std::array<std::filesystem::path, 3>{vertexPath, {}, fragmentPath}, std::move(policy)) {}
+
+Shader::Shader(std::array<std::filesystem::path, 3> paths, SourcePolicy policy)
+    : sourcePolicy_(std::move(policy)), stagePaths_(std::move(paths)) {
     CompilationResources resources;
-    resources.program = buildProgram(stagePaths_, watchedSources_);
+    resources.program = buildProgram(stagePaths_, watchedSources_, sourcePolicy_);
     if (snapshotChanged(watchedSources_)) throw std::runtime_error("Shader sources changed during construction");
     shaderRegistry().push_back(this);
     ++shaderRegistryRevision();
@@ -140,13 +152,13 @@ Shader::Shader(std::array<std::filesystem::path, 3> paths) : stagePaths_(std::mo
     resources.program = 0;
 }
 
-unsigned int Shader::buildProgram(const std::array<std::filesystem::path, 3>& paths, SourceSnapshot& snapshot) {
+unsigned int Shader::buildProgram(const std::array<std::filesystem::path, 3>& paths, SourceSnapshot& snapshot, const SourcePolicy& policy) {
     // Capture times before reading, then recheck before publishing GPU programs.
     for (std::size_t i = 0; i < paths.size(); ++i)
         if (!paths[i].empty()) watchSource(paths[i], snapshot.paths[i], snapshot.times[i]);
     std::array<std::string, 3> sources;
     for (std::size_t i = 0; i < paths.size(); ++i)
-        if (!paths[i].empty()) sources[i] = expandIncludes(paths[i], 0, snapshot.paths[i], snapshot.times[i]);
+        if (!paths[i].empty()) sources[i] = expandIncludes(paths[i], 0, snapshot.paths[i], snapshot.times[i], i == 2 ? policy.fragmentRoot : std::filesystem::path{});
     CompilationResources resources;
     const std::array<unsigned int, 3> types{GL_VERTEX_SHADER, GL_GEOMETRY_SHADER, GL_FRAGMENT_SHADER};
     for (std::size_t i = 0; i < paths.size(); ++i)
@@ -163,6 +175,20 @@ unsigned int Shader::buildProgram(const std::array<std::filesystem::path, 3>& pa
         std::vector<char> log(static_cast<std::size_t>(std::max(length, 1)));
         glGetProgramInfoLog(resources.program, length, nullptr, log.data());
         throw std::runtime_error("Shader link failed (" + paths[2].string() + "):\n" + log.data());
+    }
+    for (const auto& expected : policy.uniforms) {
+        GLint count = 0, maximumLength = 0;
+        glGetProgramiv(resources.program, GL_ACTIVE_UNIFORMS, &count);
+        glGetProgramiv(resources.program, GL_ACTIVE_UNIFORM_MAX_LENGTH, &maximumLength);
+        std::vector<char> uniform(static_cast<std::size_t>(std::max(1, maximumLength)));
+        for (GLint index = 0; index < count; ++index) {
+            GLsizei length = 0; GLint size = 0; GLenum type = 0;
+            glGetActiveUniform(resources.program, static_cast<GLuint>(index), maximumLength, &length, &size, &type, uniform.data());
+            const std::string name(uniform.data(), static_cast<std::size_t>(length));
+            if ((name == expected.first || name == expected.first + "[0]")
+                && (type != expected.second || size != 1 || name != expected.first))
+                throw std::runtime_error("ShaderScene Image uniform type mismatch (" + paths[2].string() + "): " + expected.first);
+        }
     }
     for (auto stage : resources.stages) if (stage) glDetachShader(resources.program, stage);
     const auto program = resources.program;
@@ -209,7 +235,7 @@ Shader::ReloadReport Shader::reloadChangedShaders(bool retryPending) {
         if (!shader->reloadPending_ && !snapshotChanged(shader->watchedSources_)) continue;
         auto candidate = std::make_unique<Candidate>(shader);
         try {
-            candidate->program = buildProgram(shader->stagePaths_, candidate->sources);
+            candidate->program = buildProgram(shader->stagePaths_, candidate->sources, shader->sourcePolicy_);
         } catch (const std::exception& error) {
             ++report.failed;
             if (!report.message.empty()) report.message += '\n';

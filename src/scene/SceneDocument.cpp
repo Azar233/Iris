@@ -3,6 +3,7 @@
 #include "optics/CloudNoiseVolume.h"
 #include "optics/CloudLightingLut.h"
 #include "plugin/RenderPluginParameters.h"
+#include "plugin/ShaderScene.h"
 
 #include <algorithm>
 #include <cmath>
@@ -46,6 +47,10 @@ void writeMatrix(Writer& writer, const glm::mat4& value) {
 void writeRendererSettings(Writer& writer, const RendererSettings& settings,
     const iris::RenderPluginParameterCatalog& parameters, const std::filesystem::path& scenePath) {
     writer.StartObject();
+    if (!settings.shaderSceneResource.empty() && settings.enscapeCubeShaderEnabled)
+        throw std::runtime_error("ShaderScene and Enscape modes are mutually exclusive");
+    writer.Key("shaderSceneResource");
+    writer.String(makeSceneRelativeResource(settings.shaderSceneResource, std::filesystem::absolute(scenePath)).c_str());
     std::string pluginError;
     if(!iris::validPluginConfigurationShape(settings.renderPlugins,pluginError))throw std::runtime_error(pluginError);
     writer.Key("renderPlugins");writer.StartObject();writer.Key("version");writer.Int(1);
@@ -760,6 +765,14 @@ bool loadSceneDocument(
 ) {
     error.clear();
     try {
+        if (path.extension() == ".shaderscene") {
+            iris::ShaderScenePackage package;
+            if (!iris::loadShaderScenePackage(path, package, error)) return false;
+            SceneDocument loaded;
+            loaded.renderer.shaderSceneResource = package.manifest.generic_u8string();
+            loaded.playback.animationEnabled = true;
+            document = std::move(loaded); return true;
+        }
         capture::recordInput(path);
         std::ifstream stream(path, std::ios::binary);
         if (!stream) throw std::runtime_error("Cannot open scene file");
@@ -843,6 +856,18 @@ bool loadSceneDocument(
         }
         if (const scene_json::Value* renderer = optionalMember(root, "renderer")) {
             readRendererSettings(*renderer, loaded.renderer);
+            if (const auto* resource = optionalMember(*renderer, "shaderSceneResource")) {
+                if (!resource->IsString() || resource->GetStringLength() > 4096
+                    || std::string(resource->GetString(), resource->GetStringLength()).find('\0') != std::string::npos)
+                    throw std::runtime_error("Invalid ShaderScene resource");
+                if (resource->GetStringLength()) {
+                    if (loaded.renderer.enscapeCubeShaderEnabled) throw std::runtime_error("ShaderScene and Enscape modes are mutually exclusive");
+                    loaded.renderer.shaderSceneResource = resolveSceneResource(resource->GetString(), path).generic_u8string();
+                    iris::ShaderScenePackage package;
+                    if (!iris::loadShaderScenePackage(std::filesystem::u8path(loaded.renderer.shaderSceneResource), package, error))
+                        throw std::runtime_error(error);
+                }
+            }
             if (const auto* parameters = optionalMember(*renderer, "renderPluginParameters")) {
                 if (!parameters->IsObject() || !parameters->HasMember("version")
                     || !(*parameters)["version"].IsInt() || (*parameters)["version"].GetInt() != 1

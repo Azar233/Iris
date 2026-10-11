@@ -180,6 +180,10 @@ int Application::runRasterSequence(const RenderJob& job) {
         std::cerr << "Raster Scene invalid: " << sceneError << '\n';
         return 66;
     }
+    if (!authoredScene.renderer.shaderSceneResource.empty()) {
+        std::cerr << "ShaderScene Render Jobs are not supported in this single Image preview/capture slice\n";
+        return 66;
+    }
     if (authoredScene.renderer.enscapeCubeShaderEnabled
         && !iris::builtinRenderPlugins().contains(iris::enscapePluginId)) {
         std::cerr << "Raster Scene requires unavailable render plugin: " << iris::enscapePluginId << '\n';
@@ -541,7 +545,8 @@ int Application::run(const std::filesystem::path& initialModel) {
     }
 
     const bool initialSceneRequested = !initialModel.empty()
-        && lowercase(initialModel.extension().string()) == myRendererSceneExtension;
+        && (lowercase(initialModel.extension().string()) == myRendererSceneExtension
+            || lowercase(initialModel.extension().string()) == ".shaderscene");
     bool initialSceneLoaded = false;
     if (initialSceneRequested) {
         initialSceneLoaded = openScene(initialModel);
@@ -1060,6 +1065,8 @@ int Application::run(const std::filesystem::path& initialModel) {
         editorSession_.request(EditorCommand{EditorCommandType::Step});
         processEditorCommands();
     }
+    if (const char* directory = std::getenv("MYRENDERER_SHADER_SCENE_ACCEPTANCE_DIRECTORY"))
+        runShaderSceneAcceptance(std::filesystem::u8path(directory));
     while (!glfwWindowShouldClose(window_)) {
         const double cpuFrameStart = glfwGetTime();
         glfwPollEvents();
@@ -1098,6 +1105,7 @@ int Application::run(const std::filesystem::path& initialModel) {
         }
         if (animationEnabled_ && (rendererSettings_.water.enabled
             || rendererSettings_.enscapeCubeShaderEnabled
+            || !rendererSettings_.shaderSceneResource.empty()
             || modulePreviewEnabled()
             || (model_ != nullptr && model_->hasSkinning()))) {
             if (animationFrameStep_ > 0.0f) {
@@ -1133,7 +1141,7 @@ int Application::run(const std::filesystem::path& initialModel) {
             pendingScreenshotWarmupFrames_ = pendingEditorScreenshotWarmupFrames_ = 2;
         }
         if(renderdocCaptureRequested && !renderdocCaptureTriggered && !pendingModelImport_.has_value()
-            && !scene_.entities().empty()) {
+            && (!scene_.entities().empty() || !rendererSettings_.shaderSceneResource.empty())) {
             renderdocCaptureTriggered=triggerRenderDocFrameCapture();
             if(!renderdocCaptureTriggered) {
                 std::cerr<<"RenderDoc capture requested but injection API is unavailable\n";
@@ -2307,7 +2315,7 @@ void Application::drawInspectorPanel() {
             if (EditorUi::section("Lighting & environment", true)) {
             const bool enscapeAvailable = iris::builtinRenderPlugins().contains(iris::enscapePluginId)
                 &&iris::pluginEnabled(rendererSettings_.renderPlugins,iris::enscapePluginId);
-            ImGui::BeginDisabled(!enscapeAvailable);
+            ImGui::BeginDisabled(!enscapeAvailable || !rendererSettings_.shaderSceneResource.empty());
             bool glslSelected=rendererSettings_.enscapeCubeShaderEnabled;
             if (EditorUi::Checkbox((EditorUi::chinese ? "GLSL 云海" : "GLSL ocean and clouds"), &glslSelected)) {
                 EditorCommand change{EditorCommandType::SetRenderPipelineMode};change.flag=glslSelected;editorSession_.request(change);
@@ -3834,7 +3842,9 @@ void Application::drawViewportPanel() {
     } else {
         const ImVec2 imageMin = ImGui::GetItemRectMin();
         char overlay[256]{};
-        if (rendererSettings_.enscapeCubeShaderEnabled) {
+        if (!rendererSettings_.shaderSceneResource.empty()) {
+            std::snprintf(overlay, sizeof(overlay), "ShaderScene Image | %dx%d\nTime %.2f s", width, height, animationTimeSeconds_);
+        } else if (rendererSettings_.enscapeCubeShaderEnabled) {
             std::snprintf(overlay, sizeof(overlay),
                 "GLSL ocean | %s | %dx%d\nTime %.2f s | %s",
                 activityName(editorSession_.activity()), width, height,
@@ -3864,7 +3874,7 @@ void Application::drawViewportPanel() {
 
 
     SceneEntityId pickedLight = invalidSceneEntityId;
-    if (!rendererSettings_.enscapeCubeShaderEnabled && !hideSelectionOutlineForAutomation_) {
+    if (rendererSettings_.shaderSceneResource.empty() && !rendererSettings_.enscapeCubeShaderEnabled && !hideSelectionOutlineForAutomation_) {
         const auto imageMin = ImGui::GetItemRectMin();
         const auto imageMax = ImGui::GetItemRectMax();
         auto* draw = ImGui::GetWindowDrawList();
@@ -4601,8 +4611,8 @@ void Application::queueDroppedFiles(int count, const char** paths) {
     for (int index = 0; index < count; ++index) {
         const std::filesystem::path candidate = std::filesystem::u8path(paths[index]);
         const auto extension = lowercase(candidate.extension().string());
-        if (extension == ".myscene" || extension == ".renderjob") {
-            EditorCommand command{extension == ".myscene"
+        if (extension == ".myscene" || extension == ".shaderscene" || extension == ".renderjob") {
+            EditorCommand command{extension != ".renderjob"
                 ? EditorCommandType::OpenSceneAsset : EditorCommandType::SelectRenderJobAsset};
             command.text = candidate.generic_u8string();
             editorSession_.request(std::move(command));

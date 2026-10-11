@@ -22,6 +22,7 @@
 #include "render/SelectionOutline.h"
 #include "render/EnvironmentMap.h"
 #include "plugin/RenderPluginRegistry.h"
+#include "plugin/ShaderSceneRenderer.h"
 #include "render/GBuffer.h"
 #include "render/GpuModel.h"
 #include "render/OpticalPathDebugRenderer.h"
@@ -201,7 +202,7 @@ void Renderer::render(
     RendererSettings settings = requestedSettings;
     std::string pluginError;
     if (!iris::validatePluginConfiguration(iris::builtinRenderPlugins(),settings.renderPlugins,
-        settings.enscapeCubeShaderEnabled ? iris::enscapePluginId : iris::postProcessPluginId,pluginError))
+        !settings.shaderSceneResource.empty() ? "" : settings.enscapeCubeShaderEnabled ? iris::enscapePluginId : iris::postProcessPluginId,pluginError))
         throw std::runtime_error(pluginError);
     if (!iris::pluginEnabled(settings.renderPlugins,iris::enscapePluginId)) enscapeCubeRenderer_.reset();
     if (!iris::pluginEnabled(settings.renderPlugins,iris::postProcessPluginId)) postProcessor_.reset();
@@ -218,7 +219,32 @@ void Renderer::render(
         reloadShaderResources();
     }
     renderTarget_->resize(width, height,
-        settings.enscapeCubeShaderEnabled ? 1 : settings.msaaSamples);
+        (settings.enscapeCubeShaderEnabled || !settings.shaderSceneResource.empty()) ? 1 : settings.msaaSamples);
+    if (!settings.shaderSceneResource.empty()) {
+        if (settings.enscapeCubeShaderEnabled) throw std::runtime_error("ShaderScene and Enscape modes are mutually exclusive");
+        if (!shaderSceneRenderer_ || shaderSceneResource_ != settings.shaderSceneResource)
+            publishShaderScene(prepareShaderScene(settings), settings.shaderSceneResource);
+        enscapeCubeRenderer_.reset(); postProcessor_.reset();
+        if (gBuffer_->framebuffer() != 0U) gBuffer_->destroy();
+        shaderSceneRenderer_->renderFrame({*renderTarget_, camera, settings, width, height,
+            settings.water.timeSeconds, fullscreenVertexArray_});
+        activePassNames_ = {"ShaderScene Image"};
+        RenderPassContext pass("ShaderScene Image");
+        pass.inputs = {"ShaderScene + Camera + Time"}; pass.outputs = {"DisplayColor"};
+        pass.viewportWidth = width; pass.viewportHeight = height;
+        pass.clearMask = GL_COLOR_BUFFER_BIT;
+        pass.state.depthTest = false; pass.state.depthWrite = false;
+        activePassContexts_ = {pass}; gpuPassTimings_.clear();
+        hasGpuFrameTime_ = false; gpuFrameTimeMilliseconds_ = 0;
+        activeRenderPath_ = RenderPath::Forward; drawCallCount_ = 1;
+        submittedInstanceCount_ = visibleInstanceCount_ = culledInstanceCount_ = renderedInstanceTriangleCount_ = 0;
+        previousViewProjectionValid_ = false;
+        enscapeCubeActive_ = true; // Fullscreen paths suppress geometry-only buffer previews.
+        stateCache_.invalidate(); return;
+    }
+    if (shaderSceneRenderer_) {
+        shaderSceneRenderer_.reset(); shaderSceneResource_.clear(); invalidateTemporalHistory();
+    }
     if (settings.enscapeCubeShaderEnabled) {
         if (!enscapeCubeActive_) invalidateTemporalHistory();
         enscapeCubeActive_ = true;
@@ -1817,6 +1843,23 @@ void Renderer::invalidateTemporalHistory() {
     if (enscapeCubeRenderer_) enscapeCubeRenderer_->invalidateHistory();
 }
 
+std::unique_ptr<iris::RenderPlugin> Renderer::prepareShaderScene(const RendererSettings& settings) {
+    iris::RenderPluginRegistry registry;
+    iris::RenderPluginDescriptor descriptor("iris.shader-scene", iris::renderPluginApiVersion,
+        {iris::openGlFullscreenService}, "MIT");
+    descriptor.contract.resources.emplace_back("display", iris::TextureFormat::DisplayColor, iris::ResourceScope::Output);
+    descriptor.contract.passes.push_back({"Image", {}, {"display"}, {}});
+    registry.add(std::move(descriptor), [](const std::filesystem::path& directory) {
+        return std::make_unique<iris::ShaderSceneRenderer>(directory);
+    });
+    return registry.prepareReplacement("iris.shader-scene", {iris::openGlFullscreenService}, shaderDirectory_, settings,
+        std::max(1, renderTarget_->width()), std::max(1, renderTarget_->height()));
+}
+void Renderer::publishShaderScene(std::unique_ptr<iris::RenderPlugin> candidate, const std::string& resource) {
+    auto preparedResource = resource;
+    shaderSceneRenderer_.swap(candidate); shaderSceneResource_.swap(preparedResource);
+    stateCache_.invalidate(); invalidateTemporalHistory();
+}
 bool Renderer::rebuildPluginResources(const std::string& id, const RendererSettings& settings) {
     try {
         if (!iris::pluginEnabled(settings.renderPlugins, id)) throw std::runtime_error("Plugin disabled: " + id);

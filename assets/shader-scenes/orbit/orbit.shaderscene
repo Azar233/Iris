@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "id": "orbit",
+  "resourceRoot": ".",
+  "fragment": "image.frag",
+  "entry": "main",
+  "output": "display-rgba8",
+  "camera": "project",
+  "author": "Iris contributors",
+  "license": "MIT",
+  "parameters": [
+    {"id": "ringWidth", "label": "Ring width", "type": "float", "default": 0.06, "min": 0.01, "max": 0.2}
+  ]
+}

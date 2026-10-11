@@ -325,6 +325,11 @@ void Application::processEditorCommands() {
             case EditorCommandType::BackendChanged: {
                 const auto backend = static_cast<EditorRenderBackend>(command.value);
                 const int requested = backend == EditorRenderBackend::CpuPathTraced ? 1 : 0;
+                if (requested == 1 && !rendererSettings_.shaderSceneResource.empty()) {
+                    statusMessage_ = "CPU path tracing does not support ShaderScene GLSL";
+                    editorSession_.requestBackend(EditorRenderBackend::Raster);
+                    break;
+                }
                 if (viewportRenderMode_ == requested) break;
                 viewportRenderMode_ = requested;
                 if (viewportRenderMode_ == 0) {
@@ -880,6 +885,7 @@ void Application::processEditorCommands() {
                     statusMessage_="Pipeline change rejected: "+error;break;
                 }
                 rendererSettings_.enscapeCubeShaderEnabled=command.flag;
+                rendererSettings_.shaderSceneResource.clear();
                 if(renderer_)renderer_->invalidateTemporalHistory();
                 break;
             }
@@ -2846,14 +2852,14 @@ bool Application::openScene(const std::filesystem::path& path) {
             + std::string(iris::enscapePluginId);
         return false;
     }
-    if (!document.renderer.enscapeCubeShaderEnabled
+    if (document.renderer.shaderSceneResource.empty() && !document.renderer.enscapeCubeShaderEnabled
         && !iris::builtinRenderPlugins().contains(iris::postProcessPluginId)) {
         statusMessage_ = "Open scene failed; current scene preserved: Render plugin unavailable: "
             + std::string(iris::postProcessPluginId);
         return false;
     }
     if(!iris::validatePluginConfiguration(iris::builtinRenderPlugins(),document.renderer.renderPlugins,
-        document.renderer.enscapeCubeShaderEnabled?iris::enscapePluginId:iris::postProcessPluginId,documentError)){
+        !document.renderer.shaderSceneResource.empty()?"":document.renderer.enscapeCubeShaderEnabled?iris::enscapePluginId:iris::postProcessPluginId,documentError)){
         statusMessage_="Open scene failed; current scene preserved: "+documentError;return false;
     }
     // Validate against the same registry as Batch before replacing the edit scene.
@@ -2872,6 +2878,9 @@ bool Application::openScene(const std::filesystem::path& path) {
     std::unordered_map<std::string, const GpuModel*> modelsByPath;
     std::unordered_map<std::string, std::string> resolvedResources;
     try {
+        std::unique_ptr<iris::RenderPlugin> preparedShaderScene;
+        if (!document.renderer.shaderSceneResource.empty())
+            preparedShaderScene = renderer_->prepareShaderScene(document.renderer);
         for (const SceneDocumentEntity& entity : document.entities) {
             if (entity.modelResource.empty()
                 || entity.modelResource == builtinGroundResource
@@ -2902,6 +2911,9 @@ bool Application::openScene(const std::filesystem::path& path) {
         loadedSceneDocument_ = true;
         emptySceneSession_ = false;
         rendererSettings_ = document.renderer;
+        renderer_->publishShaderScene(std::move(preparedShaderScene), document.renderer.shaderSceneResource);
+        if (absolute.extension() == ".shaderscene") currentScenePath_.clear();
+        if (!document.renderer.shaderSceneResource.empty()) editorSession_.requestBackend(EditorRenderBackend::Raster);
         if (document.entities.empty() && rendererSettings_.enscapeCubeShaderEnabled) {
             focusRendererTab_ = true;
             pendingGlslControlsScrollFrames_ = 3;
@@ -3136,6 +3148,47 @@ SceneEntityId Application::pickEntity(const std::vector<RenderItem>& items,
     glUseProgram(program); glBindVertexArray(vao); glPixelStorei(GL_PACK_ALIGNMENT, packAlignment);
     if (!complete) throw std::runtime_error("Editor picking framebuffer is incomplete");
     return hit > 0 && hit <= items.size() ? items[hit - 1].entityId : invalidSceneEntityId;
+}
+
+void Application::runShaderSceneAcceptance(const std::filesystem::path& directory) {
+    const auto check = [](bool ok, const char* message) { if (!ok) throw std::runtime_error(message); };
+    std::filesystem::create_directories(directory);
+    const auto source = sourceRoot_ / "assets/shader-scenes/orbit";
+    const auto manifest = directory / "orbit.shaderscene";
+    const auto fragment = directory / "image.frag";
+    std::filesystem::copy_file(source / "orbit.shaderscene", manifest, std::filesystem::copy_options::overwrite_existing);
+    std::filesystem::copy_file(source / "image.frag", fragment, std::filesystem::copy_options::overwrite_existing);
+    check(openScene(manifest), "ShaderScene application open failed"); processEditorCommands();
+    auto settings = rendererSettings_; settings.shaderHotReloadEnabled = false; settings.water.timeSeconds = 1.25f;
+    const auto draw = [&]() { renderer_->render(scene_.buildRenderItems(), camera_, settings, 320, 180);
+        glFinish(); check(glGetError() == GL_NO_ERROR, "ShaderScene application GL error"); };
+    const auto pixels = [&]() {
+        std::vector<unsigned char> bytes(320U * 180U * 4U);
+        glBindTexture(GL_TEXTURE_2D, renderer_->colorTexture());
+        glGetTexImage(GL_TEXTURE_2D, 0, GL_RGBA, GL_UNSIGNED_BYTE, bytes.data()); return bytes;
+    };
+    draw(); const auto before = pixels(); std::string error;
+    check(renderer_->saveScreenshot(directory / "before.png", error), "ShaderScene before PNG failed");
+    const auto history = renderer_->historyInvalidationRevision();
+    { std::ofstream file(fragment, std::ios::trunc); file << "#version 330 core\ninvalid shader\n"; }
+    check(!openScene(manifest), "Application accepted invalid ShaderScene");
+    check(renderer_->historyInvalidationRevision() == history
+        && rendererSettings_.shaderSceneResource == settings.shaderSceneResource, "Rejected scene replaced live settings/history");
+    draw(); check(before == pixels(), "Rejected scene lost old application output");
+    check(renderer_->saveScreenshot(directory / "retained.png", error), "ShaderScene retained PNG failed");
+    std::filesystem::copy_file(source / "image.frag", fragment, std::filesystem::copy_options::overwrite_existing);
+    check(openScene(manifest), "Application ShaderScene recovery failed"); processEditorCommands(); draw();
+    check(before == pixels(), "Application ShaderScene recovery drifted");
+    check(saveSceneTo(directory / "saved.myscene"), "Application ShaderScene save failed");
+    check(openScene(directory / "saved.myscene"), "Application ShaderScene reopen failed"); processEditorCommands(); draw();
+    check(before == pixels(), "Application ShaderScene reopen drifted");
+    check(openScene(sourceRoot_ / "assets/scenes/fixtures/01_multi_model_hierarchy.myscene"), "Native mode switch failed");
+    processEditorCommands(); check(rendererSettings_.shaderSceneResource.empty(), "Native mode retained ShaderScene selection");
+    check(openScene(directory / "saved.myscene"), "Native to ShaderScene switch failed"); processEditorCommands(); draw();
+    check(before == pixels(), "Native to ShaderScene drifted");
+    rendererSettings_.shaderHotReloadEnabled = false;
+    animationTimeSeconds_ = 1.25f; animationTimeFixed_ = true;
+    std::cout << "ShaderScene application open / compile rejection / retained pixels+history / save+reopen / mode switch PASS\n";
 }
 
 bool Application::shaderTransactionAcceptance() {

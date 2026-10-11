@@ -49,7 +49,7 @@ std::optional<std::filesystem::path> openSceneFileDialog(std::string& error) {
 #ifdef _WIN32
     std::array<wchar_t, 32768> filePath{};
     static constexpr wchar_t filter[] =
-        L"Iris scene (*.myscene)\0*.myscene\0"
+        L"Iris scene (*.myscene;*.shaderscene)\0*.myscene;*.shaderscene\0"
         L"All files (*.*)\0*.*\0\0";
     OPENFILENAMEW dialog{};
     dialog.lStructSize = sizeof(dialog);

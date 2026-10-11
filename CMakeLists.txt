@@ -207,8 +207,9 @@ target_link_libraries(MyRendererBatch PRIVATE MyRendererBatchRuntime MyRendererM
 # framework lives in this target together with the concrete modules, so adding a
 # module does not touch the editor or the batch CLI. `Scene` symbols are provided by
 # the consumer, exactly like the other shared sources in this project.
-add_library(IrisParameters STATIC src/module/ParameterRegistry.cpp src/plugin/RenderPluginParameters.cpp)
+add_library(IrisParameters STATIC src/module/ParameterRegistry.cpp src/plugin/RenderPluginParameters.cpp src/plugin/ShaderScene.cpp)
 target_include_directories(IrisParameters PUBLIC src)
+target_include_directories(IrisParameters PRIVATE ${assimp_SOURCE_DIR}/contrib/rapidjson/include)
 target_link_libraries(IrisParameters PUBLIC glm::glm PRIVATE glad_gl_core_33)
 if(MSVC)
     target_compile_options(IrisParameters PRIVATE /W4 /permissive- /utf-8)
@@ -270,7 +271,7 @@ option(IRIS_ENABLE_POSTPROCESS_PLUGIN "Build the native pipeline postprocess plu
 add_library(IrisRenderPluginHost STATIC
     src/plugin/RenderPluginRegistry.cpp src/plugin/BuiltinRenderPlugins.cpp
     src/plugin/RenderPlugin.cpp src/plugin/RenderPluginContract.cpp
-    src/plugin/RenderPluginConfiguration.cpp)
+    src/plugin/RenderPluginConfiguration.cpp src/plugin/ShaderSceneRenderer.cpp)
 target_include_directories(IrisRenderPluginHost PUBLIC src)
 target_link_libraries(IrisRenderPluginHost PUBLIC IrisParameters PRIVATE glm::glm glad_gl_core_33)
 target_compile_definitions(IrisRenderPluginHost PRIVATE
@@ -387,6 +388,25 @@ target_link_libraries(MyRenderer PRIVATE
 )
 
 if(BUILD_TESTING)
+    add_executable(IrisShaderSceneTests tests/ShaderSceneTests.cpp)
+    target_link_libraries(IrisShaderSceneTests PRIVATE IrisParameters)
+    add_test(NAME shader-scene-package COMMAND IrisShaderSceneTests)
+    add_executable(IrisShaderSceneGpuTests tests/ShaderSceneGpuTests.cpp
+        src/render/Shader.cpp src/render/Camera.cpp src/render/RenderTarget.cpp src/render/OpenGlStateCache.cpp
+        src/scene/Scene.cpp src/scene/SceneDocument.cpp)
+    target_include_directories(IrisShaderSceneGpuTests PRIVATE src ${assimp_SOURCE_DIR}/contrib/rapidjson/include
+        ${assimp_SOURCE_DIR}/contrib/zlib ${assimp_BINARY_DIR}/contrib/zlib)
+    target_link_libraries(IrisShaderSceneGpuTests PRIVATE IrisRenderPluginHost MyRendererCloudNoise glad_gl_core_33 glfw zlibstatic)
+    target_compile_definitions(IrisShaderSceneGpuTests PRIVATE GLFW_INCLUDE_NONE)
+    add_custom_target(shader-scene-gpu-acceptance COMMAND IrisShaderSceneGpuTests ${CMAKE_CURRENT_SOURCE_DIR}/shaders
+        DEPENDS IrisShaderSceneGpuTests COMMENT "Validating single Image packages on real OpenGL")
+    foreach(shaderSceneTest IrisShaderSceneTests IrisShaderSceneGpuTests)
+        if(MSVC)
+            target_compile_options(${shaderSceneTest} PRIVATE /W4 /permissive- /utf-8)
+        else()
+            target_compile_options(${shaderSceneTest} PRIVATE -Wall -Wextra -Wpedantic)
+        endif()
+    endforeach()
     set(COASTAL_COMPARATOR "$<TARGET_FILE:MyRendererImageComparison>")
 endif()
 add_custom_target(coastal-sequence-acceptance

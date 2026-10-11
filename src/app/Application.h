@@ -92,6 +92,7 @@ private:
     void drawViewportPanel();
     void drawBufferPreviewPanel();
     bool runLightEntityAcceptance(const std::filesystem::path& directory);
+    void runShaderSceneAcceptance(const std::filesystem::path& directory);
     void updateViewportCameraNavigation();
     void drawModulePanel();
     // Aggregates the structured diagnostics the application already owns: import
