@@ -1,0 +1,18 @@
+{
+  "version": 2,
+  "id": "feedback",
+  "resourceRoot": ".",
+  "entry": "main",
+  "camera": "project",
+  "author": "Iris contributors",
+  "license": "MIT",
+  "parameters": [{"id": "decay", "label": "Trail decay", "type": "float", "default": 0.94, "min": 0.0, "max": 0.99}],
+  "passes": [
+    {"id": "Image", "fragment": "image.frag", "output": "display-rgba8", "sizeDivisor": 1,
+     "channels": [{"slot": 0, "source": "Blur", "frame": "current", "filter": "linear", "wrap": "clamp", "mip": "none"}]},
+    {"id": "Blur", "fragment": "blur.frag", "output": "linear-rgba16f", "sizeDivisor": 1,
+     "channels": [{"slot": 0, "source": "Accum", "frame": "current", "filter": "linear", "wrap": "clamp", "mip": "none"}]},
+    {"id": "Accum", "fragment": "accumulate.frag", "output": "linear-rgba16f", "sizeDivisor": 2,
+     "channels": [{"slot": 0, "source": "Accum", "frame": "previous", "filter": "linear", "wrap": "clamp", "mip": "none"}]}
+  ]
+}

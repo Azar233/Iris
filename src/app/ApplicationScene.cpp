@@ -3153,11 +3153,12 @@ SceneEntityId Application::pickEntity(const std::vector<RenderItem>& items,
 void Application::runShaderSceneAcceptance(const std::filesystem::path& directory) {
     const auto check = [](bool ok, const char* message) { if (!ok) throw std::runtime_error(message); };
     std::filesystem::create_directories(directory);
-    const auto source = sourceRoot_ / "assets/shader-scenes/orbit";
-    const auto manifest = directory / "orbit.shaderscene";
-    const auto fragment = directory / "image.frag";
-    std::filesystem::copy_file(source / "orbit.shaderscene", manifest, std::filesystem::copy_options::overwrite_existing);
-    std::filesystem::copy_file(source / "image.frag", fragment, std::filesystem::copy_options::overwrite_existing);
+    const bool multi = std::getenv("MYRENDERER_SHADER_SCENE_MULTIPASS_ACCEPTANCE") != nullptr;
+    const auto source = sourceRoot_ / (multi ? "assets/shader-scenes/feedback" : "assets/shader-scenes/orbit");
+    const auto manifest = directory / (multi ? "feedback.shaderscene" : "orbit.shaderscene");
+    const auto fragment = directory / (multi ? "accumulate.frag" : "image.frag");
+    for (const auto& entry : std::filesystem::directory_iterator(source))
+        if (entry.is_regular_file()) std::filesystem::copy_file(entry.path(), directory / entry.path().filename(), std::filesystem::copy_options::overwrite_existing);
     check(openScene(manifest), "ShaderScene application open failed"); processEditorCommands();
     auto settings = rendererSettings_; settings.shaderHotReloadEnabled = false; settings.water.timeSeconds = 1.25f;
     const auto draw = [&]() { renderer_->render(scene_.buildRenderItems(), camera_, settings, 320, 180);
@@ -3176,7 +3177,7 @@ void Application::runShaderSceneAcceptance(const std::filesystem::path& director
         && rendererSettings_.shaderSceneResource == settings.shaderSceneResource, "Rejected scene replaced live settings/history");
     draw(); check(before == pixels(), "Rejected scene lost old application output");
     check(renderer_->saveScreenshot(directory / "retained.png", error), "ShaderScene retained PNG failed");
-    std::filesystem::copy_file(source / "image.frag", fragment, std::filesystem::copy_options::overwrite_existing);
+    std::filesystem::copy_file(source / fragment.filename(), fragment, std::filesystem::copy_options::overwrite_existing);
     check(openScene(manifest), "Application ShaderScene recovery failed"); processEditorCommands(); draw();
     check(before == pixels(), "Application ShaderScene recovery drifted");
     check(saveSceneTo(directory / "saved.myscene"), "Application ShaderScene save failed");
@@ -3184,10 +3185,30 @@ void Application::runShaderSceneAcceptance(const std::filesystem::path& director
     check(before == pixels(), "Application ShaderScene reopen drifted");
     check(openScene(sourceRoot_ / "assets/scenes/fixtures/01_multi_model_hierarchy.myscene"), "Native mode switch failed");
     processEditorCommands(); check(rendererSettings_.shaderSceneResource.empty(), "Native mode retained ShaderScene selection");
+    renderer_->render(scene_.buildRenderItems(), camera_, rendererSettings_, 320, 180);
+    glFinish(); check(glGetError() == GL_NO_ERROR, "Native draw after ShaderScene switch failed");
     check(openScene(directory / "saved.myscene"), "Native to ShaderScene switch failed"); processEditorCommands(); draw();
     check(before == pixels(), "Native to ShaderScene drifted");
     rendererSettings_.shaderHotReloadEnabled = false;
     animationTimeSeconds_ = 1.25f; animationTimeFixed_ = true;
+    if (multi) {
+        const auto sequence = [&]() {
+            renderer_->invalidateTemporalHistory();
+            for (int i = 0; i < 24; ++i) { settings.water.timeSeconds = static_cast<float>(i) / 24; draw(); }
+            return pixels();
+        };
+        const auto accumulated = sequence();
+        check(accumulated == sequence(), "Application 24-frame feedback replay drifted");
+        renderer_->invalidateTemporalHistory(); draw();
+        check(accumulated != pixels(), "Feedback has no contribution at the same time/camera/size");
+        check(renderer_->saveScreenshot(directory / "fresh.png", error), "Fresh same-time feedback PNG failed");
+        check(accumulated == sequence(), "Feedback recovery after explicit reset drifted");
+        check(renderer_->activePassNames() == std::vector<std::string>({"ShaderScene Accum", "ShaderScene Blur", "ShaderScene Image"})
+            && renderer_->drawCallCount() == 3, "Application Pass metadata disagrees with runtime");
+        check(renderer_->saveScreenshot(directory / "sequence.png", error), "Feedback sequence PNG failed");
+        animationTimeSeconds_ = 23.0f / 24;
+        std::cout << "ShaderScene application 24-frame feedback replay / three actual Passes PASS\n";
+    }
     std::cout << "ShaderScene application open / compile rejection / retained pixels+history / save+reopen / mode switch PASS\n";
 }
 

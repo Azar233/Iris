@@ -38,6 +38,7 @@ public:
 
     void use() const;
     bool sourcesCurrent() const { return !snapshotChanged(watchedSources_); }
+    std::size_t revision() const { return revision_; }
     void setBool(const char* name, bool value) const;
     void setInt(const char* name, int value) const;
     void setFloat(const char* name, float value) const;
@@ -84,4 +85,5 @@ private:
     std::array<std::filesystem::path, 3> stagePaths_{};
     SourceSnapshot watchedSources_;
     bool reloadPending_{false};
+    std::size_t revision_{1};
 };

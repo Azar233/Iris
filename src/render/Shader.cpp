@@ -267,6 +267,7 @@ Shader::ReloadReport Shader::reloadChangedShaders(bool retryPending) {
         std::swap(candidate->program, candidate->target->program_);
         std::swap(candidate->sources, candidate->target->watchedSources_);
         candidate->target->reloadPending_ = false;
+        ++candidate->target->revision_;
     }
     report.reloaded = candidates.size();
     report.pending = 0;

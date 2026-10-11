@@ -1,14 +1,16 @@
-param([string]$BuildDirectory='build-ci-msvc')
+param([string]$BuildDirectory='build-ci-msvc', [switch]$MultiPass)
 $ErrorActionPreference='Stop'
 $root=Split-Path $PSScriptRoot -Parent
 $build=if([IO.Path]::IsPathRooted($BuildDirectory)){$BuildDirectory}else{Join-Path $root $BuildDirectory}
 $exe=if(Test-Path (Join-Path $build 'Release/Iris.exe')){Join-Path $build 'Release/Iris.exe'}else{Join-Path $build 'Iris.exe'}
-$out=Join-Path $build 'shader-scene-acceptance'
+$out=Join-Path $build $(if($MultiPass){'shader-scene-multipass'}else{'shader-scene-acceptance'})
 New-Item -ItemType Directory -Force $out | Out-Null
 $saved=@{}
 Get-ChildItem Env: | Where-Object Name -Like 'MYRENDERER_*' | ForEach-Object {$saved[$_.Name]=$_.Value;Remove-Item -LiteralPath ('Env:'+$_.Name)}
 Push-Location $root
 try {
+    $fixture=if($MultiPass){'assets/shader-scenes/feedback/feedback.shaderscene'}else{'assets/shader-scenes/orbit/orbit.shaderscene'}
+    if($MultiPass){$env:MYRENDERER_SHADER_SCENE_MULTIPASS_ACCEPTANCE='1'}
     $env:MYRENDERER_SMOKE_TEST='1';$env:MYRENDERER_ANIMATION_TIME='1.25'
     $env:MYRENDERER_RENDER_WIDTH='320';$env:MYRENDERER_RENDER_HEIGHT='180'
     foreach($size in @(@(1440,900),@(1100,680))) {
@@ -17,7 +19,7 @@ try {
         $env:MYRENDERER_EDITOR_SCREENSHOT=Join-Path $out "editor-$($size[0])x$($size[1]).png"
         $log=Join-Path $out "application-$($size[0]).log"
         $ErrorActionPreference='Continue'
-        & $exe assets/shader-scenes/orbit/orbit.shaderscene *> $log
+        & $exe $fixture *> $log
         $exitCode=$LASTEXITCODE;$ErrorActionPreference='Stop'
         if($exitCode -ne 0 -or -not(Select-String -LiteralPath $log -SimpleMatch 'ShaderScene application open / compile rejection / retained pixels+history / save+reopen / mode switch PASS' -Quiet)){
             throw 'ShaderScene application transaction failed'
@@ -29,12 +31,12 @@ try {
     Remove-Item Env:MYRENDERER_EDITOR_SCREENSHOT
     foreach($run in 1..2){
         $env:MYRENDERER_SCREENSHOT=Join-Path $out "repeat-$run.png"
-        & $exe assets/shader-scenes/orbit/orbit.shaderscene *> (Join-Path $out "repeat-$run.log")
+        & $exe $fixture *> (Join-Path $out "repeat-$run.log")
         if($LASTEXITCODE -ne 0 -or -not(Test-Path $env:MYRENDERER_SCREENSHOT)){throw 'ShaderScene capture failed'}
     }
     if((Get-FileHash (Join-Path $out 'repeat-1.png')).Hash -ne (Get-FileHash (Join-Path $out 'repeat-2.png')).Hash){throw 'ShaderScene fixed capture differs'}
     $raster=Get-Content assets/renderjobs/07_glsl_ocean_clouds.renderjob -Raw | ConvertFrom-Json
-    $raster.scene=Join-Path $root 'assets/shader-scenes/orbit/orbit.shaderscene'
+    $raster.scene=Join-Path $root $fixture
     $jobPath=Join-Path $out 'unsupported-raster.renderjob'
     $raster | ConvertTo-Json -Depth 32 | Set-Content -Encoding UTF8 $jobPath
     $rejected=Join-Path $out ('raster-rejected-'+[guid]::NewGuid().ToString('N'))

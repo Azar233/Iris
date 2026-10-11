@@ -25,6 +25,7 @@ std::vector<unsigned char> pixels(const RenderTarget& target) {
     glGetTexImage(GL_TEXTURE_2D, 0, GL_RGBA, GL_UNSIGNED_BYTE, image.data()); return image;
 }
 }
+void testShaderSceneMultiPass(const std::filesystem::path&, const std::filesystem::path&, unsigned int);
 int main(int argc, char** argv) {
     if (!glfwInit()) return 1;
     glfwWindowHint(GLFW_VISIBLE, GLFW_FALSE); glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
@@ -89,6 +90,7 @@ int main(int argc, char** argv) {
             check(partial[0] == 0 && partial[1] == 0 && partial[2] == 0 && partial[3] == 255
                 && partial[partial.size() - 4] == 255 && partial == draw(0.25f), "Discard retained undeclared previous frame pixels");
         }
+        testShaderSceneMultiPass(std::filesystem::u8path(argv[1]), directory, vao);
         glDeleteVertexArrays(1, &vao);
         check(glGetError() == GL_NO_ERROR, "Exit GL error");
         std::cout << "ShaderScene real GL: parameters/time/camera, fixed repeat, Scene reference, compile/type/include failure retention, recovery, resize, discard clear and destruction PASS\n";

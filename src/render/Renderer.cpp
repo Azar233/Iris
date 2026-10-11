@@ -23,6 +23,7 @@
 #include "render/EnvironmentMap.h"
 #include "plugin/RenderPluginRegistry.h"
 #include "plugin/ShaderSceneRenderer.h"
+#include "asset/InputManifest.h"
 #include "render/GBuffer.h"
 #include "render/GpuModel.h"
 #include "render/OpticalPathDebugRenderer.h"
@@ -228,15 +229,13 @@ void Renderer::render(
         if (gBuffer_->framebuffer() != 0U) gBuffer_->destroy();
         shaderSceneRenderer_->renderFrame({*renderTarget_, camera, settings, width, height,
             settings.water.timeSeconds, fullscreenVertexArray_});
-        activePassNames_ = {"ShaderScene Image"};
-        RenderPassContext pass("ShaderScene Image");
-        pass.inputs = {"ShaderScene + Camera + Time"}; pass.outputs = {"DisplayColor"};
-        pass.viewportWidth = width; pass.viewportHeight = height;
-        pass.clearMask = GL_COLOR_BUFFER_BIT;
-        pass.state.depthTest = false; pass.state.depthWrite = false;
-        activePassContexts_ = {pass}; gpuPassTimings_.clear();
+        const auto shaderFrame = shaderSceneRenderer_->frameInfo();
+        activePassNames_ = shaderFrame.passNames;
+        const auto* shaderRuntime = dynamic_cast<const iris::ShaderSceneRenderer*>(shaderSceneRenderer_.get());
+        activePassContexts_ = shaderRuntime ? shaderRuntime->passContexts() : std::vector<RenderPassContext>{};
+        gpuPassTimings_.clear();
         hasGpuFrameTime_ = false; gpuFrameTimeMilliseconds_ = 0;
-        activeRenderPath_ = RenderPath::Forward; drawCallCount_ = 1;
+        activeRenderPath_ = RenderPath::Forward; drawCallCount_ = shaderFrame.drawCalls;
         submittedInstanceCount_ = visibleInstanceCount_ = culledInstanceCount_ = renderedInstanceTriangleCount_ = 0;
         previousViewProjectionValid_ = false;
         enscapeCubeActive_ = true; // Fullscreen paths suppress geometry-only buffer previews.
@@ -1836,6 +1835,7 @@ unsigned int Renderer::colorTexture() const {
 
 void Renderer::invalidateTemporalHistory() {
     ++historyInvalidationRevision_;
+    if (shaderSceneRenderer_) shaderSceneRenderer_->invalidateHistory();
     if (postProcessor_) postProcessor_->invalidateHistory();
     previousViewProjectionValid_ = false;
     temporalFrameIndex_ = 0U;
@@ -1844,16 +1844,34 @@ void Renderer::invalidateTemporalHistory() {
 }
 
 std::unique_ptr<iris::RenderPlugin> Renderer::prepareShaderScene(const RendererSettings& settings) {
+    const auto manifest = std::filesystem::u8path(settings.shaderSceneResource);
+    const auto identity = capture::snapshot(manifest);
+    iris::ShaderScenePackage package; std::string error;
+    if (!iris::loadShaderScenePackage(manifest, package, error)) throw std::runtime_error(error);
     iris::RenderPluginRegistry registry;
     iris::RenderPluginDescriptor descriptor("iris.shader-scene", iris::renderPluginApiVersion,
-        {iris::openGlFullscreenService}, "MIT");
+        {iris::openGlFullscreenService}, package.license);
     descriptor.contract.resources.emplace_back("display", iris::TextureFormat::DisplayColor, iris::ResourceScope::Output);
-    descriptor.contract.passes.push_back({"Image", {}, {"display"}, {}});
+    for (const auto& pass : package.passes) if (pass.id != "Image") {
+        descriptor.contract.resources.emplace_back("buffer/" + pass.id, iris::TextureFormat::HdrColor, iris::ResourceScope::Transient);
+        descriptor.contract.resources.emplace_back("buffer/" + pass.id + "/history", iris::TextureFormat::HdrColor, iris::ResourceScope::History);
+    }
+    for (const auto index : package.executionOrder) {
+        const auto& pass = package.passes[index]; iris::PluginPass plan{pass.id, {}, {}, {}};
+        for (const auto& channel : pass.channels)
+            if (channel.previousFrame) plan.previousFrameReads.push_back("buffer/" + channel.source + "/history");
+            else plan.reads.push_back("buffer/" + channel.source);
+        plan.writes = pass.id == "Image" ? std::vector<std::string>{"display"}
+            : std::vector<std::string>{"buffer/" + pass.id, "buffer/" + pass.id + "/history"};
+        descriptor.contract.passes.push_back(std::move(plan));
+    }
     registry.add(std::move(descriptor), [](const std::filesystem::path& directory) {
         return std::make_unique<iris::ShaderSceneRenderer>(directory);
     });
-    return registry.prepareReplacement("iris.shader-scene", {iris::openGlFullscreenService}, shaderDirectory_, settings,
+    auto candidate = registry.prepareReplacement("iris.shader-scene", {iris::openGlFullscreenService}, shaderDirectory_, settings,
         std::max(1, renderTarget_->width()), std::max(1, renderTarget_->height()));
+    if (!capture::same(identity, capture::snapshot(manifest))) throw std::runtime_error("ShaderScene manifest changed while building the Pass contract");
+    return candidate;
 }
 void Renderer::publishShaderScene(std::unique_ptr<iris::RenderPlugin> candidate, const std::string& resource) {
     auto preparedResource = resource;
@@ -1938,6 +1956,7 @@ std::size_t Renderer::estimatedRenderMemoryBytes() const {
     return previewBytes + renderTarget_->estimatedBytes()
         + gBuffer_->estimatedBytes()
         + (postProcessor_ ? postProcessor_->estimatedBytes() : 0U)
+        + (shaderSceneRenderer_ ? shaderSceneRenderer_->estimatedBytes() : 0U)
         + selectionOutline_->estimatedBytes()
         + environmentMap_->estimatedBytes()
         + shadowMap_->estimatedBytes()

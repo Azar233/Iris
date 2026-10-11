@@ -37,6 +37,25 @@ int main() {
         replace("\"output\":\"display-rgba8\"", "\"output\":\"hdr\"");
         reject("{");
         write(valid); check(iris::loadShaderScenePackage(path, package, error), "Recovery failed");
+        const std::string channel = R"({"slot":0,"source":"Accum","frame":"previous","filter":"nearest","wrap":"clamp","mip":"none"})";
+        const std::string v2 = R"({"version":2,"id":"graph","resourceRoot":".","entry":"main","camera":"project","author":"test","license":"MIT","parameters":[],"passes":[{"id":"Image","fragment":"image.frag","output":"display-rgba8","sizeDivisor":1,"channels":[{"slot":0,"source":"Accum","frame":"current","filter":"linear","wrap":"repeat","mip":"none"}]},{"id":"Accum","fragment":"image.frag","output":"linear-rgba16f","sizeDivisor":2,"channels":[)" + channel + "]}]}";
+        write(v2); check(iris::loadShaderScenePackage(path, package, error), "Valid v2 graph rejected");
+        check(package.executionOrder == std::vector<std::size_t>({1, 0}) && package.passes[1].channels[0].previousFrame,
+            "Graph ordering or previous frame lost");
+        const auto badV2 = [&](const std::string& from, const std::string& to) {
+            auto changed = v2; changed.replace(changed.find(from), from.size(), to); write(changed);
+            check(!iris::loadShaderScenePackage(path, package, error), "Invalid v2 graph accepted");
+            check(package.id == "graph" && package.executionOrder.size() == 2, "Invalid graph replaced previous descriptor");
+        };
+        badV2("\"frame\":\"previous\"", "\"frame\":\"current\"");
+        badV2("\"source\":\"Accum\"", "\"source\":\"missing\"");
+        badV2("\"source\":\"Accum\"", "\"source\":\"Image\"");
+        badV2("\"slot\":0", "\"slot\":4");
+        badV2("\"mip\":\"none\"", "\"mip\":\"generate\"");
+        badV2("\"output\":\"linear-rgba16f\"", "\"output\":\"display-rgba8\"");
+        badV2("\"sizeDivisor\":2", "\"sizeDivisor\":3");
+        badV2("\"id\":\"Accum\"", "\"id\":\"Image\"");
+        badV2("\"version\":2", "\"version\":3");
         std::filesystem::remove_all(root);
         std::cout << "ShaderScene version, strict fields, paths, parameter range and transactional recovery passed\n";
         return 0;
