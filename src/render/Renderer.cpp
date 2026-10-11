@@ -201,6 +201,8 @@ void Renderer::render(
     bufferPreviewNearPlane_ = camera.nearPlane();
     cpuPassTimings_.clear();
     RendererSettings settings = requestedSettings;
+    settings.shaderSceneResource = iris::shaderSceneResourceFor(requestedSettings);
+    if (!settings.shaderSceneResource.empty()) settings.enscapeCubeShaderEnabled = false;
     std::string pluginError;
     if (!iris::validatePluginConfiguration(iris::builtinRenderPlugins(),settings.renderPlugins,
         !settings.shaderSceneResource.empty() ? "" : settings.enscapeCubeShaderEnabled ? iris::enscapePluginId : iris::postProcessPluginId,pluginError))
@@ -208,7 +210,7 @@ void Renderer::render(
     if (!iris::pluginEnabled(settings.renderPlugins,iris::enscapePluginId)) enscapeCubeRenderer_.reset();
     if (!iris::pluginEnabled(settings.renderPlugins,iris::postProcessPluginId)) postProcessor_.reset();
     renderedWaterSettings_ = settings.water;
-    renderedWaterSettings_.enabled = settings.water.enabled && !settings.enscapeCubeShaderEnabled;
+    renderedWaterSettings_.enabled = settings.water.enabled && !settings.enscapeCubeShaderEnabled && settings.shaderSceneResource.empty();
     if (settings.atmosphere.cloudDeterministic) {
         settings.atmosphere.cloudTemporalEnabled = false;
         settings.temporalAaEnabled = false;
@@ -234,7 +236,10 @@ void Renderer::render(
         const auto* shaderRuntime = dynamic_cast<const iris::ShaderSceneRenderer*>(shaderSceneRenderer_.get());
         activePassContexts_ = shaderRuntime ? shaderRuntime->passContexts() : std::vector<RenderPassContext>{};
         gpuPassTimings_.clear();
-        hasGpuFrameTime_ = false; gpuFrameTimeMilliseconds_ = 0;
+        hasGpuFrameTime_ = shaderFrame.gpuTimeValid; gpuFrameTimeMilliseconds_ = shaderFrame.gpuMilliseconds;
+        if (shaderFrame.gpuTimeUpdated) {
+            latestGpuFrameMeasurementMilliseconds_ = gpuFrameTimeMilliseconds_; ++gpuFrameMeasurementSerial_;
+        }
         activeRenderPath_ = RenderPath::Forward; drawCallCount_ = shaderFrame.drawCalls;
         submittedInstanceCount_ = visibleInstanceCount_ = culledInstanceCount_ = renderedInstanceTriangleCount_ = 0;
         previousViewProjectionValid_ = false;
@@ -1843,7 +1848,10 @@ void Renderer::invalidateTemporalHistory() {
     if (enscapeCubeRenderer_) enscapeCubeRenderer_->invalidateHistory();
 }
 
-std::unique_ptr<iris::RenderPlugin> Renderer::prepareShaderScene(const RendererSettings& settings) {
+std::unique_ptr<iris::RenderPlugin> Renderer::prepareShaderScene(const RendererSettings& requestedSettings) {
+    auto settings = requestedSettings;
+    settings.shaderSceneResource = iris::shaderSceneResourceFor(requestedSettings);
+    settings.enscapeCubeShaderEnabled = false;
     const auto manifest = std::filesystem::u8path(settings.shaderSceneResource);
     const auto identity = capture::snapshot(manifest);
     iris::ShaderScenePackage package; std::string error;
@@ -1854,9 +1862,11 @@ std::unique_ptr<iris::RenderPlugin> Renderer::prepareShaderScene(const RendererS
     descriptor.contract.resources.emplace_back("display", iris::TextureFormat::DisplayColor, iris::ResourceScope::Output);
     for (const auto& texture : package.textures)
         descriptor.contract.resources.emplace_back("texture/" + texture.id, iris::TextureFormat::Data, iris::ResourceScope::Generated);
-    for (const auto& pass : package.passes) if (pass.id != "Image") {
+    for (std::size_t index = 0; index < package.passes.size(); ++index) {
+        const auto& pass = package.passes[index]; if (pass.id == "Image") continue;
         descriptor.contract.resources.emplace_back("buffer/" + pass.id, iris::TextureFormat::HdrColor, iris::ResourceScope::Transient);
-        descriptor.contract.resources.emplace_back("buffer/" + pass.id + "/history", iris::TextureFormat::HdrColor, iris::ResourceScope::History);
+        if (iris::shaderScenePassNeedsHistory(package, index))
+            descriptor.contract.resources.emplace_back("buffer/" + pass.id + "/history", iris::TextureFormat::HdrColor, iris::ResourceScope::History);
     }
     for (const auto index : package.executionOrder) {
         const auto& pass = package.passes[index]; iris::PluginPass plan{pass.id, {}, {}, {}};
@@ -1865,7 +1875,8 @@ std::unique_ptr<iris::RenderPlugin> Renderer::prepareShaderScene(const RendererS
             else if (channel.previousFrame) plan.previousFrameReads.push_back("buffer/" + channel.source + "/history");
             else plan.reads.push_back("buffer/" + channel.source);
         plan.writes = pass.id == "Image" ? std::vector<std::string>{"display"}
-            : std::vector<std::string>{"buffer/" + pass.id, "buffer/" + pass.id + "/history"};
+            : std::vector<std::string>{"buffer/" + pass.id};
+        if (pass.id != "Image" && iris::shaderScenePassNeedsHistory(package, index)) plan.writes.push_back("buffer/" + pass.id + "/history");
         descriptor.contract.passes.push_back(std::move(plan));
     }
     registry.add(std::move(descriptor), [](const std::filesystem::path& directory) {
@@ -1960,6 +1971,7 @@ std::size_t Renderer::estimatedRenderMemoryBytes() const {
         + gBuffer_->estimatedBytes()
         + (postProcessor_ ? postProcessor_->estimatedBytes() : 0U)
         + (shaderSceneRenderer_ ? shaderSceneRenderer_->estimatedBytes() : 0U)
+        + (enscapeCubeRenderer_ ? enscapeCubeRenderer_->estimatedBytes() : 0U)
         + selectionOutline_->estimatedBytes()
         + environmentMap_->estimatedBytes()
         + shadowMap_->estimatedBytes()

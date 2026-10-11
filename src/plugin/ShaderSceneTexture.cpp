@@ -15,7 +15,14 @@
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wunused-function"
 #endif
+#if defined(_MSC_VER)
+#pragma warning(push)
+#pragma warning(disable: 4505)
+#endif
 #include "asset/StbImageCompat.h"
+#if defined(_MSC_VER)
+#pragma warning(pop)
+#endif
 #if defined(__GNUC__)
 #pragma GCC diagnostic pop
 #endif

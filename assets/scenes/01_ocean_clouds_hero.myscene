@@ -106,6 +106,7 @@
     "temporalAaEnabled": true,
     "localLights": [],
     "enscapeCubeShaderEnabled": true,
+    "enscapeShaderSceneResource": "../shader-scenes/enscape/enscape.shaderscene",
     "enscapeWaveHeight": 0.6,
     "enscapeWaveFrequency": 0.16,
     "enscapeWaveChoppiness": 4.0,

@@ -10,6 +10,7 @@ Get-ChildItem Env: | Where-Object Name -Like 'MYRENDERER_*' | ForEach-Object {$s
 Push-Location $root
 try {
     $study=Get-Content assets/scenes/03_enscape_ocean_study.myscene -Raw | ConvertFrom-Json
+    $study.renderer.enscapeShaderSceneResource=Join-Path $root 'assets/shader-scenes/enscape/enscape.shaderscene'
     $study.renderer | Add-Member -NotePropertyName enscapeCubeEnabled -NotePropertyValue $false
     $study | ConvertTo-Json -Depth 32 | Set-Content (Join-Path $out 'study-no-cube.myscene')
     $env:MYRENDERER_ANIMATION_TIME='1.25'
@@ -35,7 +36,10 @@ try {
     & $exe assets/scenes/01_ocean_clouds_hero.myscene *> (Join-Path $out 'roundtrip.log')
     if($LASTEXITCODE -ne 0){throw 'Scene save/reopen failed'}
     $scene=Get-Content $env:MYRENDERER_SCENE_ROUNDTRIP -Raw | ConvertFrom-Json
-    if(-not $scene.renderer.enscapeCubeShaderEnabled -or $scene.renderer.enscapeCubeEnabled -or -not $scene.renderer.enscapeNoiseReduction){throw 'Saved renderer selection/visibility differs'}
+    $parameters=$scene.renderer.renderPluginParameters.entries | Where-Object id -EQ 'iris.enscape-study'
+    $cube=($parameters.values | Where-Object id -EQ 'cubeEnabled').value
+    $noise=($parameters.values | Where-Object id -EQ 'noiseReduction').value
+    if(-not $scene.renderer.enscapeCubeShaderEnabled -or $cube -isnot [bool] -or $cube -or $noise -isnot [bool] -or -not $noise){throw 'Saved renderer selection/visibility differs'}
     Get-ChildItem Env: | Where-Object Name -Like 'MYRENDERER_*' | ForEach-Object {Remove-Item -LiteralPath ('Env:'+$_.Name)}
     foreach($run in 'sequence','sequence-repeat') {
         & $exe raster-sequence assets/renderjobs/07_glsl_ocean_clouds.renderjob --output (Join-Path $out "$run/frame_{frame:04}") *> (Join-Path $out "$run.log")

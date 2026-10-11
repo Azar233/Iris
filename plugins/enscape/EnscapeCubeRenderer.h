@@ -28,6 +28,9 @@ public:
     void renderFrame(const iris::RenderPluginFrame& frame) override;
     void prepareResources(const RendererSettings&, int width, int height) override;
     iris::RenderPluginFrameInfo frameInfo() const override;
+    std::size_t estimatedBytes() const override {
+        return static_cast<std::size_t>(width_) * static_cast<std::size_t>(height_) * 32U + 120149U;
+    }
     void invalidateHistory() override { historyValid_ = false; }
     bool hasGpuFrameTime() const { return gpuTimeValid_; }
     bool gpuFrameTimeUpdated() const { return gpuTimeUpdated_; }

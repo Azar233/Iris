@@ -1,5 +1,6 @@
 #include "plugin/ShaderScene.h"
 #include "asset/InputManifest.h"
+#include "render/Renderer.h"
 #include <chrono>
 #include <fstream>
 #include <iostream>
@@ -83,6 +84,28 @@ void testShaderSceneTexturesCpu(const std::filesystem::path& fixture) {
             + R"(],"passes":[{"id":"Image","fragment":"image.frag","output":"display-rgba8","sizeDivisor":1,"channels":[]}]})");
         check(!iris::loadShaderScenePackage(manifest, package, error) && error.find("64 MiB") != std::string::npos,
             "Texture budget not rejected before decoding");
+        const std::string sourcePackage = R"({"version":3,"id":"source","resourceRoot":".","entry":"mainImage","camera":"project","author":"test","license":"MIT","textures":[],"parameterSource":{"pluginId":"iris.enscape-study","schemaVersion":1},"parameters":[{"id":"noiseReduction","label":"Noise","type":"bool","default":false},{"id":"waveHeight","label":"Wave","type":"float","default":0.6,"min":0.05,"max":1.5}],"passes":[{"id":"Image","fragment":"image.frag","output":"display-rgba8","sizeDivisor":1,"channels":[]}]})";
+        write(sourcePackage); check(iris::loadShaderScenePackage(manifest, package, error), error.c_str());
+        RendererSettings sourceSettings; sourceSettings.enscapeCube.noiseReduction = true; sourceSettings.enscapeCube.waveHeight = 0.9f;
+        const auto sourceValues = iris::shaderSceneParameterValues(package, sourceSettings);
+        check(sourceValues[0].boolean && sourceValues[1].number == 0.9f && !package.parameters.value("noiseReduction")->boolean,
+            "CPU schema source did not preserve one live value source");
+        const auto badSource = [&](const char* from, const char* to) {
+            auto text = sourcePackage; text.replace(text.find(from), std::string(from).size(), to); write(text);
+            check(!iris::loadShaderScenePackage(manifest, package, error) && package.id == "source", "Bad source schema replaced prior package");
+        };
+        badSource("\"schemaVersion\":1", "\"schemaVersion\":2");
+        badSource("iris.enscape-study", "missing.schema");
+        badSource("\"default\":false", "\"default\":0");
+        badSource("\"max\":1.5", "\"max\":1.0");
+        sourceSettings.enscapeCube.waveHeight = 100;
+        bool rejectedSource = false;
+        try { iris::shaderSceneParameterValues(package, sourceSettings); } catch (const std::exception&) { rejectedSource = true; }
+        check(rejectedSource, "Out-of-range source value accepted");
+        sourceSettings.enscapeShaderSceneResource = "package.shaderscene";
+        check(iris::shaderSceneResourceFor(sourceSettings).empty(), "Disabled compatibility selector remained active");
+        sourceSettings.enscapeCubeShaderEnabled = true;
+        check(iris::shaderSceneResourceFor(sourceSettings) == "package.shaderscene", "Compatibility selector lost resource");
         std::cout << "Texture CPU v3 / PNG+raw / Seed+golden identity / strict fields / bounds+budget / transactional recovery PASS\n";
     } catch (...) { std::filesystem::remove_all(root); throw; }
     std::filesystem::remove_all(root);

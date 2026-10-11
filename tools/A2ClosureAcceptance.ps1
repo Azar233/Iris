@@ -10,11 +10,21 @@ $saved=@{}
 Get-ChildItem Env: | Where-Object Name -Like 'MYRENDERER_*' | ForEach-Object {$saved[$_.Name]=$_.Value;Remove-Item -LiteralPath ('Env:'+$_.Name)}
 Push-Location $root
 try {
+    # Keep the original optional-owner rejection gate independent of the new package.
+    $legacyScene=Get-Content assets/scenes/01_ocean_clouds_hero.myscene -Raw | ConvertFrom-Json
+    $legacyScene.renderer.PSObject.Properties.Remove('enscapeShaderSceneResource')
+    $legacyPath=Join-Path $out 'legacy-01.myscene'
+    $legacyScene | ConvertTo-Json -Depth 32 | Set-Content -Encoding UTF8 $legacyPath
+    $legacyJob=Get-Content assets/renderjobs/07_glsl_ocean_clouds.renderjob -Raw | ConvertFrom-Json
+    $legacyJob.scene=$legacyPath
+    $legacyJobPath=Join-Path $out 'legacy-07.renderjob'
+    $legacyJob | ConvertTo-Json -Depth 32 | Set-Content -Encoding UTF8 $legacyJobPath
     # Both implementations absent: each pipeline rejects before outputs exist.
     foreach($job in @('06_ocean_clouds_hero','07_glsl_ocean_clouds')) {
         $rejected=Join-Path $out ('rejected-'+[guid]::NewGuid().ToString('N'))
         $ErrorActionPreference='Continue'
-        & (Join-Path $off 'Iris.exe') raster-sequence ('assets/renderjobs/'+$job+'.renderjob') --output (Join-Path $rejected 'frame_{frame:04}') *> (Join-Path $out ($job+'-off.log'))
+        $inputJob=if($job -eq '07_glsl_ocean_clouds'){$legacyJobPath}else{Join-Path $root ('assets/renderjobs/'+$job+'.renderjob')}
+        & (Join-Path $off 'Iris.exe') raster-sequence $inputJob --output (Join-Path $rejected 'frame_{frame:04}') *> (Join-Path $out ($job+'-off.log'))
         $exitCode=$LASTEXITCODE;$ErrorActionPreference='Stop'
         if($exitCode -ne 66 -or (Test-Path $rejected)){throw 'OFF pipeline produced output or missed capability rejection'}
     }

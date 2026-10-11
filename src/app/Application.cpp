@@ -1,4 +1,5 @@
 #include "app/Application.h" // Raster capture metadata is published with each frame.
+#include "plugin/ShaderScene.h"
 #include "runtime/RasterFrameReport.h"
 #include "optics/CloudLightingLut.h"
 #include "optics/CloudNoiseVolume.h"
@@ -184,7 +185,7 @@ int Application::runRasterSequence(const RenderJob& job) {
         std::cerr << "ShaderScene Render Jobs are not supported in this single Image preview/capture slice\n";
         return 66;
     }
-    if (authoredScene.renderer.enscapeCubeShaderEnabled
+    if (authoredScene.renderer.enscapeCubeShaderEnabled && authoredScene.renderer.enscapeShaderSceneResource.empty()
         && !iris::builtinRenderPlugins().contains(iris::enscapePluginId)) {
         std::cerr << "Raster Scene requires unavailable render plugin: " << iris::enscapePluginId << '\n';
         return 66;
@@ -200,7 +201,7 @@ int Application::runRasterSequence(const RenderJob& job) {
     }
     capture::InputManifest inputManifest;
     if(!iris::validatePluginConfiguration(iris::builtinRenderPlugins(),authoredScene.renderer.renderPlugins,
-        authoredScene.renderer.enscapeCubeShaderEnabled?iris::enscapePluginId:iris::postProcessPluginId,sceneError)){
+        !iris::shaderSceneResourceFor(authoredScene.renderer).empty()?"":authoredScene.renderer.enscapeCubeShaderEnabled?iris::enscapePluginId:iris::postProcessPluginId,sceneError)){
         std::cerr<<"Raster Scene plugin configuration invalid: "<<sceneError<<'\n';return 66;
     }
     if(!job.sourcePath.empty()) {
@@ -1067,6 +1068,8 @@ int Application::run(const std::filesystem::path& initialModel) {
     }
     if (const char* directory = std::getenv("MYRENDERER_SHADER_SCENE_ACCEPTANCE_DIRECTORY"))
         runShaderSceneAcceptance(std::filesystem::u8path(directory));
+    if (const char* directory = std::getenv("MYRENDERER_ENSCAPE_SHADER_SCENE_ACCEPTANCE_DIRECTORY"))
+        runEnscapeShaderSceneAcceptance(std::filesystem::u8path(directory));
     while (!glfwWindowShouldClose(window_)) {
         const double cpuFrameStart = glfwGetTime();
         glfwPollEvents();
@@ -1141,7 +1144,7 @@ int Application::run(const std::filesystem::path& initialModel) {
             pendingScreenshotWarmupFrames_ = pendingEditorScreenshotWarmupFrames_ = 2;
         }
         if(renderdocCaptureRequested && !renderdocCaptureTriggered && !pendingModelImport_.has_value()
-            && (!scene_.entities().empty() || !rendererSettings_.shaderSceneResource.empty())) {
+            && (!scene_.entities().empty() || !iris::shaderSceneResourceFor(rendererSettings_).empty())) {
             renderdocCaptureTriggered=triggerRenderDocFrameCapture();
             if(!renderdocCaptureTriggered) {
                 std::cerr<<"RenderDoc capture requested but injection API is unavailable\n";
@@ -2313,8 +2316,9 @@ void Application::drawInspectorPanel() {
             }
             if (!shaderTransactionSources_.empty()) ImGui::SetNextItemOpen(false, ImGuiCond_Always);
             if (EditorUi::section("Lighting & environment", true)) {
-            const bool enscapeAvailable = iris::builtinRenderPlugins().contains(iris::enscapePluginId)
-                &&iris::pluginEnabled(rendererSettings_.renderPlugins,iris::enscapePluginId);
+            const bool enscapeAvailable = !rendererSettings_.enscapeShaderSceneResource.empty()
+                || (iris::builtinRenderPlugins().contains(iris::enscapePluginId)
+                &&iris::pluginEnabled(rendererSettings_.renderPlugins,iris::enscapePluginId));
             ImGui::BeginDisabled(!enscapeAvailable || !rendererSettings_.shaderSceneResource.empty());
             bool glslSelected=rendererSettings_.enscapeCubeShaderEnabled;
             if (EditorUi::Checkbox((EditorUi::chinese ? "GLSL 云海" : "GLSL ocean and clouds"), &glslSelected)) {
@@ -2332,19 +2336,27 @@ void Application::drawInspectorPanel() {
                 }
                 auto& ocean = rendererSettings_.enscapeCube;
                 ImGui::SeparatorText(EditorUi::chinese ? "GLSL 海面参数" : "GLSL ocean controls");
+                // Keep compatibility sliders readable without per-column clipping.
+                const auto oceanSlider = [](const char* name, float* value, float low, float high, const char* format) {
+                    ImGui::PushID(name);
+                    ImGui::TextWrapped("%s", EditorUi::label(name));
+                    ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x);
+                    const bool edited = ImGui::SliderFloat("##OceanValue", value, low, high, format);
+                    EditorUi::tooltip(name); ImGui::PopID(); return edited;
+                };
                 bool changed = EditorUi::Checkbox(EditorUi::chinese ? "显示研究方块" : "Show study cube", &ocean.cubeEnabled);
                 changed |= EditorUi::Checkbox(EditorUi::chinese ? "稳定反射 / 减少噪点" : "Stable reflections / reduce noise", &ocean.noiseReduction);
-                changed |= EditorUi::SliderFloat(EditorUi::label("GLSL wave height"), &ocean.waveHeight, 0.05f, 1.5f, "%.2f");
-                changed |= EditorUi::SliderFloat(EditorUi::label("GLSL wave frequency"), &ocean.waveFrequency, 0.04f, 0.5f, "%.3f");
-                changed |= EditorUi::SliderFloat(EditorUi::label("GLSL choppiness"), &ocean.waveChoppiness, 1.0f, 8.0f, "%.2f");
-                changed |= EditorUi::SliderFloat(EditorUi::label("GLSL wave speed"), &ocean.waveSpeed, 0.0f, 2.0f, "%.2f");
-                changed |= EditorUi::SliderFloat(EditorUi::label("GLSL cloud coverage"), &ocean.cloudCoverage, 0.0f, 2.0f, "%.2f");
-                changed |= EditorUi::SliderFloat(EditorUi::label("GLSL reflection"), &ocean.reflectionStrength, 0.0f, 2.0f, "%.2f");
-                changed |= EditorUi::SliderFloat(EditorUi::label("GLSL underwater clarity"), &ocean.underwaterClarity, 0.25f, 3.0f, "%.2f");
-                changed |= EditorUi::SliderFloat(EditorUi::label("GLSL sun azimuth"), &ocean.sunAzimuthDegrees, -180.0f, 180.0f, "%.0f deg");
-                changed |= EditorUi::SliderFloat(EditorUi::label("GLSL sun elevation"), &ocean.sunElevationDegrees, 1.0f, 85.0f, "%.0f deg");
-                changed |= EditorUi::SliderFloat(EditorUi::label("GLSL bloom"), &ocean.bloomStrength, 0.0f, 3.0f, "%.2f");
-                changed |= EditorUi::SliderFloat(EditorUi::label("GLSL exposure"), &ocean.exposure, 0.25f, 3.0f, "%.2f");
+                changed |= oceanSlider("GLSL wave height", &ocean.waveHeight, 0.05f, 1.5f, "%.2f");
+                changed |= oceanSlider("GLSL wave frequency", &ocean.waveFrequency, 0.04f, 0.5f, "%.3f");
+                changed |= oceanSlider("GLSL choppiness", &ocean.waveChoppiness, 1.0f, 8.0f, "%.2f");
+                changed |= oceanSlider("GLSL wave speed", &ocean.waveSpeed, 0.0f, 2.0f, "%.2f");
+                changed |= oceanSlider("GLSL cloud coverage", &ocean.cloudCoverage, 0.0f, 2.0f, "%.2f");
+                changed |= oceanSlider("GLSL reflection", &ocean.reflectionStrength, 0.0f, 2.0f, "%.2f");
+                changed |= oceanSlider("GLSL underwater clarity", &ocean.underwaterClarity, 0.25f, 3.0f, "%.2f");
+                changed |= oceanSlider("GLSL sun azimuth", &ocean.sunAzimuthDegrees, -180.0f, 180.0f, "%.0f deg");
+                changed |= oceanSlider("GLSL sun elevation", &ocean.sunElevationDegrees, 1.0f, 85.0f, "%.0f deg");
+                changed |= oceanSlider("GLSL bloom", &ocean.bloomStrength, 0.0f, 3.0f, "%.2f");
+                changed |= oceanSlider("GLSL exposure", &ocean.exposure, 0.25f, 3.0f, "%.2f");
                 if (changed) renderer_->invalidateTemporalHistory();
                 ImGui::TextWrapped("%s", EditorUi::chinese
                     ? "此模式使用 GLSL 内部光照；普通 SSAO 参数不适用。"

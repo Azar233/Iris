@@ -10,6 +10,10 @@ $saved=@{}
 Get-ChildItem Env: | Where-Object Name -Like 'MYRENDERER_*' | ForEach-Object {$saved[$_.Name]=$_.Value;Remove-Item -LiteralPath ('Env:'+$_.Name)}
 Push-Location $root
 try {
+    $legacyScene=Get-Content assets/scenes/01_ocean_clouds_hero.myscene -Raw | ConvertFrom-Json
+    $legacyScene.renderer.PSObject.Properties.Remove('enscapeShaderSceneResource')
+    $legacyPath=Join-Path $out 'legacy-01.myscene'
+    $legacyScene | ConvertTo-Json -Depth 32 | Set-Content -Encoding UTF8 $legacyPath
     $env:MYRENDERER_SMOKE_TEST='1'
     $env:MYRENDERER_PLUGIN_ACTIVATION_TEST='1'
     & $exe assets/scenes/fixtures/15_stylized_clean_toon_gallery.myscene *> (Join-Path $out 'activation.log')
@@ -41,7 +45,7 @@ try {
     if(-not(Select-String -LiteralPath (Join-Path $out 'rejected-job.log') -SimpleMatch 'requires enabled render plugin: iris.postprocess' -Quiet)){throw 'Disabled plugin diagnostic missing'}
     $env:MYRENDERER_ANIMATION_TIME='1.25';$env:MYRENDERER_RENDER_WIDTH='1280';$env:MYRENDERER_RENDER_HEIGHT='720'
     $env:MYRENDERER_SCREENSHOT_WARMUP='64';$env:MYRENDERER_BENCHMARK_WARMUP='64';$env:MYRENDERER_BENCHMARK_FRAMES='240'
-    foreach($case in @(@('native','assets/scenes/fixtures/15_stylized_clean_toon_gallery.myscene'),@('fullscreen','assets/scenes/01_ocean_clouds_hero.myscene'))){
+    foreach($case in @(@('native','assets/scenes/fixtures/15_stylized_clean_toon_gallery.myscene'),@('fullscreen',$legacyPath))){
         $env:MYRENDERER_SCREENSHOT=Join-Path $out "$($case[0])-fixed.png";$env:MYRENDERER_BENCHMARK_OUTPUT=Join-Path $out "$($case[0])-fixed.json"
         & $exe $case[1] *> (Join-Path $out "$($case[0])-fixed.log")
         if($LASTEXITCODE -ne 0 -or -not(Test-Path $env:MYRENDERER_SCREENSHOT) -or -not(Test-Path $env:MYRENDERER_BENCHMARK_OUTPUT)){throw 'Fixed output capture failed'}

@@ -4,6 +4,7 @@
 #include <vector>
 #include <cstdint>
 #include "module/ParameterRegistry.h"
+struct RendererSettings;
 
 namespace iris {
 inline constexpr std::size_t shaderSceneMaximumPasses = 4;
@@ -58,7 +59,11 @@ struct ShaderScenePackage {
     std::vector<ShaderScenePass> passes;
     std::vector<std::size_t> executionOrder;
     std::vector<ShaderSceneTexture> textures; // v3 only; CPU staging released after upload.
+    std::string parameterSource; // Optional CPU plugin schema, v3 only.
 };
+std::string shaderSceneResourceFor(const RendererSettings& settings);
+std::vector<ModuleParameterValue> shaderSceneParameterValues(const ShaderScenePackage& package, const RendererSettings& settings);
+bool shaderScenePassNeedsHistory(const ShaderScenePackage& package, std::size_t index);
 bool shaderSceneTextureInputsCurrent(const ShaderScenePackage& package);
 bool loadShaderScenePackage(const std::filesystem::path& path, ShaderScenePackage& package,
     std::string& error);

@@ -4,6 +4,7 @@
 #include "optics/CloudLightingLut.h"
 #include "plugin/RenderPluginParameters.h"
 #include "plugin/ShaderScene.h"
+#include "plugin/RenderPlugin.h"
 
 #include <algorithm>
 #include <cmath>
@@ -51,6 +52,8 @@ void writeRendererSettings(Writer& writer, const RendererSettings& settings,
         throw std::runtime_error("ShaderScene and Enscape modes are mutually exclusive");
     writer.Key("shaderSceneResource");
     writer.String(makeSceneRelativeResource(settings.shaderSceneResource, std::filesystem::absolute(scenePath)).c_str());
+    writer.Key("enscapeShaderSceneResource");
+    writer.String(makeSceneRelativeResource(settings.enscapeShaderSceneResource, std::filesystem::absolute(scenePath)).c_str());
     std::string pluginError;
     if(!iris::validPluginConfigurationShape(settings.renderPlugins,pluginError))throw std::runtime_error(pluginError);
     writer.Key("renderPlugins");writer.StartObject();writer.Key("version");writer.Int(1);
@@ -856,6 +859,17 @@ bool loadSceneDocument(
         }
         if (const scene_json::Value* renderer = optionalMember(root, "renderer")) {
             readRendererSettings(*renderer, loaded.renderer);
+            if (const auto* resource = optionalMember(*renderer, "enscapeShaderSceneResource")) {
+                if (!resource->IsString() || resource->GetStringLength() > 4096
+                    || std::string(resource->GetString(), resource->GetStringLength()).find('\0') != std::string::npos)
+                    throw std::runtime_error("Invalid Enscape ShaderScene resource");
+                if (resource->GetStringLength()) {
+                    loaded.renderer.enscapeShaderSceneResource = resolveSceneResource(resource->GetString(), path).generic_u8string();
+                    iris::ShaderScenePackage package;
+                    if (!iris::loadShaderScenePackage(std::filesystem::u8path(loaded.renderer.enscapeShaderSceneResource), package, error)) throw std::runtime_error(error);
+                    if (package.parameterSource != iris::enscapePluginId) throw std::runtime_error("Enscape package requires matching CPU parameter schema");
+                }
+            }
             if (const auto* resource = optionalMember(*renderer, "shaderSceneResource")) {
                 if (!resource->IsString() || resource->GetStringLength() > 4096
                     || std::string(resource->GetString(), resource->GetStringLength()).find('\0') != std::string::npos)

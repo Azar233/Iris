@@ -1,0 +1,24 @@
+The four source files `buffer_a.glsl`, `buffer_b.glsl`, `buffer_c.glsl`, and
+`image.glsl` were supplied by the user from [Enscape Cube](https://www.shadertoy.com/view/4dSBDt)
+by Thomas (Shadertoy / X: @Thomas_ensc). The source states:
+
+> License Creative Commons Attribution-NonCommercial-ShareAlike 3.0 Unported License.
+
+It also credits the ocean procedure to **Seascape** by Alexander Alekseev
+(TDM), 2014. The adapters in this directory are part of the same shader
+integration. This directory is separately licensed under
+[CC BY-NC-SA 3.0](https://creativecommons.org/licenses/by-nc-sa/3.0/),
+not the repository's MIT license. Preserve these notices in redistributed copies.
+
+The original Shadertoy channel textures were not part of the supplied source.
+The host generates deterministic 2D weather and 3D noise textures instead.
+
+2026-10-11 adaptation: the four-pass ShaderScene package preserves the existing
+camera and parameter inputs. Buffer C uses current Buffer B when history is
+invalid, and otherwise reads the previous Buffer C. The adapters and copied
+GLSL retain the attribution and CC BY-NC-SA 3.0 license above. The packaged
+weather bytes reproduce Iris's deterministic replacement texture.
+
+2026-10-07 adaptation: optional study-cube visibility for the shared GLSL cloud/ocean Hero. The original study keeps the cube enabled by default; the source and adapters retain this license and attribution.
+
+2026-10-07 adaptation: optional noise reduction adds multi-direction cloud reflections, near-water normal and specular filtering, water-only pixel integration, stable bloom sampling, and disables chromatic offsets. The original study defaults to the unchanged legacy path. These shader modifications retain the same license and attribution.

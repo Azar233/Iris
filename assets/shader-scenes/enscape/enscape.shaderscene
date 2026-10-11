@@ -1,0 +1,41 @@
+{
+  "version": 3,
+  "id": "enscapeStudy",
+  "resourceRoot": ".",
+  "entry": "mainImage",
+  "camera": "project",
+  "author": "Thomas / @Thomas_ensc; Iris adaptations; Seascape by TDM",
+  "license": "CC BY-NC-SA 3.0",
+  "parameterSource": {"pluginId": "iris.enscape-study", "schemaVersion": 1},
+  "parameters": [
+    {"id":"cubeEnabled","label":"Study cube","type":"bool","default":true},
+    {"id":"noiseReduction","label":"Stable reflections","type":"bool","default":false},
+    {"id":"waveHeight","label":"Wave height","type":"float","default":0.6,"min":0.05,"max":1.5},
+    {"id":"waveFrequency","label":"Wave frequency","type":"float","default":0.16,"min":0.04,"max":0.5},
+    {"id":"waveChoppiness","label":"Wave choppiness","type":"float","default":4,"min":1,"max":8},
+    {"id":"waveSpeed","label":"Wave speed","type":"float","default":0.8,"min":0,"max":2},
+    {"id":"cloudCoverage","label":"Cloud coverage","type":"float","default":1,"min":0,"max":2},
+    {"id":"reflectionStrength","label":"Reflection strength","type":"float","default":1,"min":0,"max":2},
+    {"id":"underwaterClarity","label":"Underwater clarity","type":"float","default":1,"min":0.25,"max":3},
+    {"id":"sunAzimuthDegrees","label":"Sun azimuth","type":"float","default":143.1301,"min":-180,"max":180},
+    {"id":"sunElevationDegrees","label":"Sun elevation","type":"float","default":24.2277,"min":1,"max":85},
+    {"id":"bloomStrength","label":"Bloom strength","type":"float","default":1,"min":0,"max":3},
+    {"id":"exposure","label":"Exposure","type":"float","default":1,"min":0.25,"max":3}
+  ],
+  "textures": [
+    {"id":"Weather","dimension":"2d","format":"linear-r8","extent":[256,256],"encoding":"raw","path":"weather.raw","mip":"generate"},
+    {"id":"Noise","dimension":"3d","format":"linear-r8","extent":[32,32,32],"encoding":"hash-v1","seed":0,"mip":"none"}
+  ],
+  "passes": [
+    {"id":"A","fragment":"pass_a.frag","output":"linear-rgba16f","sizeDivisor":1,"channels":[
+      {"slot":0,"source":"Weather","frame":"current","filter":"linear","wrap":"repeat","mip":"linear"},
+      {"slot":2,"source":"Noise","frame":"current","filter":"linear","wrap":"repeat","mip":"none"}]},
+    {"id":"B","fragment":"pass_b.frag","output":"linear-rgba16f","sizeDivisor":1,"channels":[
+      {"slot":0,"source":"A","frame":"current","filter":"linear","wrap":"clamp","mip":"none"}]},
+    {"id":"C","fragment":"pass_c.frag","output":"linear-rgba16f","sizeDivisor":1,"channels":[
+      {"slot":0,"source":"B","frame":"current","filter":"linear","wrap":"clamp","mip":"none"},
+      {"slot":1,"source":"C","frame":"previous","filter":"linear","wrap":"clamp","mip":"none"}]},
+    {"id":"Image","fragment":"pass_image.frag","output":"display-rgba8","sizeDivisor":1,"channels":[
+      {"slot":0,"source":"C","frame":"current","filter":"linear","wrap":"clamp","mip":"none"}]}
+  ]
+}

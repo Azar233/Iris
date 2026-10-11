@@ -131,6 +131,7 @@ struct RendererSettings {
     iris::RenderPluginConfiguration renderPlugins;
     iris::RenderPluginParameterStore renderPluginValues;
     std::string shaderSceneResource; // Empty selects the existing native/Enscape pipelines.
+    std::string enscapeShaderSceneResource; // Optional package for the existing Enscape mode switch; empty keeps legacy.
     bool enscapeCubeShaderEnabled{false};
     EnscapeCubeSettings enscapeCube;
     glm::vec3 backgroundColor{0.055f, 0.065f, 0.085f};

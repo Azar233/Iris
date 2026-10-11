@@ -1,5 +1,7 @@
 #include "plugin/ShaderScene.h"
 #include "asset/InputManifest.h"
+#include "plugin/RenderPluginParameters.h"
+#include "render/Renderer.h"
 #include <cmath>
 #include <fstream>
 #include <sstream>
@@ -118,7 +120,7 @@ bool loadShaderScenePackage(const std::filesystem::path& path, ShaderScenePackag
         loaded.version = json["version"].GetInt();
         if (loaded.version == 1) fields(json, {"version", "id", "resourceRoot", "fragment", "entry", "output", "camera", "author", "license", "parameters"});
         else if (loaded.version == 2) fields(json, {"version", "id", "resourceRoot", "entry", "camera", "author", "license", "parameters", "passes"});
-        else fields(json, {"version", "id", "resourceRoot", "entry", "camera", "author", "license", "parameters", "passes", "textures"});
+        else fields(json, {"version", "id", "resourceRoot", "entry", "camera", "author", "license", "parameters", "passes", "textures", "parameterSource"});
         loaded.id = string(json, "id");
         if (!identifier(loaded.id)) throw std::runtime_error("Invalid package id");
         loaded.author = string(json, "author"); loaded.license = string(json, "license");
@@ -219,16 +221,62 @@ bool loadShaderScenePackage(const std::filesystem::path& path, ShaderScenePackag
         if (!json.HasMember("parameters") || !json["parameters"].IsArray() || json["parameters"].Size() > 16)
             throw std::runtime_error("parameters must be an array of at most 16 floats");
         for (const auto& parameter : json["parameters"].GetArray()) {
-            fields(parameter, {"id", "label", "type", "default", "min", "max"});
+            const auto type = parameter.IsObject() ? string(parameter, "type") : std::string{};
+            if (loaded.version == 3 && type == "bool") fields(parameter, {"id", "label", "type", "default"});
+            else fields(parameter, {"id", "label", "type", "default", "min", "max"});
             const auto id = string(parameter, "id");
-            if (!identifier(id) || loaded.parameters.contains(id) || string(parameter, "type") != "float")
+            if (!identifier(id) || loaded.parameters.contains(id) || (type != "float" && !(loaded.version == 3 && type == "bool")))
                 throw std::runtime_error("Invalid, duplicate or unsupported parameter: " + id);
+            if (type == "bool") {
+                if (!parameter.HasMember("default") || !parameter["default"].IsBool()) throw std::runtime_error("Bool default required");
+                loaded.parameters.registerBool(id, string(parameter, "label"), parameter["default"].GetBool()); continue;
+            }
             const auto minimum = number(parameter, "min"), maximum = number(parameter, "max"), initial = number(parameter, "default");
             if (minimum > maximum || initial < minimum || initial > maximum) throw std::runtime_error("Invalid parameter range: " + id);
             loaded.parameters.registerFloat(id, string(parameter, "label"), initial, minimum, maximum);
         }
+        if (json.HasMember("parameterSource")) {
+            fields(json["parameterSource"], {"pluginId", "schemaVersion"});
+            loaded.parameterSource = string(json["parameterSource"], "pluginId");
+            const auto* schema = builtinRenderPluginParameterSchema(loaded.parameterSource);
+            const auto& source = json["parameterSource"];
+            if (!schema || !source.HasMember("schemaVersion") || !source["schemaVersion"].IsInt()
+                || source["schemaVersion"].GetInt() != schema->version) throw std::runtime_error("Unknown/incompatible parameter source schema");
+            for (const auto& parameter : loaded.parameters.descriptors()) {
+                const auto* bound = schema->metadata.descriptor(parameter.id);
+                if (!bound || bound->type != parameter.type || (parameter.type == ModuleParameterType::Float
+                    && (bound->minimum < parameter.minimum || bound->maximum > parameter.maximum)))
+                    throw std::runtime_error("Parameter source type/range mismatch: " + parameter.id);
+            }
+        }
         if (!shaderSceneTextureInputsCurrent(loaded)) throw std::runtime_error("Textures changed during package load");
         package = std::move(loaded); error.clear(); return true;
     } catch (const std::exception& exception) { error = "ShaderScene " + path.string() + ": " + exception.what(); return false; }
+}
+std::string shaderSceneResourceFor(const RendererSettings& settings) {
+    if (!settings.shaderSceneResource.empty() && settings.enscapeCubeShaderEnabled)
+        throw std::runtime_error("ShaderScene and Enscape modes are mutually exclusive");
+    if (!settings.shaderSceneResource.empty()) return settings.shaderSceneResource;
+    return settings.enscapeCubeShaderEnabled ? settings.enscapeShaderSceneResource : std::string{};
+}
+std::vector<ModuleParameterValue> shaderSceneParameterValues(const ShaderScenePackage& package, const RendererSettings& settings) {
+    std::vector<ModuleParameterOverride> bound;
+    if (!package.parameterSource.empty()) bound = builtinRenderPluginParameterSchema(package.parameterSource)->capture(settings);
+    std::vector<ModuleParameterValue> result;
+    for (const auto& descriptor : package.parameters.descriptors()) {
+        auto value = *package.parameters.value(descriptor.id);
+        for (const auto& source : bound) if (source.id == descriptor.id) value = source.value;
+        if (value.type != descriptor.type || (value.type == ModuleParameterType::Float
+            && (!std::isfinite(value.number) || value.number < descriptor.minimum || value.number > descriptor.maximum)))
+            throw std::runtime_error("Invalid ShaderScene parameter source value: " + descriptor.id);
+        result.push_back(std::move(value));
+    }
+    return result;
+}
+bool shaderScenePassNeedsHistory(const ShaderScenePackage& package, std::size_t index) {
+    if (package.version < 3) return true; // Preserve existing v1/v2 allocation contracts.
+    for (const auto& pass : package.passes) for (const auto& channel : pass.channels)
+        if (!channel.externalTexture && channel.previousFrame && channel.sourcePass == index) return true;
+    return false;
 }
 }

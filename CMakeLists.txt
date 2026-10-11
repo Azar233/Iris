@@ -208,6 +208,7 @@ target_link_libraries(MyRendererBatch PRIVATE MyRendererBatchRuntime MyRendererM
 # module does not touch the editor or the batch CLI. `Scene` symbols are provided by
 # the consumer, exactly like the other shared sources in this project.
 add_library(IrisParameters STATIC src/module/ParameterRegistry.cpp src/plugin/RenderPluginParameters.cpp src/plugin/ShaderScene.cpp src/plugin/ShaderSceneTexture.cpp)
+add_executable(IrisEnscapeWeatherGenerator EXCLUDE_FROM_ALL tools/GenerateEnscapeWeather.cpp)
 target_include_directories(IrisParameters PUBLIC src)
 target_include_directories(IrisParameters PRIVATE ${assimp_SOURCE_DIR}/contrib/rapidjson/include ${assimp_SOURCE_DIR}/contrib/stb)
 target_link_libraries(IrisParameters PUBLIC glm::glm PRIVATE glad_gl_core_33)
@@ -389,7 +390,7 @@ target_link_libraries(MyRenderer PRIVATE
 
 if(BUILD_TESTING)
     add_executable(IrisShaderSceneTests tests/ShaderSceneTests.cpp tests/ShaderSceneTextureCpuTests.cpp)
-    target_link_libraries(IrisShaderSceneTests PRIVATE IrisParameters)
+    target_link_libraries(IrisShaderSceneTests PRIVATE IrisParameters glad_gl_core_33)
     add_test(NAME shader-scene-package COMMAND IrisShaderSceneTests ${CMAKE_CURRENT_SOURCE_DIR}/assets/shader-scenes/textures)
     add_executable(IrisShaderSceneGpuTests tests/ShaderSceneGpuTests.cpp tests/ShaderSceneMultiPassTests.cpp tests/ShaderSceneEntryTests.cpp tests/ShaderSceneTextureGpuTests.cpp
         src/render/Shader.cpp src/render/Camera.cpp src/render/RenderTarget.cpp src/render/OpenGlStateCache.cpp
@@ -408,6 +409,21 @@ if(BUILD_TESTING)
         endif()
     endforeach()
     set(COASTAL_COMPARATOR "$<TARGET_FILE:MyRendererImageComparison>")
+    if(IRIS_ENABLE_ENSCAPE_PLUGIN)
+        add_executable(IrisEnscapeShaderSceneTests tests/EnscapeShaderSceneTests.cpp
+            src/render/Shader.cpp src/render/Camera.cpp src/render/RenderTarget.cpp src/render/OpenGlStateCache.cpp src/scene/Scene.cpp src/scene/SceneDocument.cpp)
+        target_include_directories(IrisEnscapeShaderSceneTests PRIVATE src plugins/enscape ${assimp_SOURCE_DIR}/contrib/rapidjson/include
+            ${assimp_SOURCE_DIR}/contrib/zlib ${assimp_BINARY_DIR}/contrib/zlib)
+        target_link_libraries(IrisEnscapeShaderSceneTests PRIVATE IrisEnscapePlugin IrisRenderPluginHost MyRendererCloudNoise glad_gl_core_33 glfw zlibstatic)
+        target_compile_definitions(IrisEnscapeShaderSceneTests PRIVATE GLFW_INCLUDE_NONE)
+        add_custom_target(enscape-shader-scene-acceptance COMMAND IrisEnscapeShaderSceneTests ${CMAKE_CURRENT_SOURCE_DIR}/shaders ${CMAKE_CURRENT_BINARY_DIR}/enscape-shader-scene
+            DEPENDS IrisEnscapeShaderSceneTests COMMENT "Comparing legacy Enscape and ShaderScene package on real GPU")
+        if(MSVC)
+            target_compile_options(IrisEnscapeShaderSceneTests PRIVATE /W4 /permissive- /utf-8)
+        else()
+            target_compile_options(IrisEnscapeShaderSceneTests PRIVATE -Wall -Wextra -Wpedantic)
+        endif()
+    endif()
 endif()
 add_custom_target(coastal-sequence-acceptance
     COMMAND ${CMAKE_COMMAND}

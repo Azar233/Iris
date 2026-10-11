@@ -1,6 +1,6 @@
 {
   "format": "MyRendererScene",
-  "version": 1,
+  "version": 2,
   "camera": {
     "target": [
       -2.28,
@@ -100,6 +100,7 @@
     "temporalAaEnabled": true,
     "localLights": [],
     "enscapeCubeShaderEnabled": true,
+    "enscapeShaderSceneResource": "../shader-scenes/enscape/enscape.shaderscene",
     "enscapeWaveHeight": 0.6,
     "enscapeWaveFrequency": 0.16,
     "enscapeWaveChoppiness": 4.0,

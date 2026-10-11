@@ -22,7 +22,12 @@ try{
         $env:MYRENDERER_ANIMATION_TIME='1.25';$env:MYRENDERER_RENDER_WIDTH='1280';$env:MYRENDERER_RENDER_HEIGHT='720'
         $env:MYRENDERER_SCREENSHOT_WARMUP='64';$env:MYRENDERER_BENCHMARK_WARMUP='64';$env:MYRENDERER_BENCHMARK_FRAMES='30'
         $env:MYRENDERER_SCREENSHOT=Join-Path $out 'off-enscape.png';$env:MYRENDERER_BENCHMARK_OUTPUT=Join-Path $out 'off-enscape.json'
-        & $exe assets/scenes/01_ocean_clouds_hero.myscene *> (Join-Path $out 'off-enscape.log')
+        # This historical exact-image gate intentionally exercises the old owner.
+        $legacyScene=Get-Content assets/scenes/01_ocean_clouds_hero.myscene -Raw | ConvertFrom-Json
+        $legacyScene.renderer.PSObject.Properties.Remove('enscapeShaderSceneResource')
+        $legacyPath=Join-Path $out 'legacy-01.myscene'
+        $legacyScene | ConvertTo-Json -Depth 32 | Set-Content -Encoding UTF8 $legacyPath
+        & $exe $legacyPath *> (Join-Path $out 'off-enscape.log')
         if($LASTEXITCODE -ne 0 -or -not(Test-Path $env:MYRENDERER_SCREENSHOT)){throw 'Independent fullscreen plugin failed without postprocess'}
         $reference=Join-Path $root 'assets/readme/glsl-ocean-hero.png'
         if((Get-FileHash $reference).Hash -ne (Get-FileHash $env:MYRENDERER_SCREENSHOT).Hash){throw 'Fullscreen output changed when native postprocess absent'}

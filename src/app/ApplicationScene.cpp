@@ -1,4 +1,5 @@
 #include "app/Application.h"
+#include "plugin/ShaderScene.h"
 #include "optics/CloudNoiseVolume.h"
 #include "optics/CloudLightingLut.h"
 
@@ -325,7 +326,7 @@ void Application::processEditorCommands() {
             case EditorCommandType::BackendChanged: {
                 const auto backend = static_cast<EditorRenderBackend>(command.value);
                 const int requested = backend == EditorRenderBackend::CpuPathTraced ? 1 : 0;
-                if (requested == 1 && !rendererSettings_.shaderSceneResource.empty()) {
+                if (requested == 1 && !iris::shaderSceneResourceFor(rendererSettings_).empty()) {
                     statusMessage_ = "CPU path tracing does not support ShaderScene GLSL";
                     editorSession_.requestBackend(EditorRenderBackend::Raster);
                     break;
@@ -843,8 +844,11 @@ void Application::processEditorCommands() {
                 bool history = false;
                 std::string error;
                 auto candidateSettings = rendererSettings_;
-                if (!iris::setPluginParameter(iris::builtinRenderPlugins(), candidateSettings, command.text,
-                        parameter, history, error)) {
+                const bool compatibilitySource = command.text == iris::enscapePluginId && !candidateSettings.enscapeShaderSceneResource.empty();
+                const bool applied = compatibilitySource
+                    ? iris::builtinRenderPluginParameterSchema(iris::enscapePluginId)->apply(candidateSettings, {parameter}, history, error)
+                    : iris::setPluginParameter(iris::builtinRenderPlugins(), candidateSettings, command.text, parameter, history, error);
+                if (!applied) {
                     statusMessage_ = "Plugin parameter rejected: " + error;
                     break;
                 }
@@ -881,12 +885,20 @@ void Application::processEditorCommands() {
             case EditorCommandType::SetRenderPipelineMode: {
                 std::string error;
                 if(!iris::validatePluginConfiguration(iris::builtinRenderPlugins(),rendererSettings_.renderPlugins,
-                    command.flag?iris::enscapePluginId:iris::postProcessPluginId,error)){
+                    command.flag ? (rendererSettings_.enscapeShaderSceneResource.empty() ? iris::enscapePluginId : "") : iris::postProcessPluginId,error)){
                     statusMessage_="Pipeline change rejected: "+error;break;
+                }
+                std::unique_ptr<iris::RenderPlugin> prepared;
+                if (command.flag && !rendererSettings_.enscapeShaderSceneResource.empty()) {
+                    auto candidateSettings = rendererSettings_; candidateSettings.enscapeCubeShaderEnabled = true;
+                    candidateSettings.shaderSceneResource.clear();
+                    try { prepared = renderer_->prepareShaderScene(candidateSettings); }
+                    catch (const std::exception& exception) { statusMessage_ = "Pipeline change rejected: " + std::string(exception.what()); break; }
                 }
                 rendererSettings_.enscapeCubeShaderEnabled=command.flag;
                 rendererSettings_.shaderSceneResource.clear();
-                if(renderer_)renderer_->invalidateTemporalHistory();
+                if (prepared) renderer_->publishShaderScene(std::move(prepared), rendererSettings_.enscapeShaderSceneResource);
+                else if(renderer_)renderer_->invalidateTemporalHistory();
                 break;
             }
             case EditorCommandType::SetPostProcessingSettings: {
@@ -2846,7 +2858,7 @@ bool Application::openScene(const std::filesystem::path& path) {
         statusMessage_ = "Open scene failed: " + documentError;
         return false;
     }
-    if (document.renderer.enscapeCubeShaderEnabled
+    if (document.renderer.enscapeCubeShaderEnabled && document.renderer.enscapeShaderSceneResource.empty()
         && !iris::builtinRenderPlugins().contains(iris::enscapePluginId)) {
         statusMessage_ = "Open scene failed; current scene preserved: Render plugin unavailable: "
             + std::string(iris::enscapePluginId);
@@ -2859,7 +2871,7 @@ bool Application::openScene(const std::filesystem::path& path) {
         return false;
     }
     if(!iris::validatePluginConfiguration(iris::builtinRenderPlugins(),document.renderer.renderPlugins,
-        !document.renderer.shaderSceneResource.empty()?"":document.renderer.enscapeCubeShaderEnabled?iris::enscapePluginId:iris::postProcessPluginId,documentError)){
+        !iris::shaderSceneResourceFor(document.renderer).empty()?"":document.renderer.enscapeCubeShaderEnabled?iris::enscapePluginId:iris::postProcessPluginId,documentError)){
         statusMessage_="Open scene failed; current scene preserved: "+documentError;return false;
     }
     // Validate against the same registry as Batch before replacing the edit scene.
@@ -2879,7 +2891,7 @@ bool Application::openScene(const std::filesystem::path& path) {
     std::unordered_map<std::string, std::string> resolvedResources;
     try {
         std::unique_ptr<iris::RenderPlugin> preparedShaderScene;
-        if (!document.renderer.shaderSceneResource.empty())
+        if (!iris::shaderSceneResourceFor(document.renderer).empty())
             preparedShaderScene = renderer_->prepareShaderScene(document.renderer);
         for (const SceneDocumentEntity& entity : document.entities) {
             if (entity.modelResource.empty()
@@ -2911,9 +2923,9 @@ bool Application::openScene(const std::filesystem::path& path) {
         loadedSceneDocument_ = true;
         emptySceneSession_ = false;
         rendererSettings_ = document.renderer;
-        renderer_->publishShaderScene(std::move(preparedShaderScene), document.renderer.shaderSceneResource);
+        renderer_->publishShaderScene(std::move(preparedShaderScene), iris::shaderSceneResourceFor(document.renderer));
         if (absolute.extension() == ".shaderscene") currentScenePath_.clear();
-        if (!document.renderer.shaderSceneResource.empty()) editorSession_.requestBackend(EditorRenderBackend::Raster);
+        if (!iris::shaderSceneResourceFor(document.renderer).empty()) editorSession_.requestBackend(EditorRenderBackend::Raster);
         if (document.entities.empty() && rendererSettings_.enscapeCubeShaderEnabled) {
             focusRendererTab_ = true;
             pendingGlslControlsScrollFrames_ = 3;
@@ -3230,6 +3242,63 @@ void Application::runShaderSceneAcceptance(const std::filesystem::path& director
     std::cout << "ShaderScene application open / compile rejection / retained pixels+history / save+reopen / mode switch PASS\n";
 }
 
+void Application::runEnscapeShaderSceneAcceptance(const std::filesystem::path& directory) {
+    const auto check = [](bool ok, const char* message) { if (!ok) throw std::runtime_error(message); };
+    std::filesystem::create_directories(directory); std::string error;
+    for (const auto* name : {"01_ocean_clouds_hero.myscene", "03_enscape_ocean_study.myscene"}) {
+        check(openScene(sourceRoot_ / "assets/scenes" / name), "Migrated Enscape scene open failed"); processEditorCommands();
+        auto settings = rendererSettings_; settings.shaderHotReloadEnabled = false; settings.water.timeSeconds = 1.25f;
+        const auto draw = [&]() { renderer_->render(scene_.buildRenderItems(), camera_, settings, 320, 180); glFinish();
+            check(glGetError() == GL_NO_ERROR, "Migrated Enscape application GL error"); };
+        const auto pixels = [&]() { std::vector<unsigned char> bytes(320U * 180U * 4U); glBindTexture(GL_TEXTURE_2D, renderer_->colorTexture());
+            glGetTexImage(GL_TEXTURE_2D, 0, GL_RGBA, GL_UNSIGNED_BYTE, bytes.data()); return bytes; };
+        draw(); const auto before = pixels(); check(before == (draw(), pixels()), "Application Enscape paused redraw differs");
+        check(renderer_->activePassNames() == std::vector<std::string>({"ShaderScene A", "ShaderScene B", "ShaderScene C", "ShaderScene Image"})
+            && renderer_->drawCallCount() == 4, "Enscape application did not use generic four-Pass package");
+        const auto saved = directory / (std::filesystem::path(name).stem().string() + ".myscene");
+        check(saveSceneTo(saved) && openScene(saved), "Enscape package Scene roundtrip failed"); processEditorCommands(); draw();
+        check(before == pixels() && rendererSettings_.enscapeShaderSceneResource == settings.enscapeShaderSceneResource,
+            "Enscape roundtrip changed parameters/reference/pixels");
+        const auto setNoise = [&](bool value) { EditorCommand edit{EditorCommandType::SetRenderPluginParameter}; edit.text = iris::enscapePluginId;
+            edit.pluginParameterId = "noiseReduction"; edit.moduleParameter.type = static_cast<int>(ModuleParameterType::Bool);
+            edit.moduleParameter.boolean = value; editorSession_.request(edit); processEditorCommands();
+            check(rendererSettings_.enscapeCube.noiseReduction == value, "Compatibility parameter command rejected");
+            settings = rendererSettings_; settings.shaderHotReloadEnabled = false; settings.water.timeSeconds = 1.25f; draw(); return pixels(); };
+        const auto originalNoise = settings.enscapeCube.noiseReduction;
+        const auto changed = setNoise(!originalNoise); check(changed != before, "Application noiseReduction has no contribution");
+        check(setNoise(originalNoise) == before, "Application noiseReduction recovery drifted");
+        EditorCommand native{EditorCommandType::SetRenderPipelineMode}; native.flag = false; editorSession_.request(native); processEditorCommands();
+        settings = rendererSettings_; settings.shaderHotReloadEnabled = false; settings.water.timeSeconds = 1.25f; draw();
+        check(!rendererSettings_.enscapeCubeShaderEnabled && renderer_->activePassNames().front() != "ShaderScene A", "Enscape/native mode switch failed");
+        EditorCommand restore{EditorCommandType::SetRenderPipelineMode}; restore.flag = true; editorSession_.request(restore); processEditorCommands();
+        settings = rendererSettings_; settings.shaderHotReloadEnabled = false; settings.water.timeSeconds = 1.25f; draw();
+        check(before == pixels(), "Native/Enscape package return changed output");
+    }
+    // Compile failure and failed mode activation keep the complete working state.
+    const auto copy = directory / "package"; std::filesystem::create_directories(copy);
+    for (const auto& file : std::filesystem::directory_iterator(sourceRoot_ / "assets/shader-scenes/enscape"))
+        if (file.is_regular_file()) std::filesystem::copy_file(file.path(), copy / file.path().filename(), std::filesystem::copy_options::overwrite_existing);
+    auto settings = rendererSettings_; settings.enscapeShaderSceneResource = (copy / "enscape.shaderscene").generic_u8string();
+    rendererSettings_ = settings; const auto scenePath = directory / "failure.myscene";
+    check(saveSceneTo(scenePath) && openScene(scenePath), "Isolated Enscape failure fixture open failed"); processEditorCommands();
+    settings = rendererSettings_; settings.shaderHotReloadEnabled = false; settings.water.timeSeconds = 1.25f;
+    const auto draw = [&]() { renderer_->render(scene_.buildRenderItems(), camera_, settings, 320, 180); glFinish(); };
+    const auto pixels = [&]() { std::vector<unsigned char> bytes(320U * 180U * 4U); glBindTexture(GL_TEXTURE_2D, renderer_->colorTexture());
+        glGetTexImage(GL_TEXTURE_2D, 0, GL_RGBA, GL_UNSIGNED_BYTE, bytes.data()); return bytes; };
+    draw(); const auto before = pixels(); const auto history = renderer_->historyInvalidationRevision();
+    { std::ofstream(copy / "pass_a.frag", std::ios::trunc) << "#version 330 core\ninvalid shader\n"; }
+    check(!openScene(scenePath) && history == renderer_->historyInvalidationRevision(), "Failed Enscape open changed history");
+    draw(); check(before == pixels(), "Failed Enscape open lost old pixels");
+    EditorCommand native{EditorCommandType::SetRenderPipelineMode}; native.flag = false; editorSession_.request(native); processEditorCommands();
+    const auto nativeHistory = renderer_->historyInvalidationRevision();
+    EditorCommand badMode{EditorCommandType::SetRenderPipelineMode}; badMode.flag = true; editorSession_.request(badMode); processEditorCommands();
+    check(!rendererSettings_.enscapeCubeShaderEnabled && nativeHistory == renderer_->historyInvalidationRevision(), "Bad mode activation published settings/history");
+    std::filesystem::copy_file(sourceRoot_ / "assets/shader-scenes/enscape/pass_a.frag", copy / "pass_a.frag", std::filesystem::copy_options::overwrite_existing);
+    editorSession_.request(badMode); processEditorCommands(); check(rendererSettings_.enscapeCubeShaderEnabled, "Mode activation recovery failed");
+    rendererSettings_.shaderHotReloadEnabled = false; animationTimeSeconds_ = 1.25f; animationTimeFixed_ = true;
+    std::cout << "Enscape ShaderScene application 01/03 / four Passes / roundtrip / noiseReduction / native switch / failure+mode transaction PASS\n";
+}
+
 bool Application::shaderTransactionAcceptance() {
     try {
         const auto check = [](bool ok, const char* message) { if (!ok) throw std::runtime_error(message); };
@@ -3237,6 +3306,7 @@ bool Application::shaderTransactionAcceptance() {
             * glm::translate(glm::mat4(1), -modelCenter_);
         syncSceneEntities(normalization);
         auto settings = rendererSettings_;
+        settings.enscapeShaderSceneResource.clear(); // This acceptance specifically exercises the retained legacy GPU owners.
         settings.shaderHotReloadEnabled = false; settings.temporalAaEnabled = false;
         settings.water.timeSeconds = 1.25f;
         settings.enscapeCubeShaderEnabled = true;

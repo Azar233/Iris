@@ -10,14 +10,23 @@ $saved=@{}
 Get-ChildItem Env: | Where-Object Name -Like 'MYRENDERER_*' | ForEach-Object { $saved[$_.Name]=$_.Value; Remove-Item -LiteralPath ('Env:'+$_.Name) }
 Push-Location $root
 try {
+    # Keep the A1 checkpoint on the original owner after 01 migrates to a package.
+    $legacyScene=Get-Content assets/scenes/01_ocean_clouds_hero.myscene -Raw | ConvertFrom-Json
+    $legacyScene.renderer.PSObject.Properties.Remove('enscapeShaderSceneResource')
+    $legacyPath=Join-Path $out 'legacy-01.myscene'
+    $legacyScene | ConvertTo-Json -Depth 32 | Set-Content -Encoding UTF8 $legacyPath
     & (Join-Path $bin 'IrisRenderPluginRegistryTests.exe') *> (Join-Path $out 'registry.log')
     if($LASTEXITCODE -ne 0){throw 'Plugin registry acceptance failed'}
     if($ExpectUnavailable) {
-        $rejectedOutput=Join-Path $out 'rejected-job'
+        $rejectedOutput=Join-Path $out ('rejected-job-'+[guid]::NewGuid().ToString('N'))
         if(Test-Path $rejectedOutput){throw 'Use a fresh rejected-job output directory'}
         # Windows PowerShell treats expected native stderr as NativeCommandError.
         $ErrorActionPreference='Continue'
-        & $exe raster-sequence assets/renderjobs/07_glsl_ocean_clouds.renderjob --output (Join-Path $rejectedOutput 'frame_{frame:04}') *> (Join-Path $out 'disabled-job.log')
+        $legacyJob=Get-Content assets/renderjobs/07_glsl_ocean_clouds.renderjob -Raw | ConvertFrom-Json
+        $legacyJob.scene=$legacyPath
+        $legacyJobPath=Join-Path $out 'legacy-07.renderjob'
+        $legacyJob | ConvertTo-Json -Depth 32 | Set-Content -Encoding UTF8 $legacyJobPath
+        & $exe raster-sequence $legacyJobPath --output (Join-Path $rejectedOutput 'frame_{frame:04}') *> (Join-Path $out 'disabled-job.log')
         $rejectionExit=$LASTEXITCODE
         $ErrorActionPreference='Stop'
         if($rejectionExit -ne 66){throw 'Unavailable plugin Job was not rejected before rendering'}
@@ -34,7 +43,7 @@ try {
         $env:MYRENDERER_ANIMATION_TIME='1.25';$env:MYRENDERER_RENDER_WIDTH='1280';$env:MYRENDERER_RENDER_HEIGHT='720'
         $env:MYRENDERER_SCREENSHOT_WARMUP='64';$env:MYRENDERER_BENCHMARK_WARMUP='64';$env:MYRENDERER_BENCHMARK_FRAMES='240'
         $env:MYRENDERER_SCREENSHOT=Join-Path $out 'after.png';$env:MYRENDERER_BENCHMARK_OUTPUT=Join-Path $out 'after.json'
-        & $exe assets/scenes/01_ocean_clouds_hero.myscene *> (Join-Path $out 'after.log')
+        & $exe $legacyPath *> (Join-Path $out 'after.log')
         if($LASTEXITCODE -ne 0){throw 'Plugin capture failed'}
         $before=Join-Path $out 'before.png';$beforeReport=Join-Path $out 'before.json'
         if(-not(Test-Path $before) -or -not(Test-Path $beforeReport)){throw 'Capture checkpoint before.png / before.json here first'}
