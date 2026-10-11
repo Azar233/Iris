@@ -94,6 +94,7 @@ void ShaderSceneRenderer::prepareResources(const RendererSettings& settings, int
     for (const auto& description : candidate->package.passes) {
         auto pass = std::make_unique<Pass>();
         Shader::SourcePolicy policy; policy.fragmentRoot = candidate->package.root;
+        policy.mainImageEntry = candidate->package.mainImageEntry;
         policy.uniforms = {{"irisTime", GL_FLOAT}, {"irisTimeDelta", GL_FLOAT}, {"irisFrame", GL_INT},
             {"irisHistoryValid", GL_BOOL}, {"irisResolution", GL_FLOAT_VEC2}, {"irisViewportResolution", GL_FLOAT_VEC2},
             {"irisCameraPosition", GL_FLOAT_VEC3}, {"irisView", GL_FLOAT_MAT4}, {"irisProjection", GL_FLOAT_MAT4}};

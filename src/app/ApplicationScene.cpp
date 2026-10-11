@@ -3154,8 +3154,9 @@ void Application::runShaderSceneAcceptance(const std::filesystem::path& director
     const auto check = [](bool ok, const char* message) { if (!ok) throw std::runtime_error(message); };
     std::filesystem::create_directories(directory);
     const bool multi = std::getenv("MYRENDERER_SHADER_SCENE_MULTIPASS_ACCEPTANCE") != nullptr;
-    const auto source = sourceRoot_ / (multi ? "assets/shader-scenes/feedback" : "assets/shader-scenes/orbit");
-    const auto manifest = directory / (multi ? "feedback.shaderscene" : "orbit.shaderscene");
+    const bool mainImage = std::getenv("MYRENDERER_SHADER_SCENE_MAIN_IMAGE_ACCEPTANCE") != nullptr;
+    const auto source = sourceRoot_ / (multi ? "assets/shader-scenes/feedback" : (mainImage ? "assets/shader-scenes/main-image" : "assets/shader-scenes/orbit"));
+    const auto manifest = directory / (multi ? "feedback.shaderscene" : (mainImage ? "main-image.shaderscene" : "orbit.shaderscene"));
     const auto fragment = directory / (multi ? "accumulate.frag" : "image.frag");
     for (const auto& entry : std::filesystem::directory_iterator(source))
         if (entry.is_regular_file()) std::filesystem::copy_file(entry.path(), directory / entry.path().filename(), std::filesystem::copy_options::overwrite_existing);

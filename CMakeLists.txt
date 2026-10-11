@@ -391,7 +391,7 @@ if(BUILD_TESTING)
     add_executable(IrisShaderSceneTests tests/ShaderSceneTests.cpp)
     target_link_libraries(IrisShaderSceneTests PRIVATE IrisParameters)
     add_test(NAME shader-scene-package COMMAND IrisShaderSceneTests)
-    add_executable(IrisShaderSceneGpuTests tests/ShaderSceneGpuTests.cpp tests/ShaderSceneMultiPassTests.cpp
+    add_executable(IrisShaderSceneGpuTests tests/ShaderSceneGpuTests.cpp tests/ShaderSceneMultiPassTests.cpp tests/ShaderSceneEntryTests.cpp
         src/render/Shader.cpp src/render/Camera.cpp src/render/RenderTarget.cpp src/render/OpenGlStateCache.cpp
         src/scene/Scene.cpp src/scene/SceneDocument.cpp)
     target_include_directories(IrisShaderSceneGpuTests PRIVATE src ${assimp_SOURCE_DIR}/contrib/rapidjson/include

@@ -109,7 +109,9 @@ bool loadShaderScenePackage(const std::filesystem::path& path, ShaderScenePackag
         loaded.id = string(json, "id");
         if (!identifier(loaded.id)) throw std::runtime_error("Invalid package id");
         loaded.author = string(json, "author"); loaded.license = string(json, "license");
-        if (string(json, "entry") != "main" || (loaded.version == 1 && string(json, "output") != "display-rgba8")
+        const auto entry = string(json, "entry");
+        loaded.mainImageEntry = loaded.version == 2 && entry == "mainImage";
+        if ((entry != "main" && !loaded.mainImageEntry) || (loaded.version == 1 && string(json, "output") != "display-rgba8")
             || string(json, "camera") != "project") throw std::runtime_error("Unsupported entry/output/camera contract");
         loaded.root = inside(loaded.manifest.parent_path(), string(json, "resourceRoot"));
         if (!std::filesystem::is_directory(loaded.root)) throw std::runtime_error("Resource root must be a directory");

@@ -56,6 +56,12 @@ int main() {
         badV2("\"sizeDivisor\":2", "\"sizeDivisor\":3");
         badV2("\"id\":\"Accum\"", "\"id\":\"Image\"");
         badV2("\"version\":2", "\"version\":3");
+        badV2("\"entry\":\"main\"", "\"entry\":\"auto\"");
+        auto mainImage = v2;
+        mainImage.replace(mainImage.find("\"entry\":\"main\""), 14, "\"entry\":\"mainImage\"");
+        write(mainImage); check(iris::loadShaderScenePackage(path, package, error), "v2 mainImage rejected");
+        check(package.mainImageEntry && package.executionOrder == std::vector<std::size_t>({1, 0}), "mainImage entry or graph lost");
+        write(valid); check(iris::loadShaderScenePackage(path, package, error) && !package.mainImageEntry, "v1 main did not restore entry default");
         std::filesystem::remove_all(root);
         std::cout << "ShaderScene version, strict fields, paths, parameter range and transactional recovery passed\n";
         return 0;

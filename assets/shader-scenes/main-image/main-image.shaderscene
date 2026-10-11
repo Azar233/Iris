@@ -1,0 +1,15 @@
+{
+  "version": 2,
+  "id": "orbitMainImage",
+  "resourceRoot": ".",
+  "entry": "mainImage",
+  "camera": "project",
+  "author": "Iris contributors",
+  "license": "MIT",
+  "parameters": [
+    {"id": "ringWidth", "label": "Ring width", "type": "float", "default": 0.06, "min": 0.01, "max": 0.2}
+  ],
+  "passes": [
+    {"id": "Image", "fragment": "image.frag", "output": "display-rgba8", "sizeDivisor": 1, "channels": []}
+  ]
+}

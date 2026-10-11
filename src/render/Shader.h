@@ -15,6 +15,7 @@ public:
     struct SourcePolicy {
         std::filesystem::path fragmentRoot;
         std::vector<std::pair<std::string, unsigned int>> uniforms;
+        bool mainImageEntry{false};
     };
     struct ReloadReport {
         std::size_t reloaded{0U};
@@ -63,7 +64,7 @@ private:
         std::array<std::vector<std::filesystem::path>, 3> paths;
         std::array<std::vector<std::filesystem::file_time_type>, 3> times;
     };
-    explicit Shader(std::array<std::filesystem::path, 3> paths, SourcePolicy policy = {});
+    explicit Shader(std::array<std::filesystem::path, 3> paths, SourcePolicy policy);
     static unsigned int buildProgram(const std::array<std::filesystem::path, 3>& paths, SourceSnapshot& snapshot, const SourcePolicy& policy);
     static bool snapshotChanged(const SourceSnapshot& snapshot);
     static std::string readFile(const std::filesystem::path& path);

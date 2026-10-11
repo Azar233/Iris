@@ -33,6 +33,7 @@ struct ShaderScenePackage {
     std::string license;
     ParameterRegistry parameters;
     int version{1};
+    bool mainImageEntry{false}; // v2 only; applies to every Pass.
     std::vector<ShaderScenePass> passes;
     std::vector<std::size_t> executionOrder;
 };

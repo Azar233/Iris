@@ -1,16 +1,18 @@
-param([string]$BuildDirectory='build-ci-msvc', [switch]$MultiPass)
+param([string]$BuildDirectory='build-ci-msvc', [switch]$MultiPass, [switch]$MainImage)
 $ErrorActionPreference='Stop'
+if($MultiPass -and $MainImage){throw 'Select only one acceptance fixture'}
 $root=Split-Path $PSScriptRoot -Parent
 $build=if([IO.Path]::IsPathRooted($BuildDirectory)){$BuildDirectory}else{Join-Path $root $BuildDirectory}
 $exe=if(Test-Path (Join-Path $build 'Release/Iris.exe')){Join-Path $build 'Release/Iris.exe'}else{Join-Path $build 'Iris.exe'}
-$out=Join-Path $build $(if($MultiPass){'shader-scene-multipass'}else{'shader-scene-acceptance'})
+$out=Join-Path $build $(if($MultiPass){'shader-scene-multipass'}elseif($MainImage){'shader-scene-main-image'}else{'shader-scene-acceptance'})
 New-Item -ItemType Directory -Force $out | Out-Null
 $saved=@{}
 Get-ChildItem Env: | Where-Object Name -Like 'MYRENDERER_*' | ForEach-Object {$saved[$_.Name]=$_.Value;Remove-Item -LiteralPath ('Env:'+$_.Name)}
 Push-Location $root
 try {
-    $fixture=if($MultiPass){'assets/shader-scenes/feedback/feedback.shaderscene'}else{'assets/shader-scenes/orbit/orbit.shaderscene'}
+    $fixture=if($MultiPass){'assets/shader-scenes/feedback/feedback.shaderscene'}elseif($MainImage){'assets/shader-scenes/main-image/main-image.shaderscene'}else{'assets/shader-scenes/orbit/orbit.shaderscene'}
     if($MultiPass){$env:MYRENDERER_SHADER_SCENE_MULTIPASS_ACCEPTANCE='1'}
+    if($MainImage){$env:MYRENDERER_SHADER_SCENE_MAIN_IMAGE_ACCEPTANCE='1'}
     $env:MYRENDERER_SMOKE_TEST='1';$env:MYRENDERER_ANIMATION_TIME='1.25'
     $env:MYRENDERER_RENDER_WIDTH='320';$env:MYRENDERER_RENDER_HEIGHT='180'
     foreach($size in @(@(1440,900),@(1100,680))) {

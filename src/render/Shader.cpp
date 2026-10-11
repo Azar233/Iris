@@ -132,11 +132,11 @@ std::string Shader::expandIncludes(
 }
 
 Shader::Shader(const std::filesystem::path& vertexPath, const std::filesystem::path& fragmentPath)
-    : Shader(std::array<std::filesystem::path, 3>{vertexPath, {}, fragmentPath}) {}
+    : Shader(std::array<std::filesystem::path, 3>{vertexPath, {}, fragmentPath}, SourcePolicy{}) {}
 
 Shader::Shader(const std::filesystem::path& vertexPath, const std::filesystem::path& geometryPath,
     const std::filesystem::path& fragmentPath)
-    : Shader(std::array<std::filesystem::path, 3>{vertexPath, geometryPath, fragmentPath}) {}
+    : Shader(std::array<std::filesystem::path, 3>{vertexPath, geometryPath, fragmentPath}, SourcePolicy{}) {}
 
 Shader::Shader(const std::filesystem::path& vertexPath, const std::filesystem::path& fragmentPath, SourcePolicy policy)
     : Shader(std::array<std::filesystem::path, 3>{vertexPath, {}, fragmentPath}, std::move(policy)) {}
@@ -159,6 +159,17 @@ unsigned int Shader::buildProgram(const std::array<std::filesystem::path, 3>& pa
     std::array<std::string, 3> sources;
     for (std::size_t i = 0; i < paths.size(); ++i)
         if (!paths[i].empty()) sources[i] = expandIncludes(paths[i], 0, snapshot.paths[i], snapshot.times[i], i == 2 ? policy.fragmentRoot : std::filesystem::path{});
+    if (policy.mainImageEntry) {
+        // Append after user includes so their #version and source locations survive.
+        // The same policy is used for initial compilation and atomic hot reload.
+        sources[2] += "\n// Iris generated mainImage adapter\n"
+            "layout(location = 0) out vec4 irisMainImageOutput;\n"
+            "void main() {\n"
+            "    vec4 irisMainImageColor = vec4(0.0);\n"
+            "    mainImage(irisMainImageColor, gl_FragCoord.xy);\n"
+            "    irisMainImageOutput = irisMainImageColor;\n"
+            "}\n";
+    }
     CompilationResources resources;
     const std::array<unsigned int, 3> types{GL_VERTEX_SHADER, GL_GEOMETRY_SHADER, GL_FRAGMENT_SHADER};
     for (std::size_t i = 0; i < paths.size(); ++i)
