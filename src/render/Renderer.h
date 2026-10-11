@@ -129,6 +129,7 @@ struct EnscapeCubeSettings {
 
 struct RendererSettings {
     iris::RenderPluginConfiguration renderPlugins;
+    iris::RenderPluginParameterStore renderPluginValues;
     bool enscapeCubeShaderEnabled{false};
     EnscapeCubeSettings enscapeCube;
     glm::vec3 backgroundColor{0.055f, 0.065f, 0.085f};

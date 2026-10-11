@@ -1,8 +1,12 @@
 #include "plugin/RenderPlugin.h"
 #include "render/RenderTarget.h"
 #include "render/PostProcessSettings.h"
+#include "plugin/RenderPluginParameters.h"
 
 namespace iris {
+std::vector<ModuleParameterOverride> RenderPluginFrame::parameterValues(const RenderPluginParameterSchema& schema) const {
+    return schema.capture(settings);
+}
 unsigned int RenderPluginFrame::texture(const std::string& name) const {
     for (const auto& binding : textures) if (binding.name == name) return binding.texture;
     return 0U;

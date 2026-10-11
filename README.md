@@ -10,6 +10,8 @@
 
 A2-B2a 已完成现有两个插件的 18 个声明式参数：在 Inspector → Plugins → Parameters 中编辑，随 Scene 保存，错误输入保留原状态；仍复用共享 RendererSettings。新增 A2-B2b1 多程序 Shader 事务重载：整批成功才发布，失败保留旧画面与历史，可在 Renderer 面板查看日志并重试。A2-B2 的独立参数存储及剩余资源合同继续推进。
 
+A2-B2b2 提供未绑定参数的独立值存储与可扩展 CPU schema 目录：新 C++ 插件可声明参数、通过共享命令编辑、随 Scene 保存并从 frame 读取，无需逐参数扩充宿主字段。现有 18 个参数保留兼容绑定；用户插件发现、资源参数和版本迁移仍待后续实现。
+
 <p align="center">A C++17 real-time and offline rendering playground.</p>
 
 <p align="center">

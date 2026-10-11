@@ -22,7 +22,7 @@ struct RenderPluginDescriptor {
     std::vector<std::string> requiredServices;
     std::string license;
     RenderPluginContract contract;
-    const RenderPluginParameterSchema* parameters{nullptr}; // Static schema outlives the registry.
+    const RenderPluginParameterSchema* parameters{nullptr}; // Schema owner/catalog must outlive the registry.
 };
 
 class RenderPluginRegistry {

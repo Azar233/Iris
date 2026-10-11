@@ -11,6 +11,7 @@
 #include "render/Renderer.h"
 #include "scene/Scene.h"
 #include "module/ParameterRegistry.h"
+#include "plugin/RenderPluginParameters.h"
 
 inline constexpr const char* myRendererSceneExtension = ".myscene";
 inline constexpr const char* builtinGroundResource = "builtin:ground-plane";
@@ -56,13 +57,15 @@ struct SceneDocument {
 bool saveSceneDocument(
     const std::filesystem::path& path,
     const SceneDocument& document,
-    std::string& error
+    std::string& error,
+    const iris::RenderPluginParameterCatalog& parameters = iris::builtinRenderPluginParameterCatalog()
 );
 
 bool loadSceneDocument(
     const std::filesystem::path& path,
     SceneDocument& document,
-    std::string& error
+    std::string& error,
+    const iris::RenderPluginParameterCatalog& parameters = iris::builtinRenderPluginParameterCatalog()
 );
 
 std::string makeSceneRelativeResource(

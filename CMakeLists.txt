@@ -445,6 +445,15 @@ if(BUILD_TESTING)
     add_executable(IrisRenderPluginPanelTests tests/RenderPluginPanelTests.cpp src/app/RenderPluginPanel.cpp)
     target_link_libraries(IrisRenderPluginPanelTests PRIVATE IrisRenderPluginHost imgui_backend glad_gl_core_33)
     add_test(NAME render-plugin-panel COMMAND IrisRenderPluginPanelTests)
+    add_executable(IrisStoredPluginGpuTests tests/StoredPluginGpuTests.cpp src/app/RenderPluginPanel.cpp
+        src/scene/Scene.cpp src/scene/SceneDocument.cpp src/render/Camera.cpp src/render/RenderTarget.cpp)
+    target_include_directories(IrisStoredPluginGpuTests PRIVATE src ${assimp_SOURCE_DIR}/contrib/rapidjson/include
+        ${assimp_SOURCE_DIR}/contrib/zlib ${assimp_BINARY_DIR}/contrib/zlib)
+    target_link_libraries(IrisStoredPluginGpuTests PRIVATE IrisRenderPluginHost MyRendererCloudNoise imgui_backend zlibstatic)
+    target_compile_definitions(IrisStoredPluginGpuTests PRIVATE GLFW_INCLUDE_NONE
+        MYRENDERER_STORED_PLUGIN_OUTPUT="${CMAKE_CURRENT_BINARY_DIR}/stored-plugin-validation")
+    add_custom_target(stored-plugin-gpu-acceptance COMMAND IrisStoredPluginGpuTests
+        DEPENDS IrisStoredPluginGpuTests COMMENT "Validating unbound plugin values, Scene and generated UI on real GL")
     if(IRIS_ENABLE_ENSCAPE_PLUGIN)
         add_executable(IrisRenderPluginGpuTests tests/RenderPluginGpuTests.cpp
             src/render/Camera.cpp src/render/RenderTarget.cpp src/render/Shader.cpp)
@@ -469,7 +478,7 @@ if(BUILD_TESTING)
         add_custom_target(postprocess-plugin-gpu-acceptance COMMAND IrisPostProcessPluginGpuTests
             DEPENDS IrisPostProcessPluginGpuTests COMMENT "Validating a second plugin's real resource and history lifecycle")
     endif()
-    foreach(pluginTestTarget IrisRenderPluginRegistryTests IrisRenderPluginContractTests IrisRenderPluginConfigurationTests IrisRenderPluginPanelTests IrisRenderPluginGpuTests IrisPostProcessPluginGpuTests)
+    foreach(pluginTestTarget IrisRenderPluginRegistryTests IrisRenderPluginContractTests IrisRenderPluginConfigurationTests IrisRenderPluginPanelTests IrisRenderPluginGpuTests IrisPostProcessPluginGpuTests IrisStoredPluginGpuTests IrisRenderPluginParameterTests)
         if(TARGET ${pluginTestTarget})
             if(MSVC)
                 target_compile_options(${pluginTestTarget} PRIVATE /W4 /permissive- /utf-8)

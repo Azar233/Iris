@@ -4,6 +4,7 @@
 #include <string>
 #include <vector>
 #include "plugin/RenderPluginContract.h"
+#include "module/ParameterRegistry.h"
 
 class Camera;
 class RenderTarget;
@@ -11,6 +12,7 @@ struct RendererSettings;
 struct PostProcessSettings;
 
 namespace iris {
+struct RenderPluginParameterSchema;
 
 inline constexpr int renderPluginApiVersion = 2;
 inline constexpr const char* enscapePluginId = "iris.enscape-study";
@@ -34,6 +36,7 @@ struct RenderPluginFrame {
     const PostProcessSettings* postProcessSettings;
     std::vector<RenderTextureBinding> textures;
     unsigned int texture(const std::string& name) const;
+    std::vector<ModuleParameterOverride> parameterValues(const RenderPluginParameterSchema& schema) const;
 };
 
 struct RenderPluginFrameInfo {

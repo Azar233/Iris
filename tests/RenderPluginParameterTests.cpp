@@ -2,6 +2,7 @@
 #include "plugin/RenderPluginRegistry.h"
 #include "render/Renderer.h"
 #include "scene/SceneDocument.h"
+#include "StoredPluginFixture.h"
 #include <filesystem>
 #include <fstream>
 #include <iostream>
@@ -116,6 +117,85 @@ int main() {
         auto invalidScene=restored; invalidScene.renderer.enscapeCube.waveHeight=7;
         const auto preservedBytes=bytes(saved);
         require(!saveSceneDocument(saved, invalidScene, error) && bytes(saved)==preservedBytes, "Failed parameter save truncated file");
+        // A new schema travels through the same commands and Scene codec without
+        // adding renderer fields or compiling its GPU factory into the core.
+        auto catalog = iris::builtinRenderPluginParameterCatalog();
+        auto storedSchema = storedPluginSchema();
+        catalog.add(storedSchema);
+        catalog.add(storedPluginSchema("test.other"));
+        const auto* stableSchema = catalog.find("test.stored");
+        bool duplicateRejected = false;
+        try { catalog.add(storedSchema); } catch (const std::invalid_argument&) { duplicateRejected = true; }
+        require(duplicateRejected && stableSchema == catalog.find("test.stored"), "Catalog lost stable schema or accepted duplicate");
+        iris::RenderPluginRegistry extended;
+        extended.add({"test.stored", iris::renderPluginApiVersion, {}, "MIT", {}, stableSchema}, factory);
+        RendererSettings independent;
+        require(stableSchema->capture(independent).size() == 5 && independent.renderPluginValues.empty(), "Defaults allocated a second value source");
+        require(iris::setPluginParameter(extended, independent, "test.stored", number("gain", 1.5f), history, error)
+            && history && independent.exposure == RendererSettings{}.exposure, "Unbound command changed a legacy field");
+        auto edits = stableSchema->capture(independent);
+        edits[0].value.boolean = false; edits[2].value.integer = 6;
+        edits[3].value.color = glm::vec3(0.2f, 0.4f, 0.6f);
+        edits[4].value.integer = 1; edits[4].value.text = "inverted";
+        require(stableSchema->apply(independent, edits, history, error), "Unbound typed transaction rejected");
+        auto* other = catalog.find("test.other");
+        require(other->apply(independent, {number("gain", 0.5f)}, history, error)
+            && stableSchema->capture(independent)[1].value.number == 1.5f, "Plugin values were not isolated");
+        SceneDocument independentScene; independentScene.renderer = independent;
+        const auto independentPath = directory / "independent.myscene";
+        require(saveSceneDocument(independentPath, independentScene, error, catalog), error.c_str());
+        SceneDocument independentRestored;
+        require(loadSceneDocument(independentPath, independentRestored, error, catalog), error.c_str());
+        require(stableSchema->capture(independentRestored.renderer)[4].value.text == "inverted"
+            && other->capture(independentRestored.renderer)[1].value.number == 0.5f, "Independent values did not survive Scene");
+        require(saveSceneDocument(repeated, independentRestored, error, catalog)
+            && bytes(independentPath) == bytes(repeated), "Custom catalog serialization was not deterministic");
+        for (const auto& values : {std::string("[{\"id\":\"enabled\",\"type\":0,\"value\":true},{\"id\":\"gain\",\"type\":2,\"value\":9}]"),
+                std::string("[{\"id\":\"preset\",\"type\":4,\"value\":\"missing\"}]"),
+                std::string("[{\"id\":\"gain\",\"type\":2,\"value\":1.2},{\"id\":\"gain\",\"type\":2,\"value\":1.5}]"),
+                std::string("[{\"id\":\"tint\",\"type\":3,\"value\":[0.1,0.2]}]")}) {
+            { std::ofstream stream(directory / "bad-stored.myscene"); stream << prefix
+                << "{\"version\":1,\"entries\":[{\"id\":\"test.stored\",\"schemaVersion\":1,\"values\":" << values << "}]}}}"; }
+            require(!loadSceneDocument(directory / "bad-stored.myscene", independentRestored, error, catalog)
+                && !stableSchema->capture(independentRestored.renderer)[0].value.boolean
+                && stableSchema->capture(independentRestored.renderer)[1].value.number == 1.5f,
+                "Custom parameter parse failure replaced existing scene values");
+        }
+        require(!loadSceneDocument(independentPath, restored, error) && restored.renderer.exposure == 2.5f,
+            "Missing custom schema silently discarded values or replaced destination");
+        const auto independentBytes = bytes(independentPath);
+        for (int kind = 0; kind < 5; ++kind) {
+            auto invalid = independentScene;
+            if (kind == 0) invalid.renderer.renderPluginValues[0].pluginId = "unknown";
+            if (kind == 1) invalid.renderer.renderPluginValues.push_back(invalid.renderer.renderPluginValues[0]);
+            if (kind == 2) invalid.renderer.renderPluginValues[0].schemaVersion = 9;
+            if (kind == 3) invalid.renderer.renderPluginValues[0].values.push_back(number("gain", 0.7f));
+            if (kind == 4) invalid.renderer.renderPluginValues[0].values[0].value.number = 9;
+            require(!saveSceneDocument(independentPath, invalid, error, catalog)
+                && bytes(independentPath) == independentBytes, "Invalid store truncated valid Scene");
+        }
+        require(!stableSchema->apply(independent, {number("gain", 1), number("unknown", 1)}, history, error)
+            && !history && stableSchema->capture(independent)[1].value.number == 1.5f, "Unbound partial commit escaped");
+        auto defaults = storedSchema.metadata; defaults.resetToDefaults();
+        std::vector<ModuleParameterOverride> reset;
+        for (const auto& d : defaults.descriptors()) reset.push_back({d.id, *defaults.value(d.id)});
+        require(stableSchema->apply(independent, reset, history, error)
+            && independent.renderPluginValues.size() == 1
+            && independent.renderPluginValues[0].pluginId == "test.other", "Reset defaults retained stale overrides or erased another plugin");
+        auto mixed = storedPluginSchema("test.mixed");
+        mixed.bindings.push_back({"gain", [](const RendererSettings& v) { ModuleParameterValue n; n.type=ModuleParameterType::Float; n.number=v.exposure; return n; },
+            [](RendererSettings& v, const ModuleParameterValue& n) { v.exposure=n.number; }, false});
+        mixed.validate();
+        auto mixedValues = mixed.capture(independent); mixedValues[0].value.boolean = false;
+        mixedValues[1].value.number = 1.7f;
+        require(mixed.apply(independent, mixedValues, history, error) && independent.exposure == 1.7f,
+            "Mixed bound/unbound schema rejected");
+        independent.exposure = 1.2f;
+        require(mixed.capture(independent)[1].value.number == 1.2f, "Stored values shadowed legacy binding");
+        mixed.bindings[0].write = [](RendererSettings&, const ModuleParameterValue&) { throw std::runtime_error("fixture"); };
+        mixedValues[0].value.boolean = true;
+        require(!mixed.apply(independent, mixedValues, history, error)
+            && !mixed.capture(independent)[0].value.boolean && independent.exposure == 1.2f, "Mixed callback failure partly stored values");
         std::cout << "Plugin parameters: shared values, history, edit/load transactions and roundtrip PASS\n";
     } catch (const std::exception& error) { std::cerr << error.what() << '\n'; return 1; }
 }

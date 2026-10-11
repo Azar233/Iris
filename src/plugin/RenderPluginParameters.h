@@ -1,6 +1,7 @@
 #pragma once
 
 #include <functional>
+#include <map>
 #include <string>
 #include <vector>
 #include "module/ParameterRegistry.h"
@@ -9,8 +10,8 @@ struct RendererSettings;
 
 namespace iris {
 
-// Metadata and bindings use the existing parameter vocabulary. Values remain in
-// the shared RendererSettings bridge; neither the UI nor schema owns a second copy.
+// Optional bindings keep existing renderer controls compatible. Unbound metadata
+// is owned by the scene's plugin value store, with defaults from the schema.
 struct RenderPluginParameterBinding {
     std::string id;
     std::function<ModuleParameterValue(const RendererSettings&)> read;
@@ -23,6 +24,7 @@ struct RenderPluginParameterSchema {
     int version{1};
     ParameterRegistry metadata;
     std::vector<RenderPluginParameterBinding> bindings;
+    bool storedValuesAffectHistory{true};
 
     void validate() const;
 
@@ -32,6 +34,19 @@ struct RenderPluginParameterSchema {
     bool apply(RendererSettings& settings, const std::vector<ModuleParameterOverride>& values,
         bool& affectsHistory, std::string& error) const;
 };
+
+// CPU catalog owns schemas independently of compiled GPU factories. Registered
+// schemas remain available for scene validation even when a plugin is not built.
+class RenderPluginParameterCatalog {
+public:
+    void add(RenderPluginParameterSchema schema);
+    const RenderPluginParameterSchema* find(const std::string& id) const;
+    const std::map<std::string, RenderPluginParameterSchema>& schemas() const { return schemas_; }
+    bool validateSettings(const RendererSettings& settings, std::string& error) const;
+private:
+    std::map<std::string, RenderPluginParameterSchema> schemas_;
+};
+const RenderPluginParameterCatalog& builtinRenderPluginParameterCatalog();
 
 // CPU-only schemas are available even in builds without the GPU implementation.
 const std::vector<RenderPluginParameterSchema>& builtinRenderPluginParameterSchemas();

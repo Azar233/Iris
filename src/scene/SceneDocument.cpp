@@ -43,7 +43,8 @@ void writeMatrix(Writer& writer, const glm::mat4& value) {
     writer.EndArray();
 }
 
-void writeRendererSettings(Writer& writer, const RendererSettings& settings) {
+void writeRendererSettings(Writer& writer, const RendererSettings& settings,
+    const iris::RenderPluginParameterCatalog& parameters) {
     writer.StartObject();
     std::string pluginError;
     if(!iris::validPluginConfigurationShape(settings.renderPlugins,pluginError))throw std::runtime_error(pluginError);
@@ -54,7 +55,8 @@ void writeRendererSettings(Writer& writer, const RendererSettings& settings) {
     writer.Key("renderPluginParameters"); writer.StartObject();
     writer.Key("version"); writer.Int(1);
     writer.Key("entries"); writer.StartArray();
-    for (const auto& schema : iris::builtinRenderPluginParameterSchemas()) {
+    for (const auto& catalogEntry : parameters.schemas()) {
+        const auto& schema = catalogEntry.second;
         writer.StartObject(); writer.Key("id"); writer.String(schema.pluginId.c_str());
         writer.Key("schemaVersion"); writer.Int(schema.version);
         writer.Key("values"); writer.StartArray();
@@ -581,14 +583,9 @@ void readRendererSettings(const scene_json::Value& value, RendererSettings& sett
 #undef READ_VEC3
 }
 
-void validateDocument(const SceneDocument& document) {
-    auto pluginSettings = document.renderer;
-    for (const auto& schema : iris::builtinRenderPluginParameterSchemas()) {
-        bool history = false;
-        std::string error;
-        if (!schema.apply(pluginSettings, schema.capture(document.renderer), history, error))
-            throw std::runtime_error(error);
-    }
+void validateDocument(const SceneDocument& document, const iris::RenderPluginParameterCatalog& parameters) {
+    std::string parameterError;
+    if (!parameters.validateSettings(document.renderer, parameterError)) throw std::runtime_error(parameterError);
     if (document.moduleId.empty() && !document.moduleParameters.empty()) {
         throw std::runtime_error("Module parameters require a module id");
     }
@@ -636,11 +633,12 @@ void validateDocument(const SceneDocument& document) {
 bool saveSceneDocument(
     const std::filesystem::path& path,
     const SceneDocument& document,
-    std::string& error
+    std::string& error,
+    const iris::RenderPluginParameterCatalog& parameterCatalog
 ) {
     error.clear();
     try {
-        validateDocument(document);
+        validateDocument(document, parameterCatalog);
         scene_json::StringBuffer buffer;
         Writer writer(buffer);
         writer.SetIndent(' ', 2);
@@ -682,7 +680,7 @@ bool saveSceneDocument(
             writer.Key("farPlane"); writer.Double(document.camera.farPlane);
         }
         writer.EndObject();
-        writer.Key("renderer"); writeRendererSettings(writer, document.renderer);
+        writer.Key("renderer"); writeRendererSettings(writer, document.renderer, parameterCatalog);
         writer.Key("playback"); writer.StartObject();
         writer.Key("animationEnabled"); writer.Bool(document.playback.animationEnabled);
         writer.Key("animationPlaying"); writer.Bool(document.playback.animationPlaying);
@@ -754,7 +752,8 @@ bool saveSceneDocument(
 bool loadSceneDocument(
     const std::filesystem::path& path,
     SceneDocument& document,
-    std::string& error
+    std::string& error,
+    const iris::RenderPluginParameterCatalog& parameterCatalog
 ) {
     error.clear();
     try {
@@ -855,7 +854,7 @@ bool loadSceneDocument(
                         || plugin["values"].Size() > 64U)
                         throw std::runtime_error("Invalid plugin parameter entry");
                     const std::string id(plugin["id"].GetString(), plugin["id"].GetStringLength());
-                    const auto* schema = iris::builtinRenderPluginParameterSchema(id);
+                    const auto* schema = parameterCatalog.find(id);
                     if (!schema || !plugins.insert(id).second || schema->version != plugin["schemaVersion"].GetInt())
                         throw std::runtime_error("Unknown/duplicate plugin parameter schema: " + id);
                     std::vector<ModuleParameterOverride> values;
@@ -958,7 +957,7 @@ bool loadSceneDocument(
             entity.instanceCandidate = readBool(item, "instanceCandidate", entity.instanceCandidate);
             loaded.entities.push_back(std::move(entity));
         }
-        validateDocument(loaded);
+        validateDocument(loaded, parameterCatalog);
         document = std::move(loaded);
         return true;
     } catch (const std::exception& exception) {

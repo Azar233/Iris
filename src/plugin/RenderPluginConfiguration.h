@@ -8,6 +8,14 @@ struct RendererSettings;
 namespace iris {
 struct RenderPluginActivation { std::string id; bool enabled{true}; };
 using RenderPluginConfiguration=std::vector<RenderPluginActivation>;
+// Only unbound parameters live here. Legacy bindings continue to own their
+// fields, so a stored override cannot shadow an existing renderer control.
+struct RenderPluginParameterValues {
+    std::string pluginId;
+    int schemaVersion{1};
+    std::vector<ModuleParameterOverride> values;
+};
+using RenderPluginParameterStore = std::vector<RenderPluginParameterValues>;
 inline bool pluginEnabled(const RenderPluginConfiguration& config,const std::string& id){
     for(const auto& entry:config)if(entry.id==id)return entry.enabled;
     return true; // Old scenes default to every compiled capability enabled.
