@@ -114,6 +114,7 @@ PostProcessor::PostProcessor(
     blurShader_(std::make_unique<Shader>(fullscreenVertex, blurFragment)),
     compositeShader_(std::make_unique<Shader>(fullscreenVertex, compositeFragment)),
     temporalShader_(std::make_unique<Shader>(fullscreenVertex, temporalFragment)) {
+    try {
     glGenVertexArrays(1, &vertexArray_);
     glGenFramebuffers(2, framebuffers_);
     glGenTextures(2, textures_);
@@ -137,9 +138,12 @@ PostProcessor::PostProcessor(
         glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE);
     }
     glBindTexture(GL_TEXTURE_3D, 0);
+    } catch (...) { releaseResources(); throw; }
 }
 
-PostProcessor::~PostProcessor() {
+PostProcessor::~PostProcessor() { releaseResources(); }
+
+void PostProcessor::releaseResources() {
     glDeleteTextures(3, colorGradingTextures_);
     glDeleteTextures(2, motionTextures_);
     glDeleteTextures(2, historyDepthTextures_);
@@ -222,12 +226,33 @@ void PostProcessor::renderFrame(const iris::RenderPluginFrame& frame) {
     settings.objectMotionTexture = frame.texture("motion");
     settings.outlineNormalTexture = frame.texture("normals");
     settings.opaqueDepthTexture = frame.texture("opaqueDepth");
+    settings.cloudTexture = frame.texture("cloud");
+    settings.cloudDepthTexture = frame.texture("cloudDepth");
+    settings.godRaysTexture = frame.texture("rays");
+    if (settings.cloudEnabled && (!settings.cloudTexture || !settings.cloudDepthTexture))
+        throw std::invalid_argument("Postprocess cloud inputs missing");
+    if (settings.cloudEnabled) {
+        const iris::RenderTextureBinding* cloud=nullptr; const iris::RenderTextureBinding* depth=nullptr;
+        for(const auto& binding:frame.textures) {
+            if(binding.name=="cloud") cloud=&binding;
+            if(binding.name=="cloudDepth") depth=&binding;
+        }
+        if(!cloud || !depth || cloud->width!=depth->width || cloud->height!=depth->height)
+            throw std::invalid_argument("Postprocess cloud attachment extents differ");
+    }
+    if (settings.godRaysEnabled && !settings.godRaysTexture)
+        throw std::invalid_argument("Postprocess ray input missing");
     if (settings.temporalAa && settings.depthTexture == 0U)
         throw std::invalid_argument("Postprocess TAA requires depth");
     if (settings.outlineNormalAvailable && settings.outlineNormalTexture == 0U)
         throw std::invalid_argument("Postprocess normal input missing");
     lastDrawCalls_ = 1U + (settings.bloom ? 9U : 0U) + (settings.temporalAa ? 1U : 0U);
     process(frame.target, settings, frame.texture("hdr"));
+}
+void PostProcessor::prepareResources(const RendererSettings&, int width, int height) {
+    resize(width, height);
+    for (const auto* shader : {extractShader_.get(), blurShader_.get(), compositeShader_.get(), temporalShader_.get()})
+        if (!shader->sourcesCurrent()) throw std::runtime_error("Postprocess Shader inputs changed during preparation");
 }
 
 iris::RenderPluginFrameInfo PostProcessor::frameInfo() const {

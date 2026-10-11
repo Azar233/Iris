@@ -23,9 +23,9 @@ RenderPluginFrame::RenderPluginFrame(RenderTarget& targetValue, const Camera& ca
     textures.push_back({"depth",postSettings->depthTexture,TextureFormat::Depth,width,height});
     textures.push_back({"motion",postSettings->objectMotionTexture,TextureFormat::Data,width,height});
     textures.push_back({"normals",postSettings->outlineNormalTexture,TextureFormat::Data,width,height});
-    // Cloud/ray attachments may be half resolution; they are deliberately not
-    // frame-sized bindings. Their extent remains private to the owning effects.
-    // These optional inputs are declared in the logical plan, not bound here.
+    textures.push_back({"cloud",postSettings->cloudTexture,TextureFormat::HdrColor,postSettings->cloudWidth,postSettings->cloudHeight});
+    textures.push_back({"cloudDepth",postSettings->cloudDepthTexture,TextureFormat::Data,postSettings->cloudWidth,postSettings->cloudHeight});
+    textures.push_back({"rays",postSettings->godRaysTexture,TextureFormat::Data,postSettings->godRaysWidth,postSettings->godRaysHeight});
     textures.push_back({"opaqueDepth",postSettings->opaqueDepthTexture,TextureFormat::Depth,width,height});
 }
 } // namespace iris

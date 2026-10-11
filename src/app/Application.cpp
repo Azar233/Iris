@@ -1020,6 +1020,8 @@ int Application::run(const std::filesystem::path& initialModel) {
     if (bufferAcceptance || std::getenv("MYRENDERER_BUFFER_DRAWER_INTERACTION")) focusBuffersTab_ = true;
     const bool lightUiInteraction = std::getenv("MYRENDERER_LIGHT_UI_INTERACTION") != nullptr;
     bool shaderTransactionDone = false, shaderTransactionPassed = true;
+    const bool renderdocCaptureRequested=std::getenv("MYRENDERER_RENDERDOC_CAPTURE") != nullptr;
+    bool renderdocCaptureTriggered=false;
     int smokeTestFrames = std::getenv("MYRENDERER_SMOKE_TEST") == nullptr ? -1
         : (!shaderTransactionSources_.empty() ? 12 : (lightUiInteraction ? 16 : 5));
     const auto cpuPreviewSmokeDeadline = std::chrono::steady_clock::now()
@@ -1129,6 +1131,14 @@ int Application::run(const std::filesystem::path& initialModel) {
             shaderTransactionPassed = shaderTransactionAcceptance();
             shaderTransactionDone = true;
             pendingScreenshotWarmupFrames_ = pendingEditorScreenshotWarmupFrames_ = 2;
+        }
+        if(renderdocCaptureRequested && !renderdocCaptureTriggered && !pendingModelImport_.has_value()
+            && !scene_.entities().empty()) {
+            renderdocCaptureTriggered=triggerRenderDocFrameCapture();
+            if(!renderdocCaptureTriggered) {
+                std::cerr<<"RenderDoc capture requested but injection API is unavailable\n";
+                glfwSetWindowShouldClose(window_,GLFW_TRUE);
+            }
         }
         ImGui_ImplOpenGL3_NewFrame();
         ImGui_ImplGlfw_NewFrame();
@@ -1363,6 +1373,8 @@ int Application::run(const std::filesystem::path& initialModel) {
     return recoveryPassed && appendPassed && interactionsPassed && pluginsPassed && pluginParametersPassed
         && (shaderTransactionSources_.empty() || (shaderTransactionDone && shaderTransactionPassed))
         && (!std::getenv("MYRENDERER_SHADER_TRANSACTION_UI_RETRY") || shaderRetryInteractionComplete_)
+        && (!std::getenv("MYRENDERER_PLUGIN_RESOURCE_UI_TEST") || shaderRetryInteractionComplete_)
+        && (!renderdocCaptureRequested || renderdocCaptureTriggered)
         && referenceComparisonPassed && cpuPreviewSmokePassed && thumbnailAcceptancePassed
         && (!bufferAcceptance || (bufferAcceptancePhase == 3 && bufferAcceptancePassed))
         && (!std::getenv("MYRENDERER_BUFFER_DRAWER_INTERACTION") || bufferDrawerInteractionComplete_)
@@ -1944,9 +1956,23 @@ void Application::drawInspectorPanel() {
 
         const bool showPlugins=focusPluginsTab_;focusPluginsTab_=false;
         if(ImGui::BeginTabItem(EditorUi::chinese?"插件###RenderPlugins":"Plugins###RenderPlugins",nullptr,showPlugins?ImGuiTabItemFlags_SetSelected:0)){
+            std::vector<iris::PluginControlBounds> resourceControls;
+            const bool resourceUiTest=std::getenv("MYRENDERER_PLUGIN_RESOURCE_UI_TEST") != nullptr;
             if(auto change=iris::drawRenderPluginPanel(iris::builtinRenderPlugins(),iris::builtinRenderPluginCatalog(),
                 rendererSettings_.renderPlugins,rendererSettings_.enscapeCubeShaderEnabled?iris::enscapePluginId:iris::postProcessPluginId,
-                nullptr, &rendererSettings_))editorSession_.request(*change);
+                nullptr, resourceUiTest ? nullptr : &rendererSettings_, nullptr, &resourceControls))editorSession_.request(*change);
+            if (renderer_ && !renderer_->pluginResourceStatus().empty())
+                ImGui::TextWrapped("%s", renderer_->pluginResourceStatus().c_str());
+            if(resourceUiTest && shaderRetryInteractionPhase_ < 4) {
+                auto& io=ImGui::GetIO();
+                if(shaderRetryInteractionPhase_ < 2 || ImGui::IsWindowAppearing()) ++shaderRetryInteractionPhase_;
+                else if(shaderRetryInteractionPhase_==2) {
+                    for(const auto& control:resourceControls) if(control.id==iris::postProcessPluginId) {
+                        io.AddFocusEvent(true); io.AddMousePosEvent(control.x,control.y); io.AddMouseButtonEvent(0,true);
+                        ++shaderRetryInteractionPhase_; break;
+                    }
+                } else { io.AddMouseButtonEvent(0,false); ++shaderRetryInteractionPhase_; }
+            }
             ImGui::EndTabItem();
         }
 

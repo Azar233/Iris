@@ -6,11 +6,13 @@
 
 当前研发转向可扩展引擎架构，暂停场景画质扩展；计划和验证状态见 [插件架构路线](ARCHITECTURE_ROADMAP.md)。实验分支不自动合并 `main`。现有图像与场景保留作展示和迁移回归输入。
 
-2026-10-10 进度：A1、A2-A 与 A2-B1 已验收；新增 Point/Spot 灯光实体（创建、编辑、启停、保存与实时/CPU 渲染）和 G-buffer/SSAO 通道预览及 PNG 导出。当前架构主线为 A2-B2 通用参数与事务资源合同；局部灯光阴影、体积光和 Vulkan 尚未实现。
+2026-10-10 进度：A1、A2-A 与 A2-B1 已验收；新增 Point/Spot 灯光实体（创建、编辑、启停、保存与实时/CPU 渲染）和 G-buffer/SSAO 通道预览及 PNG 导出。A2 静态 OpenGL 核心扩展合同已本地验收，下一主线为 A3 用户 Shader；局部灯光阴影、体积光和 Vulkan 尚未实现。
 
-A2-B2a 已完成现有两个插件的 18 个声明式参数：在 Inspector → Plugins → Parameters 中编辑，随 Scene 保存，错误输入保留原状态；仍复用共享 RendererSettings。新增 A2-B2b1 多程序 Shader 事务重载：整批成功才发布，失败保留旧画面与历史，可在 Renderer 面板查看日志并重试。A2-B2 的独立参数存储及剩余资源合同继续推进。
+A2-B2a 已完成现有两个插件的 18 个声明式参数：在 Inspector → Plugins → Parameters 中编辑，随 Scene 保存，错误输入保留原状态；仍复用共享 RendererSettings。新增 A2-B2b1 多程序 Shader 事务重载：整批成功才发布，失败保留旧画面与历史，可在 Renderer 面板查看日志并重试。独立值存储及剩余资源合同已在后续 A2 切片收口。
 
-A2-B2b2 提供未绑定参数的独立值存储与可扩展 CPU schema 目录：新 C++ 插件可声明参数、通过共享命令编辑、随 Scene 保存并从 frame 读取，无需逐参数扩充宿主字段。现有 18 个参数保留兼容绑定；用户插件发现、资源参数和版本迁移仍待后续实现。
+A2-B2b2 提供未绑定参数的独立值存储与可扩展 CPU schema 目录：新 C++ 插件可声明参数、通过共享命令编辑、随 Scene 保存并从 frame 读取，无需逐参数扩充宿主字段。现有 18 个参数保留兼容绑定；Asset 资源参数与显式 schema 迁移已接入，用户插件发现留待 A3。
+
+A2 收口提供完整候选插件的 Shader/FBO/纹理准备与失败保留、取消/过期检查、全/半分辨率输入校验及 Plugins 页的资源重建命令。三种构建 CTest 各 32/32，真实 GPU、旧输入/Job、图像与 CPU PT/Module/云回归、带标签帧捕获和既有 GPU 性能门槛通过；源代码与 CI 交付状态见共享路线。
 
 <p align="center">A C++17 real-time and offline rendering playground.</p>
 

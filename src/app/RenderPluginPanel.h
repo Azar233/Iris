@@ -8,5 +8,6 @@ struct PluginControlBounds {std::string id;float x;float y;};
 std::optional<EditorCommand> drawRenderPluginPanel(const RenderPluginRegistry& registry,
     const std::vector<RenderPluginDescriptor>& catalog,const RenderPluginConfiguration& config,
     const std::string& required,std::vector<PluginControlBounds>* controls=nullptr,
-    const RendererSettings* settings=nullptr, std::vector<PluginControlBounds>* parameterControls=nullptr);
+    const RendererSettings* settings=nullptr, std::vector<PluginControlBounds>* parameterControls=nullptr,
+    std::vector<PluginControlBounds>* resourceControls=nullptr);
 }

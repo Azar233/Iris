@@ -34,11 +34,12 @@ A1 的 GitHub CI 已成功，当前实现基准为 `38b1995`。A2 分成两个�
 
 - **A2-A（2026-10-08 本地验收完成）**：插件 API v2、Input/Output/Transient/History 的有序逻辑 Pass 合同、借用纹理类型/尺寸/别名校验；共享后处理管线已迁到第二个可选 Target。双编译器 ON/OFF、最终 28/28、真实 GPU 资源消费/拒绝/历史/resize/重建、固定图 SHA 相同、十套渲染/Stylized/CPU PT 回归通过，默认构建恢复 ON。无 Shader 算法或基线修改。
 - **A2-B1（2026-10-08，GUI 启停切片）**：Inspector 的 Plugins 页统一显示静态插件目录、编译可用性和当前管线用途；启停通过共享 EditorCommand 校验，随 Scene 保存。当前管线必需项锁定，切换到停用能力或加载无效配置时保留当前状态；停用未使用能力在下次 Raster 帧的上下文线程释放实例，重新启用按需创建。CTest 新增真实 ImGui 输入注入与配置事务测试；GPU 命令/保存重开/释放重建由 tools/PluginGuiAcceptance.ps1 验证。
-- **A2-B2（随后，未完成）**：通用参数持久化与动态参数面板、Shader 编译失败后的事务式资源替换、完整输入资源声明。启停配置不等于通用参数平台；父项 A2-B/A2 继续未完成。复用已有 ParameterRegistry/EditorCommand，避免另建 Scene 或参数真相来源。
+- **A2-B2（2026-10-11 本地验收完成）**：通用参数持久化与动态参数面板、Shader 编译失败后的事务式资源替换、完整输入资源声明。启停配置不等于通用参数平台；复用已有 ParameterRegistry/EditorCommand，避免另建 Scene 或参数真相来源。
   - **A2-B2a（2026-10-10，验收完成）**：ParameterRegistry 成为模块与渲染插件共享 target；descriptor 声明参数元信息与绑定，Inspector → Plugins 自动生成面板。两个现有插件共 18 个参数，新 Scene 参数块 version=1，旧字段兼容读取；绑定修改同一 RendererSettings，未知/重复/类型/范围错误事务拒绝。双编译器 ON 全构建各 32/32、两插件 OFF 参数/控件测试、真实 GPU 贡献/旧字段等价/保存重开、双尺寸与 260 px 长标签、真实 ImGui Bool/Float 输入、Raster/CPU Job 无产物拒绝、十套图像回归与 CPU PT 回归通过，既有固定图 SHA 不变。源码与共享进度在当前实验分支一并交付，新提交 CI 状态单独核对。
   - **A2-B2b1（2026-10-10，验收完成）**：同一上下文线程中变更/待处理 Shader Program 整批准备与发布，编译或链接失败保留所有旧程序与历史；修复 include、创建缺失依赖或释放阻塞 owner 后可恢复。构造/候选失败采用 RAII 清理；Renderer 面板显示日志并支持真实命令重试。双编译器全构建、CTest 各 32/32、真实 GL 编译/链接失败与恢复、跨 Enscape/Postprocess 旧图保留与提交贡献、双尺寸重试 UI、GPU smoke、十套既有图像回归及两插件 GPU 生命周期专项通过。未改 Shader 算法、阈值或基线。全局批次可能被闲置插件错误阻塞；这不是整个插件实例/纹理的事务替换，未新增性能测量或发布包。
   - **A2-B2b2（2026-10-11，验收完成）**：支持未绑定参数按插件 ID/schemaVersion 独立存储，CPU schema 目录显式注册并供 Scene codec 使用；新插件无需为每个参数增加 RendererSettings 字段。共享命令、动态控件与 frame 读取沿用现有路径，绑定值仍由原字段拥有。双编译器全构建/CTest 各 32/32、两内置插件 OFF 参数与控件 2/2、三种构建的真实 GL 值消费/重开/重建/拒绝/双尺寸与 260 px 面板、旧参数 GUI/GPU/Raster+CPU Job 验收、GPU smoke/十套图像回归及两插件生命周期专项通过。测试插件不加入正式目录，没有 Shader 算法或基线修改。
-  - **后续切片**：资源参数/版本迁移、剩余资源声明及插件整体替换合同，现有 18 个兼容绑定迁移另按切片评估。CPU schema 目录需要显式注册，没有用户包发现入口；通用参数/资源平台未全部收口。父项 A2-B2/A2 保持未完成，不因此开启 A3/A4。
+  - **A2 收口（2026-10-11，本地验收完成）**：补 Asset 路径/过滤/相对保存与显式 CPU schema 迁移；全/半分辨率云/光束进入统一 frame 校验并实际消费，私有噪声与 LUT 用 Generated 声明；完整候选实例提前准备 Shader/FBO/纹理，检查资源身份和取消/过期后才替换，失败保留旧参数/owner/画面/历史，提供真实重建命令。三种构建（MSVC/GCC ON、MSVC 两插件 OFF）全构建/CTest 各 32/32、真实资源/Shader/双尺寸控件/两插件生命周期、OFF 双管线无产物拒绝及 CPU Job、十套图像/Stylized/CPU PT/Module/云/GUI+Batch 对照通过；真实 RenderDoc 1.46 帧与标签检查通过，原生固定图 SHA 不变。当前原生 CPU P50/P95 1.7346/2.5829 ms、GPU 0.660480/1.193984 ms，GPU P95 在原门槛 1.597728 ms 内；CPU 高于历史 A2-A，未做前一 HEAD 的同轮隔离对照，不归因或宣称零开销。交付提交及 CI 单独核对。
+  - **完成边界**：A2-A/B/B2 合同在静态 OpenGL 范围内收口；现有 18 个字段绑定作为兼容适配保留，没有两份值。自动物理 Render Graph、DLL ABI/热卸载、用户包发现和跨后端 RHI 不属于 A2；A3/A4 尚未开始。
 
 A2-A 只验证有序逻辑计划，不是自动执行的通用 Render Graph；私有 Bloom ping-pong/TAA 等仍由插件执行，半分辨率云与光束的资源校验仍沿用原有生产者和旧设置桥。HDR/深度/运动/法线等帧大小绑定由新接口检查并消费。关闭后处理插件意味着原生 Raster 管线不支持，需明确拒绝；Enscape 全屏场景仍可运行，不悄悄跳过色调映射。
 
@@ -56,7 +57,7 @@ A2-A 只验证有序逻辑计划，不是自动执行的通用 Render Graph；�
 
 - A0：当前成果已提交并推送，检查点 `63039f2`；远端 main 仍为 `b135c6e4e6f94ae8cf77d68491024199b37ff622`。
 - A1：最小静态插件可行性验证及 GitHub CI 通过，提交 38b1995。
-- A2-A：后处理第二插件与资源/Pass 合同本地验收及 GitHub CI 通过，提交 71c866a。A2-B1：GUI 启停与 Scene 配置切片本地验收及 GitHub CI 通过，提交 4ba850c；最终双编译器 30/30、真实 ImGui 输入、应用命令/GPU 释放重建/保存重开、Job 无产物拒绝、GPU smoke 与十套既有图像回归通过。MSVC 默认 NPR 迁移前后图 SHA 相同，跨编译器横向对比不宣称逐位一致；没有改 Shader 或基线。下一项 A2-B2，父项 A2 未完成。A3/A4/P1/M3 尚未开始。
+- A2-A：后处理第二插件与资源/Pass 合同本地验收及 GitHub CI 通过，提交 71c866a。A2-B1：GUI 启停与 Scene 配置切片本地验收及 GitHub CI 通过，提交 4ba850c；最终双编译器 30/30、真实 ImGui 输入、应用命令/GPU 释放重建/保存重开、Job 无产物拒绝、GPU smoke 与十套既有图像回归通过。MSVC 默认 NPR 迁移前后图 SHA 相同，跨编译器横向对比不宣称逐位一致；没有改 Shader 或基线。这是此前 A2-B1 的验收记录；当前 A2 已本地收口，交付 CI 另核对。下一项 A3，A3/A4/P1/M3 尚未开始。
 - 本文件用于 GitHub 上的共享计划；本地详细 `todolist.md`/`docs` 继续受 Git ignore 管理，没有强制加入历史资料。
 
 ## 附加工作与进度同步（2026-10-10）

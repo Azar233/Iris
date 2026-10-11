@@ -44,6 +44,16 @@ int main() {
         invalid=bindings;invalid.push_back(bindings[0]);
         rejects([&]{iris::validatePluginBindings(valid,invalid,320,180);});
         iris::validatePluginBindings(valid,bindings,320,180);
+        invalid=bindings;invalid.push_back({"cloud",13,iris::TextureFormat::HdrColor,160,90});
+        invalid.push_back({"cloudDepth",14,iris::TextureFormat::Data,160,90});
+        invalid.push_back({"rays",15,iris::TextureFormat::Data,160,90});
+        iris::validatePluginBindings(valid,invalid,320,180);
+        invalid.back().width=159;
+        rejects([&]{iris::validatePluginBindings(valid,invalid,320,180);});
+        invalid.back().width=160;invalid.back().format=iris::TextureFormat::HdrColor;
+        rejects([&]{iris::validatePluginBindings(valid,invalid,320,180);});
+        invalid=bindings;invalid.push_back({"undeclared",13,iris::TextureFormat::Data,320,180});
+        rejects([&]{iris::validatePluginBindings(valid,invalid,320,180);});
         std::cout<<"Plugin pass/resource contracts: PASS\n";
         return 0;
     } catch(const std::exception& error) {std::cerr<<error.what()<<'\n';return 1;}

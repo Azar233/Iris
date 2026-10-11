@@ -44,7 +44,7 @@ void writeMatrix(Writer& writer, const glm::mat4& value) {
 }
 
 void writeRendererSettings(Writer& writer, const RendererSettings& settings,
-    const iris::RenderPluginParameterCatalog& parameters) {
+    const iris::RenderPluginParameterCatalog& parameters, const std::filesystem::path& scenePath) {
     writer.StartObject();
     std::string pluginError;
     if(!iris::validPluginConfigurationShape(settings.renderPlugins,pluginError))throw std::runtime_error(pluginError);
@@ -70,7 +70,10 @@ void writeRendererSettings(Writer& writer, const RendererSettings& settings,
                 case ModuleParameterType::Float: writer.Double(entry.value.number); break;
                 case ModuleParameterType::Color: writeVec3(writer, entry.value.color); break;
                 case ModuleParameterType::Enum: writer.String(entry.value.text.c_str()); break;
-                case ModuleParameterType::Asset: throw std::runtime_error("Plugin resource parameters not supported");
+                case ModuleParameterType::Asset: {
+                    const auto resource = makeSceneRelativeResource(entry.value.text, std::filesystem::absolute(scenePath));
+                    writer.String(resource.c_str()); break;
+                }
             }
             writer.EndObject();
         }
@@ -680,7 +683,7 @@ bool saveSceneDocument(
             writer.Key("farPlane"); writer.Double(document.camera.farPlane);
         }
         writer.EndObject();
-        writer.Key("renderer"); writeRendererSettings(writer, document.renderer, parameterCatalog);
+        writer.Key("renderer"); writeRendererSettings(writer, document.renderer, parameterCatalog, path);
         writer.Key("playback"); writer.StartObject();
         writer.Key("animationEnabled"); writer.Bool(document.playback.animationEnabled);
         writer.Key("animationPlaying"); writer.Bool(document.playback.animationPlaying);
@@ -855,7 +858,7 @@ bool loadSceneDocument(
                         throw std::runtime_error("Invalid plugin parameter entry");
                     const std::string id(plugin["id"].GetString(), plugin["id"].GetStringLength());
                     const auto* schema = parameterCatalog.find(id);
-                    if (!schema || !plugins.insert(id).second || schema->version != plugin["schemaVersion"].GetInt())
+                    if (!schema || !plugins.insert(id).second)
                         throw std::runtime_error("Unknown/duplicate plugin parameter schema: " + id);
                     std::vector<ModuleParameterOverride> values;
                     for (const auto& item : plugin["values"].GetArray()) {
@@ -881,20 +884,21 @@ bool loadSceneDocument(
                             case ModuleParameterType::Enum: {
                                 if (!value.IsString()) throw std::runtime_error("Plugin Enum value required");
                                 entry.value.text = std::string(value.GetString(), value.GetStringLength());
-                                const auto* descriptor = schema->metadata.descriptor(entry.id);
-                                if (!descriptor) throw std::runtime_error("Unknown plugin Enum parameter");
-                                const auto label = std::find(descriptor->enumLabels.begin(), descriptor->enumLabels.end(), entry.value.text);
-                                if (label == descriptor->enumLabels.end()) throw std::runtime_error("Unknown plugin Enum label");
-                                entry.value.integer = static_cast<int>(label - descriptor->enumLabels.begin());
                                 break;
                             }
+                            case ModuleParameterType::Asset:
+                                if (!value.IsString()) throw std::runtime_error("Plugin Asset path required");
+                                entry.value.text = std::string(value.GetString(), value.GetStringLength());
+                                break;
                             default: throw std::runtime_error("Unsupported plugin parameter type");
                         }
                         values.push_back(std::move(entry));
                     }
                     bool history = false;
                     std::string parameterError;
-                    if (!schema->apply(loaded.renderer, values, history, parameterError)) throw std::runtime_error(parameterError);
+                    if (!schema->importValues(loaded.renderer, plugin["schemaVersion"].GetInt(), values, history, parameterError,
+                            std::filesystem::absolute(path).parent_path()))
+                        throw std::runtime_error(parameterError);
                 }
             }
         }

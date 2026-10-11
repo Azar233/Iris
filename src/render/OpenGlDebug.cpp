@@ -1,8 +1,36 @@
 #include "render/OpenGlDebug.h"
 
 #include <iostream>
+#include <cstring>
 
 #include <glad/gl.h>
+#ifdef _WIN32
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#include "third_party/renderdoc_app.h"
+#endif
+
+bool triggerRenderDocFrameCapture() {
+#ifdef _WIN32
+    const auto module = GetModuleHandleW(L"renderdoc.dll");
+    if (!module) return false;
+    const auto procedure = GetProcAddress(module, "RENDERDOC_GetAPI");
+    pRENDERDOC_GetAPI getApi = nullptr;
+    static_assert(sizeof(getApi) == sizeof(procedure), "Windows procedure pointer ABI mismatch");
+    std::memcpy(&getApi, &procedure, sizeof(getApi));
+    RENDERDOC_API_1_0_0* api = nullptr;
+    if (!getApi || getApi(eRENDERDOC_API_Version_1_0_0, reinterpret_cast<void**>(&api)) != 1 || !api) return false;
+    api->TriggerCapture();
+    return true;
+#else
+    return false;
+#endif
+}
 
 #ifndef NDEBUG
 namespace {

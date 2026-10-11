@@ -2,6 +2,7 @@
 
 #include <functional>
 #include <map>
+#include <filesystem>
 #include <string>
 #include <vector>
 #include "module/ParameterRegistry.h"
@@ -25,6 +26,9 @@ struct RenderPluginParameterSchema {
     ParameterRegistry metadata;
     std::vector<RenderPluginParameterBinding> bindings;
     bool storedValuesAffectHistory{true};
+    // Explicit CPU migration to this schema's current version. Input values are
+    // staged; invalid migrated output is rejected by the normal strict validator.
+    std::function<bool(int, std::vector<ModuleParameterOverride>&, std::string&)> migrate;
 
     void validate() const;
 
@@ -33,6 +37,9 @@ struct RenderPluginParameterSchema {
     // satisfy the declared range. All writes commit together or leave settings intact.
     bool apply(RendererSettings& settings, const std::vector<ModuleParameterOverride>& values,
         bool& affectsHistory, std::string& error) const;
+    bool importValues(RendererSettings& settings, int sourceVersion,
+        const std::vector<ModuleParameterOverride>& values, bool& affectsHistory, std::string& error,
+        const std::filesystem::path& resourceRoot = {}) const;
 };
 
 // CPU catalog owns schemas independently of compiled GPU factories. Registered

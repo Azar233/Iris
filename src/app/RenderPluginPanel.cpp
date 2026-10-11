@@ -1,13 +1,16 @@
 #include "app/RenderPluginPanel.h"
 #include "app/EditorUi.h"
+#include <algorithm>
 namespace iris {
 std::optional<EditorCommand> drawRenderPluginPanel(const RenderPluginRegistry& registry,
     const std::vector<RenderPluginDescriptor>& catalog,const RenderPluginConfiguration& config,
     const std::string& required,std::vector<PluginControlBounds>* controls,
-    const RendererSettings* settings, std::vector<PluginControlBounds>* parameterControls){
+    const RendererSettings* settings, std::vector<PluginControlBounds>* parameterControls,
+    std::vector<PluginControlBounds>* resourceControls){
     std::optional<EditorCommand> change;
     if(controls)controls->clear();
     if(parameterControls)parameterControls->clear();
+    if(resourceControls)resourceControls->clear();
     ImGui::TextWrapped("%s",EditorUi::chinese?"当前场景插件配置，随场景保存。":"Plugin configuration is saved with this scene.");
     for(const auto& descriptor:catalog){
         ImGui::PushID(descriptor.id.c_str());ImGui::Separator();
@@ -58,7 +61,13 @@ std::optional<EditorCommand> drawRenderPluginPanel(const RenderPluginRegistry& r
                             if (changed) value.text = metadata->enumLabels[static_cast<std::size_t>(value.integer)];
                             break;
                         }
-                        case ModuleParameterType::Asset: ImGui::TextDisabled("Resource parameters unavailable"); break;
+                        case ModuleParameterType::Asset: {
+                            std::vector<char> path(4097, 0);
+                            std::copy_n(value.text.data(), std::min(value.text.size(), path.size()-1), path.data());
+                            changed = ImGui::InputText(widgetId, path.data(), path.size(), ImGuiInputTextFlags_EnterReturnsTrue);
+                            if (changed) value.text = path.data();
+                            break;
+                        }
                     }
                     if (parameterControls) {
                         const auto a = ImGui::GetItemRectMin(), b = ImGui::GetItemRectMax();
@@ -81,6 +90,16 @@ std::optional<EditorCommand> drawRenderPluginPanel(const RenderPluginRegistry& r
             }
             ImGui::EndDisabled();
         }
+        ImGui::BeginDisabled(!available || !enabled);
+        if (ImGui::Button(EditorUi::chinese ? "重建插件资源" : "Rebuild plugin resources")) {
+            change = EditorCommand{EditorCommandType::RebuildRenderPluginResources};
+            change->text = descriptor.id;
+        }
+        if (resourceControls) {
+            const auto a=ImGui::GetItemRectMin(), b=ImGui::GetItemRectMax();
+            resourceControls->push_back({descriptor.id,(a.x+b.x)*0.5f,(a.y+b.y)*0.5f});
+        }
+        ImGui::EndDisabled();
         ImGui::PopID();
     }
     return change;

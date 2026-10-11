@@ -1693,8 +1693,12 @@ deferredLightingShader_->setVec3("uCameraPosition", camera.position());
         postSettings.cloudEnabled = cloudPassEnabled && cloudLayer_->lastFrameActive();
         postSettings.cloudTexture = postSettings.cloudEnabled ? cloudLayer_->radianceTexture() : 0U;
         postSettings.cloudDepthTexture = postSettings.cloudEnabled ? cloudLayer_->depthTexture() : 0U;
+        postSettings.cloudWidth = postSettings.cloudEnabled ? cloudLayer_->bufferWidth() : 0;
+        postSettings.cloudHeight = postSettings.cloudEnabled ? cloudLayer_->bufferHeight() : 0;
         postSettings.godRaysEnabled = godRaysActive;
         postSettings.godRaysTexture = godRaysActive ? godRays_->texture() : 0U;
+        postSettings.godRaysWidth = godRaysActive ? godRays_->bufferWidth() : 0;
+        postSettings.godRaysHeight = godRaysActive ? godRays_->bufferHeight() : 0;
         postSettings.godRaysColor = lightColor * diffuseStrength;
         if (!postProcessor_) postProcessor_ = iris::builtinRenderPlugins().create(
             iris::postProcessPluginId, {iris::openGlFullscreenService}, shaderDirectory_);
@@ -1811,6 +1815,26 @@ void Renderer::invalidateTemporalHistory() {
     temporalFrameIndex_ = 0U;
     cloudHistoryInvalidated_ = true;
     if (enscapeCubeRenderer_) enscapeCubeRenderer_->invalidateHistory();
+}
+
+bool Renderer::rebuildPluginResources(const std::string& id, const RendererSettings& settings) {
+    try {
+        if (!iris::pluginEnabled(settings.renderPlugins, id)) throw std::runtime_error("Plugin disabled: " + id);
+        auto* owner = id == iris::enscapePluginId ? &enscapeCubeRenderer_ : id == iris::postProcessPluginId ? &postProcessor_ : nullptr;
+        if (!owner) throw std::runtime_error("Unknown plugin: " + id);
+        auto candidate = iris::builtinRenderPlugins().prepareReplacement(id, {iris::openGlFullscreenService}, shaderDirectory_,
+            settings, std::max(renderTarget_->width(), 1), std::max(renderTarget_->height(), 1));
+        auto success = "Plugin resources committed: " + id;
+        owner->swap(candidate);
+        stateCache_.invalidate();
+        invalidateTemporalHistory();
+        pluginResourceStatus_.swap(success);
+        return true;
+    } catch (const std::exception& error) {
+        stateCache_.invalidate();
+        pluginResourceStatus_ = "Plugin resources rejected; prior instance retained: " + std::string(error.what());
+        return false;
+    }
 }
 
 bool Renderer::reloadShaderResources(bool retryPending) {

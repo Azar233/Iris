@@ -33,6 +33,10 @@ public:
     const RenderPluginDescriptor* descriptor(const std::string& id) const;
     std::unique_ptr<RenderPlugin> create(const std::string& id,
         const std::vector<std::string>& services, const std::filesystem::path& shaderDirectory) const;
+    std::unique_ptr<RenderPlugin> prepareReplacement(const std::string& id,
+        const std::vector<std::string>& services, const std::filesystem::path& shaderDirectory,
+        const RendererSettings& settings, int width, int height,
+        const std::function<bool()>& stillCurrent = {}) const;
     std::size_t size() const { return entries_.size(); }
 
 private:

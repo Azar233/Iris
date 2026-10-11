@@ -27,6 +27,10 @@ int main() {
         registry.add({iris::enscapePluginId, iris::renderPluginApiVersion, {}, "test", {}, ocean}, factory);
         registry.add({iris::postProcessPluginId, iris::renderPluginApiVersion, {}, "test", {}, post}, factory);
         RendererSettings settings;
+        bool noContextRejected=false;
+        try { registry.prepareReplacement(iris::postProcessPluginId,{}, {},settings,320,180); }
+        catch(const std::runtime_error& exception) { noContextRejected=std::string(exception.what()).find("OpenGL context")!=std::string::npos; }
+        require(noContextRejected,"CPU caller entered GPU resource preparation without a context");
         bool history = false; std::string error;
         require(iris::setPluginParameter(registry, settings, iris::enscapePluginId, number("waveHeight", 0.9f), history, error)
             && history && settings.enscapeCube.waveHeight == 0.9f, "Ocean edit did not update shared settings/history");
@@ -196,6 +200,55 @@ int main() {
         mixedValues[0].value.boolean = true;
         require(!mixed.apply(independent, mixedValues, history, error)
             && !mixed.capture(independent)[0].value.boolean && independent.exposure == 1.2f, "Mixed callback failure partly stored values");
+        auto resourceSchema=storedPluginSchema("test.assets"); resourceSchema.version=2;
+        resourceSchema.metadata.registerAsset("texture","Texture",".rgb;.PNG");
+        resourceSchema.migrate=[](int version,std::vector<ModuleParameterOverride>& values,std::string&) {
+            if(version!=1) return false;
+            for(auto& value:values) {
+                if(value.id=="strength") value.id="gain";
+                if(value.id=="preset" && value.value.text=="legacy") value.value.text="normal";
+            }
+            return true;
+        };
+        catalog.add(resourceSchema);
+        const auto* resources=catalog.find("test.assets");
+        RendererSettings assetSettings;
+        ModuleParameterOverride asset; asset.id="texture"; asset.value.type=ModuleParameterType::Asset;
+        const auto resourcePath=directory/"resource with spaces.rgb";
+        { std::ofstream file(resourcePath); file<<"0.2 0.3 0.4"; }
+        asset.value.text=resourcePath.generic_u8string();
+        require(resources->apply(assetSettings,{asset},history,error),"Asset path rejected");
+        SceneDocument assetScene; assetScene.renderer=assetSettings;
+        const auto assetScenePath=directory/"asset.myscene";
+        require(saveSceneDocument(assetScenePath,assetScene,error,catalog),"Asset save failed");
+        require(bytes(assetScenePath).find("resource with spaces.rgb")!=std::string::npos,"Asset reference not saved");
+        require(loadSceneDocument(assetScenePath,assetScene,error,catalog),"Asset load failed");
+        require(resources->capture(assetScene.renderer).back().value.text==std::filesystem::absolute(resourcePath).generic_u8string(),
+            "Relative Asset did not resolve at Scene directory");
+        const auto originalDirectory=std::filesystem::current_path();
+        std::filesystem::current_path(directory);
+        const bool relativeSaved=saveSceneDocument("relative-assets.myscene",assetScene,error,catalog);
+        std::filesystem::current_path(originalDirectory);
+        require(relativeSaved && bytes(directory/"relative-assets.myscene").find("\"value\": \"resource with spaces.rgb\"")!=std::string::npos,
+            "Relative Scene filename produced an absolute Asset reference");
+        for(const auto& bad : std::vector<std::string>{"invalid.exe","https://example.org/image.rgb",std::string("a\0.rgb",6)}) {
+            asset.value.text=bad;
+            require(!resources->apply(assetSettings,{asset},history,error) && !history,"Invalid Asset accepted");
+        }
+        auto old=number("strength",1.6f);
+        ModuleParameterOverride oldEnum; oldEnum.id="preset"; oldEnum.value.type=ModuleParameterType::Enum; oldEnum.value.text="legacy";
+        require(resources->importValues(assetSettings,1,{old,oldEnum},history,error)
+            && resources->capture(assetSettings)[1].value.number==1.6f,"Explicit schema migration failed");
+        require(!resources->importValues(assetSettings,3,{old},history,error)
+            && resources->capture(assetSettings)[1].value.number==1.6f,"Future schema mutated state");
+        auto badMigration=resourceSchema;
+        badMigration.migrate=[](int,std::vector<ModuleParameterOverride>& values,std::string&) { values={number("gain",9)}; return true; };
+        require(!badMigration.importValues(assetSettings,1,{old},history,error)
+            && resources->capture(assetSettings)[1].value.number==1.6f,"Invalid migrated values partly published");
+        { std::ofstream file(directory/"migration.myscene"); file<<prefix
+            <<"{\"version\":1,\"entries\":[{\"id\":\"test.assets\",\"schemaVersion\":1,\"values\":[{\"id\":\"strength\",\"type\":2,\"value\":1.3},{\"id\":\"preset\",\"type\":4,\"value\":\"legacy\"}]}]}}}"; }
+        require(loadSceneDocument(directory/"migration.myscene",assetScene,error,catalog)
+            && resources->capture(assetScene.renderer)[1].value.number==1.3f,"Scene did not migrate old schema");
         std::cout << "Plugin parameters: shared values, history, edit/load transactions and roundtrip PASS\n";
     } catch (const std::exception& error) { std::cerr << error.what() << '\n'; return 1; }
 }

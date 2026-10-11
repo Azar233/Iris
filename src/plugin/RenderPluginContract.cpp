@@ -10,7 +10,7 @@ void validatePluginContract(const RenderPluginContract& contract) {
     for (const auto& resource : contract.resources) {
         if (resource.name.empty() || !resources.emplace(resource.name, resource).second)
             throw std::invalid_argument("Duplicate/empty plugin resource");
-        if (resource.scope == ResourceScope::Input) ready.insert(resource.name);
+        if (resource.scope == ResourceScope::Input || resource.scope == ResourceScope::Generated) ready.insert(resource.name);
     }
     for (const auto& pass : contract.passes) {
         if (pass.name.empty() || !passNames.insert(pass.name).second)
@@ -29,13 +29,14 @@ void validatePluginContract(const RenderPluginContract& contract) {
         for (const auto& write : pass.writes) {
             const auto resource = resources.find(write);
             if (resource == resources.end() || resource->second.scope == ResourceScope::Input
+                || resource->second.scope == ResourceScope::Generated
                 || !written.insert(write).second)
                 throw std::invalid_argument("Invalid/duplicate plugin writer: " + write);
             ready.insert(write);
         }
     }
     for (const auto& resource : contract.resources)
-        if (resource.scope != ResourceScope::Input && !written.count(resource.name))
+        if (resource.scope != ResourceScope::Input && resource.scope != ResourceScope::Generated && !written.count(resource.name))
             throw std::invalid_argument("Unproduced plugin resource: " + resource.name);
 }
 
@@ -46,6 +47,12 @@ void validatePluginBindings(const RenderPluginContract& contract,
     for (const auto& binding : bindings)
         if (!bound.emplace(binding.name, binding).second)
             throw std::invalid_argument("Duplicate plugin texture binding: " + binding.name);
+    for (const auto& binding : bindings) {
+        bool declared = false;
+        for (const auto& resource : contract.resources)
+            if (resource.name == binding.name && (resource.scope == ResourceScope::Input || resource.scope == ResourceScope::Output)) declared = true;
+        if (!declared) throw std::invalid_argument("Undeclared plugin texture binding: " + binding.name);
+    }
     std::set<unsigned int> inputTextures;
     for (const auto& resource : contract.resources) {
         if (resource.scope != ResourceScope::Input && resource.scope != ResourceScope::Output) continue;
@@ -54,8 +61,10 @@ void validatePluginBindings(const RenderPluginContract& contract,
             if (resource.required) throw std::invalid_argument("Missing plugin texture: " + resource.name);
             continue;
         }
-        if (binding->second.format != resource.format
-            || binding->second.width != width || binding->second.height != height)
+        const bool fullSize = binding->second.width == width && binding->second.height == height;
+        const bool halfSize = resource.allowsHalfResolution && binding->second.width == (width+1)/2
+            && binding->second.height == (height+1)/2;
+        if (binding->second.format != resource.format || (!fullSize && !halfSize))
             throw std::invalid_argument("Plugin texture format/size mismatch: " + resource.name);
         if (resource.scope == ResourceScope::Input) inputTextures.insert(binding->second.texture);
     }
@@ -69,12 +78,14 @@ void validatePluginBindings(const RenderPluginContract& contract,
 
 RenderPluginContract enscapeContract() {
     return {PluginStage::FullscreenScene,
-        {{"ocean",TextureFormat::HdrColor,ResourceScope::Transient,true},
+        {{"weather",TextureFormat::Data,ResourceScope::Generated,true},
+         {"noiseVolume",TextureFormat::Data,ResourceScope::Generated,true},
+         {"ocean",TextureFormat::HdrColor,ResourceScope::Transient,true},
          {"bloom",TextureFormat::HdrColor,ResourceScope::Transient,true},
          {"history",TextureFormat::HdrColor,ResourceScope::History,true},
          {"taa",TextureFormat::HdrColor,ResourceScope::Transient,true},
          {"display",TextureFormat::DisplayColor,ResourceScope::Output,true}},
-        {{"ocean",{}, {"ocean"},{}}, {"bloom",{"ocean"},{"bloom"},{}},
+        {{"ocean",{"weather","noiseVolume"}, {"ocean"},{}}, {"bloom",{"ocean"},{"bloom"},{}},
          {"taa",{"bloom"},{"taa","history"},{"history"}},
          {"image",{"taa"},{"display"},{}}}};
 }
@@ -84,16 +95,17 @@ RenderPluginContract postProcessContract() {
          {"depth",TextureFormat::Depth,ResourceScope::Input,false},
          {"motion",TextureFormat::Data,ResourceScope::Input,false},
          {"normals",TextureFormat::Data,ResourceScope::Input,false},
-         {"cloud",TextureFormat::HdrColor,ResourceScope::Input,false},
-         {"cloudDepth",TextureFormat::Data,ResourceScope::Input,false},
-         {"rays",TextureFormat::HdrColor,ResourceScope::Input,false},
+         {"cloud",TextureFormat::HdrColor,ResourceScope::Input,false,true},
+         {"cloudDepth",TextureFormat::Data,ResourceScope::Input,false,true},
+         {"rays",TextureFormat::Data,ResourceScope::Input,false,true},
          {"opaqueDepth",TextureFormat::Depth,ResourceScope::Input,false},
+         {"gradingLut",TextureFormat::Data,ResourceScope::Generated,true},
          {"history",TextureFormat::HdrColor,ResourceScope::History,true},
          {"resolved",TextureFormat::HdrColor,ResourceScope::Transient,true},
          {"bloom",TextureFormat::HdrColor,ResourceScope::Transient,true},
          {"display",TextureFormat::DisplayColor,ResourceScope::Output,true}},
         {{"temporal",{"hdr","depth","motion"},{"resolved","history"},{"history"}},
          {"bloom",{"resolved"},{"bloom"},{}},
-         {"composite",{"resolved","bloom","depth","normals","cloud","cloudDepth","rays","opaqueDepth"},{"display"},{}}}};
+         {"composite",{"resolved","bloom","depth","normals","cloud","cloudDepth","rays","opaqueDepth","gradingLut"},{"display"},{}}}};
 }
 } // namespace iris

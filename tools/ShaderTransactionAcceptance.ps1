@@ -21,12 +21,14 @@ try {
     foreach($size in @(@(1440,900),@(1100,680))) {
         $env:MYRENDERER_EDITOR_WINDOW_WIDTH=[string]$size[0]
         $env:MYRENDERER_EDITOR_WINDOW_HEIGHT=[string]$size[1]
-        foreach($mode in @('failure','recovery')) {
+        foreach($mode in @('failure','recovery','resource')) {
             $case=Join-Path $out "$mode-$($size[0])x$($size[1])"
             $env:MYRENDERER_SHADER_TRANSACTION_DIRECTORY=$case
             $env:MYRENDERER_EDITOR_SCREENSHOT=Join-Path $case 'editor.png'
             if($mode -eq 'failure'){$env:MYRENDERER_SHADER_TRANSACTION_UI_RETRY='1'}
             else{Remove-Item Env:MYRENDERER_SHADER_TRANSACTION_UI_RETRY -ErrorAction SilentlyContinue}
+            if($mode -eq 'resource'){$env:MYRENDERER_PLUGIN_RESOURCE_UI_TEST='1'}
+            else{Remove-Item Env:MYRENDERER_PLUGIN_RESOURCE_UI_TEST -ErrorAction SilentlyContinue}
             $log=Join-Path $out "$mode-$($size[0]).log"
             & $exe assets/models/cube.obj *> $log
             if($LASTEXITCODE -ne 0 -or -not(Select-String -LiteralPath $log -SimpleMatch 'recovery / restoration: PASS' -Quiet)){
@@ -35,6 +37,7 @@ try {
             if($mode -eq 'failure' -and -not(Select-String -LiteralPath $log -SimpleMatch 'retry UI interaction: PASS' -Quiet)){
                 throw 'Actual retry button interaction did not complete'
             }
+            if($mode -eq 'resource' -and -not(Select-String -LiteralPath $log -SimpleMatch 'Plugin resource retry UI interaction: PASS' -Quiet)){throw 'Actual plugin resource retry did not complete'}
             foreach($file in @('before.png','retained.png','recovered.png','editor.png')){
                 if(-not(Test-Path (Join-Path $case $file))){throw "Missing Shader transaction evidence: $file"}
             }

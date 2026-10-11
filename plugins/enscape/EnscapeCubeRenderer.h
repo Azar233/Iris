@@ -26,6 +26,7 @@ public:
         const RendererSettings& settings, int width, int height, float timeSeconds,
         unsigned int fullscreenVertexArray);
     void renderFrame(const iris::RenderPluginFrame& frame) override;
+    void prepareResources(const RendererSettings&, int width, int height) override;
     iris::RenderPluginFrameInfo frameInfo() const override;
     void invalidateHistory() override { historyValid_ = false; }
     bool hasGpuFrameTime() const { return gpuTimeValid_; }
@@ -33,6 +34,7 @@ public:
     double gpuFrameMilliseconds() const { return gpuTimeMilliseconds_; }
 
 private:
+    void releaseResources();
     void resize(int width, int height);
     void makeNoiseTextures();
     void draw(Shader& shader, unsigned int framebuffer, int width, int height,

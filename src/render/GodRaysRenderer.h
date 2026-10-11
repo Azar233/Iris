@@ -19,6 +19,8 @@ public:
         const CloudShadowRenderer& shadow, unsigned int cloudTexture, unsigned int depthTexture,
         int width, int height);
     unsigned int texture() const { return texture_; }
+    int bufferWidth() const { return width_; }
+    int bufferHeight() const { return height_; }
     std::size_t estimatedBytes() const { return static_cast<std::size_t>(width_) * height_ * 2U; }
 private:
     std::unique_ptr<Shader> shader_;

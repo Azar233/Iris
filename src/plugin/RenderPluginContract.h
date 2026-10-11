@@ -1,16 +1,22 @@
 #pragma once
 #include <string>
 #include <vector>
+#include <utility>
 
 namespace iris {
 enum class PluginStage { FullscreenScene, PostProcess };
 enum class TextureFormat { HdrColor, DisplayColor, Depth, Data };
-enum class ResourceScope { Input, Output, Transient, History };
+enum class ResourceScope { Input, Output, Transient, History, Generated };
 struct PluginResource {
+    PluginResource(std::string resourceName, TextureFormat resourceFormat, ResourceScope resourceScope,
+        bool isRequired = true, bool scaled = false)
+        : name(std::move(resourceName)), format(resourceFormat), scope(resourceScope), required(isRequired),
+          allowsHalfResolution(scaled) {}
     std::string name;
     TextureFormat format;
     ResourceScope scope;
     bool required{true};
+    bool allowsHalfResolution{false}; // ceil(frame/2), or full resolution.
 };
 struct PluginPass {
     std::string name;

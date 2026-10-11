@@ -7,6 +7,8 @@
 #include <set>
 #include <limits>
 #include <stdexcept>
+#include <filesystem>
+#include <sstream>
 
 namespace iris {
 namespace {
@@ -25,10 +27,50 @@ bool validValue(const ModuleParameterDescriptor& descriptor, const ModuleParamet
         case ModuleParameterType::Enum: return value.integer >= 0
             && static_cast<std::size_t>(value.integer) < descriptor.enumLabels.size()
             && (value.text.empty() || value.text == descriptor.enumLabels[static_cast<std::size_t>(value.integer)]);
-        case ModuleParameterType::Asset: return false;
+        case ModuleParameterType::Asset: {
+            if (value.text.size() > 4096U || value.text.find('\0') != std::string::npos) return false;
+            if (value.text.empty()) return true; // Optional resource uses the plugin default.
+            if (value.text.rfind("builtin:", 0) == 0 || value.text.find("://") != std::string::npos) return false;
+            auto extension = std::filesystem::u8path(value.text).extension().u8string();
+            std::transform(extension.begin(), extension.end(), extension.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+            std::istringstream filters(descriptor.assetExtensionFilter);
+            std::string filter;
+            while (std::getline(filters, filter, ';')) {
+                std::transform(filter.begin(), filter.end(), filter.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+                if (filter == extension) return true;
+            }
+            return false;
+        }
     }
     return false;
 }
+} // namespace
+bool RenderPluginParameterSchema::importValues(RendererSettings& settings, int sourceVersion,
+    const std::vector<ModuleParameterOverride>& values, bool& affectsHistory, std::string& error,
+    const std::filesystem::path& resourceRoot) const {
+    affectsHistory = false;
+    try {
+        auto staged = values;
+        if (sourceVersion < 1 || sourceVersion > version || staged.size() > 64U)
+            throw std::runtime_error("Unsupported plugin schema version: " + pluginId);
+        if (sourceVersion != version && (!migrate || !migrate(sourceVersion, staged, error)))
+            throw std::runtime_error(error.empty() ? "No plugin schema migration: " + pluginId : error);
+        for (auto& entry : staged) if (entry.value.type == ModuleParameterType::Enum) {
+            const auto* descriptor = metadata.descriptor(entry.id);
+            if (!descriptor) throw std::runtime_error("Unknown plugin Enum parameter: " + entry.id);
+            const auto label = std::find(descriptor->enumLabels.begin(), descriptor->enumLabels.end(), entry.value.text);
+            if (label == descriptor->enumLabels.end()) throw std::runtime_error("Unknown plugin Enum label: " + entry.value.text);
+            entry.value.integer = static_cast<int>(label - descriptor->enumLabels.begin());
+        }
+        for (auto& entry : staged) if (entry.value.type == ModuleParameterType::Asset && !entry.value.text.empty()) {
+            const auto* descriptor = metadata.descriptor(entry.id);
+            if (!descriptor || !validValue(*descriptor, entry.value)) throw std::runtime_error("Invalid plugin Asset: " + entry.id);
+            auto path = std::filesystem::u8path(entry.value.text);
+            if (path.is_relative() && !resourceRoot.empty()) path = resourceRoot / path;
+            entry.value.text = std::filesystem::absolute(path).lexically_normal().generic_u8string();
+        }
+        return apply(settings, staged, affectsHistory, error);
+    } catch (const std::exception& exception) { error = exception.what(); return false; }
 }
 void RenderPluginParameterSchema::validate() const {
     std::string error;
@@ -49,6 +91,8 @@ void RenderPluginParameterSchema::validate() const {
                 if (label.empty() || !labels.insert(label).second)
                     throw std::invalid_argument("Invalid plugin Enum labels: " + descriptor.id);
         }
+        if (descriptor.type == ModuleParameterType::Asset && descriptor.assetExtensionFilter.empty())
+            throw std::invalid_argument("Plugin Asset requires an extension filter: " + descriptor.id);
     }
     ids.clear();
     for (const auto& binding : bindings)
@@ -99,6 +143,11 @@ bool RenderPluginParameterSchema::apply(RendererSettings& settings,
             if (!descriptor || !ids.insert(entry.id).second || !validValue(*descriptor, entry.value))
                 throw std::runtime_error("Unknown, duplicate, mistyped or out-of-range plugin parameter: " + pluginId + "/" + entry.id);
             if (!validated.setValue(entry.id, entry.value, error)) throw std::runtime_error(error);
+            if (entry.value.type == ModuleParameterType::Asset && !entry.value.text.empty()) {
+                auto normalized = entry.value;
+                normalized.text = std::filesystem::absolute(std::filesystem::u8path(entry.value.text)).lexically_normal().generic_u8string();
+                if (!validated.setValue(entry.id, normalized, error)) throw std::runtime_error(error);
+            }
             const auto* binding = bindingFor(*this, entry.id);
             history = history || (binding ? binding->affectsHistory : storedValuesAffectHistory);
         }

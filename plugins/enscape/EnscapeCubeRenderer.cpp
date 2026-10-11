@@ -44,6 +44,7 @@ float periodicNoise(float x, float y, int period) {
 } // namespace
 
 EnscapeCubeRenderer::EnscapeCubeRenderer(const std::filesystem::path& shaderDirectory) {
+    try {
     const auto directory = shaderDirectory / "third_party" / "enscape_cube";
     const auto vertex = shaderDirectory / "fullscreen.vert";
     shaders_[0] = std::make_unique<Shader>(vertex, directory / "pass_a.frag");
@@ -52,12 +53,18 @@ EnscapeCubeRenderer::EnscapeCubeRenderer(const std::filesystem::path& shaderDire
     shaders_[3] = std::make_unique<Shader>(vertex, directory / "pass_image.frag");
     makeNoiseTextures();
     glGenQueries(static_cast<GLsizei>(timingQueries_.size()), timingQueries_.data());
+    } catch (...) { releaseResources(); throw; }
 }
 
 void EnscapeCubeRenderer::renderFrame(const iris::RenderPluginFrame& frame) {
     iris::validatePluginBindings(iris::enscapeContract(), frame.textures, frame.width, frame.height);
     render(frame.target, frame.camera, frame.settings, frame.width, frame.height,
         frame.timeSeconds, frame.fullscreenVertexArray);
+}
+void EnscapeCubeRenderer::prepareResources(const RendererSettings&, int width, int height) {
+    resize(width, height);
+    for (const auto& shader : shaders_)
+        if (!shader->sourcesCurrent()) throw std::runtime_error("Enscape Shader inputs changed during preparation");
 }
 
 iris::RenderPluginFrameInfo EnscapeCubeRenderer::frameInfo() const {
@@ -66,7 +73,9 @@ iris::RenderPluginFrameInfo EnscapeCubeRenderer::frameInfo() const {
         4U, gpuTimeValid_, gpuTimeUpdated_, gpuTimeMilliseconds_};
 }
 
-EnscapeCubeRenderer::~EnscapeCubeRenderer() {
+EnscapeCubeRenderer::~EnscapeCubeRenderer() { releaseResources(); }
+
+void EnscapeCubeRenderer::releaseResources() {
     glDeleteQueries(static_cast<GLsizei>(timingQueries_.size()), timingQueries_.data());
     glDeleteFramebuffers(static_cast<GLsizei>(framebuffers_.size()), framebuffers_.data());
     glDeleteTextures(static_cast<GLsizei>(textures_.size()), textures_.data());

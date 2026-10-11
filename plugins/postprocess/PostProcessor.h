@@ -24,11 +24,13 @@ public:
 
     void process(RenderTarget& target, const PostProcessSettings& settings, unsigned int hdrTexture = 0U);
     void renderFrame(const iris::RenderPluginFrame& frame) override;
+    void prepareResources(const RendererSettings&, int width, int height) override;
     void invalidateHistory() override { historyValid_ = false; }
     iris::RenderPluginFrameInfo frameInfo() const override;
     std::size_t estimatedBytes() const override;
 
 private:
+    void releaseResources();
     std::size_t lastDrawCalls_{0};
     void resize(int width, int height);
     void drawFullscreen() const;

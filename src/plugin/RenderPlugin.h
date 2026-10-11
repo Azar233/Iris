@@ -53,6 +53,9 @@ class RenderPlugin {
 public:
     virtual ~RenderPlugin() = default;
     virtual void renderFrame(const RenderPluginFrame& frame) = 0;
+    // Context thread only. Allocate/validate private resources without rendering
+    // into borrowed targets. A failed candidate is destroyed before publication.
+    virtual void prepareResources(const RendererSettings&, int, int) {}
     virtual void invalidateHistory() = 0;
     virtual RenderPluginFrameInfo frameInfo() const = 0;
     virtual std::size_t estimatedBytes() const { return 0; }

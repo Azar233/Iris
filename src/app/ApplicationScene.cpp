@@ -837,15 +837,33 @@ void Application::processEditorCommands() {
                 parameter.value.text = command.moduleParameter.text;
                 bool history = false;
                 std::string error;
-                if (!iris::setPluginParameter(iris::builtinRenderPlugins(), rendererSettings_, command.text,
+                auto candidateSettings = rendererSettings_;
+                if (!iris::setPluginParameter(iris::builtinRenderPlugins(), candidateSettings, command.text,
                         parameter, history, error)) {
                     statusMessage_ = "Plugin parameter rejected: " + error;
                     break;
                 }
-                if (history && renderer_) renderer_->invalidateTemporalHistory();
+                if (parameter.value.type == ModuleParameterType::Asset && renderer_
+                    && !renderer_->rebuildPluginResources(command.text, candidateSettings)) {
+                    statusMessage_ = renderer_->pluginResourceStatus(); break;
+                }
+                rendererSettings_ = std::move(candidateSettings);
+                if (history && renderer_ && parameter.value.type != ModuleParameterType::Asset) renderer_->invalidateTemporalHistory();
                 statusMessage_ = "Plugin parameter updated: " + command.text + "/" + parameter.id;
                 break;
             }
+            case EditorCommandType::RebuildRenderPluginResources:
+                if (renderer_) {
+                    const auto history=renderer_->historyInvalidationRevision();
+                    const bool accepted=renderer_->rebuildPluginResources(command.text, rendererSettings_);
+                    statusMessage_ = renderer_->pluginResourceStatus();
+                    if(std::getenv("MYRENDERER_PLUGIN_RESOURCE_UI_TEST") && !accepted
+                        && renderer_->historyInvalidationRevision()==history) {
+                        shaderRetryInteractionComplete_=true;
+                        std::cout<<"Plugin resource retry UI interaction: PASS\n";
+                    }
+                }
+                break;
             case EditorCommandType::SetRenderPluginEnabled: {
                 std::string error;
                 const std::string required=rendererSettings_.enscapeCubeShaderEnabled?iris::enscapePluginId:iris::postProcessPluginId;
@@ -3208,13 +3226,39 @@ bool Application::shaderTransactionAcceptance() {
         }
         check(renderer_->reloadShaderResources() && !renderer_->shaderReloadFailed()
             && renderer_->historyInvalidationRevision()==cancellationHistory,"Canceled reload left error/history side effects");
+        // Prepare complete private FBO/texture/program ownership without drawing
+        // into the borrowed target; failures preserve both the owner and history.
+        for (const auto* id : {iris::postProcessPluginId, iris::enscapePluginId}) {
+            const auto historyBefore=renderer_->historyInvalidationRevision();
+            check(renderer_->rebuildPluginResources(id,settings)
+                && renderer_->historyInvalidationRevision()==historyBefore+1,"Plugin replacement did not commit/reset history once");
+        }
+        draw(); check(pixels()==baseline,"Plugin resource rebuild changed fixed output");
+        settings.enscapeCubeShaderEnabled=true; draw();
+        check(pixels()==oceanBaseline,"Enscape complete resource replacement changed fixed output");
+        settings.enscapeCubeShaderEnabled=false; draw();
+        const auto retainedHistory=renderer_->historyInvalidationRevision(), retainedMemory=renderer_->estimatedRenderMemoryBytes();
+        write(blur,"#version 330 core\ninvalid candidate resource\n");
+        check(!renderer_->rebuildPluginResources(iris::postProcessPluginId,settings)
+            && renderer_->historyInvalidationRevision()==retainedHistory
+            && renderer_->estimatedRenderMemoryBytes()==retainedMemory,"Failed full resource replacement altered live state");
+        draw(); check(pixels()==baseline,"Failed full resource replacement changed pixels");
+        write(blur,blurSource);
+        check(renderer_->rebuildPluginResources(iris::postProcessPluginId,settings),"Resource replacement recovery failed");
+        draw(); check(pixels()==baseline,"Resource replacement recovery changed fixed input");
+        if(std::getenv("MYRENDERER_PLUGIN_RESOURCE_UI_TEST")) {
+            write(blur,"#version 330 core\ninvalid candidate resource\n");
+            check(!renderer_->rebuildPluginResources(iris::postProcessPluginId,settings),"Resource UI failure fixture accepted");
+            focusPluginsTab_=true;
+        }
+        std::cout<<"Real plugin resource prepare / retained pixels-history / recovery: PASS\n";
         if (std::getenv("MYRENDERER_SHADER_TRANSACTION_UI_RETRY")) {
             write(composite,replacement); write(oceanImage,oceanReplacement);
             write(blur,"#version 330 core\nintentional compile failure\n");
             check(!renderer_->reloadShaderResources(),"Failure UI fixture was not rejected");
         }
         rendererSettings_.shaderHotReloadEnabled=false;
-        focusRendererTab_=true;
+        if(!std::getenv("MYRENDERER_PLUGIN_RESOURCE_UI_TEST")) focusRendererTab_=true;
         std::cout<<"Shader transaction real plugins / retained pixels-resources-history / recovery / restoration: PASS\n";
         return true;
     } catch (const std::exception& error) {

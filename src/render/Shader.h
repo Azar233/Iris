@@ -32,6 +32,7 @@ public:
     Shader& operator=(const Shader&) = delete;
 
     void use() const;
+    bool sourcesCurrent() const { return !snapshotChanged(watchedSources_); }
     void setBool(const char* name, bool value) const;
     void setInt(const char* name, int value) const;
     void setFloat(const char* name, float value) const;

@@ -71,8 +71,10 @@ struct PostProcessSettings {
     // range is still intact.
     unsigned int cloudTexture{0U};
     unsigned int cloudDepthTexture{0U};
+    int cloudWidth{0}, cloudHeight{0};
     bool cloudEnabled{false};
     unsigned int godRaysTexture{0U};
+    int godRaysWidth{0}, godRaysHeight{0};
     bool godRaysEnabled{false};
     glm::vec3 godRaysColor{1.0f};
 };

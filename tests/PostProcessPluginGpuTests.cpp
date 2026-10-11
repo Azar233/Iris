@@ -54,6 +54,40 @@ int main(){
             plugin->renderFrame(custom);
             require(pixels(target)!=reference,"Plugin ignored borrowed HDR binding");
         }
+        // Borrowed half-resolution cloud/ray inputs must drive the actual
+        // compositor rather than bypassing the common binding table.
+        unsigned int cloudTextures[3]{}; glGenTextures(3,cloudTextures);
+        const auto upload=[&](unsigned int texture,GLint internal,GLenum format,int channels,float red,float green,float blue,float alpha) {
+            std::vector<float> data(static_cast<std::size_t>(160*90*channels));
+            const float values[4]={red,green,blue,alpha};
+            for(std::size_t i=0;i<data.size();++i) data[i]=values[i%channels];
+            glBindTexture(GL_TEXTURE_2D,texture); glTexImage2D(GL_TEXTURE_2D,0,internal,160,90,0,format,GL_FLOAT,data.data());
+            glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MIN_FILTER,GL_NEAREST); glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MAG_FILTER,GL_NEAREST);
+        };
+        upload(cloudTextures[0],GL_RGBA16F,GL_RGBA,4,.4f,.8f,.1f,.2f);
+        upload(cloudTextures[1],GL_RG32F,GL_RG,2,0,0,0,0);
+        upload(cloudTextures[2],GL_R16F,GL_RED,1,.3f,0,0,0);
+        post.cloudEnabled=true; post.cloudTexture=cloudTextures[0]; post.cloudDepthTexture=cloudTextures[1];
+        post.cloudWidth=160;post.cloudHeight=90;render();const auto cloud=pixels(target);
+        require(cloud!=reference,"Plugin ignored borrowed cloud input");
+        auto missingCloud=iris::RenderPluginFrame(target,camera,settings,320,180,1.25f,0,&post);
+        for(auto& binding:missingCloud.textures) if(binding.name=="cloudDepth") binding.texture=0;
+        rejects([&]{plugin->renderFrame(missingCloud);});require(pixels(target)==cloud,"Cloud rejection changed old image");
+        auto wrongCloud=iris::RenderPluginFrame(target,camera,settings,320,180,1.25f,0,&post);
+        for(auto& binding:wrongCloud.textures) if(binding.name=="cloud") binding.width=159;
+        rejects([&]{plugin->renderFrame(wrongCloud);});
+        post.cloudEnabled=false;post.cloudTexture=post.cloudDepthTexture=0;post.cloudWidth=post.cloudHeight=0;
+        // Ray scattering is visible only on sky depth.
+        target.bindOpaqueScene();glClearDepth(1);glClear(GL_DEPTH_BUFFER_BIT);target.resolveOpaqueScene();
+        render();const auto sky=pixels(target);
+        post.godRaysEnabled=true;post.godRaysTexture=cloudTextures[2];post.godRaysWidth=160;post.godRaysHeight=90;
+        render();require(pixels(target)!=sky,"Plugin ignored borrowed ray input");
+        auto badRay=iris::RenderPluginFrame(target,camera,settings,320,180,1.25f,0,&post);
+        for(auto& binding:badRay.textures) if(binding.name=="rays") binding.format=iris::TextureFormat::HdrColor;
+        const auto rayPixels=pixels(target);rejects([&]{plugin->renderFrame(badRay);});
+        require(pixels(target)==rayPixels,"Ray rejection changed old output");
+        post.godRaysEnabled=false;post.godRaysTexture=0;post.godRaysWidth=post.godRaysHeight=0;
+        glDeleteTextures(3,cloudTextures);initialize(target,320,180);post.depthTexture=target.sceneDepthTexture();
         post.exposure=.25f;render();require(pixels(target)!=reference,"Parameter bridge ignored exposure");
         post.exposure=1;post.temporalAa=true;
         for(int frame=0;frame<64;++frame) { render(); }
