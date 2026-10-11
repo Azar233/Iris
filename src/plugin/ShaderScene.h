@@ -2,6 +2,7 @@
 #include <filesystem>
 #include <string>
 #include <vector>
+#include <cstdint>
 #include "module/ParameterRegistry.h"
 
 namespace iris {
@@ -9,6 +10,23 @@ inline constexpr std::size_t shaderSceneMaximumPasses = 4;
 inline constexpr std::size_t shaderSceneMaximumChannels = 4;
 inline constexpr float shaderSceneMaximumTimeStep = 0.25f;
 enum class ShaderSceneFormat { DisplayRgba8, LinearRgba16f };
+enum class ShaderSceneTextureFormat { LinearR8, LinearRgba8, SrgbRgba8 };
+enum class ShaderSceneTextureEncoding { Raw, Png, HashV1 };
+inline constexpr std::size_t shaderSceneMaximumTextureBytes = 64U * 1024U * 1024U;
+struct ShaderSceneTexture {
+    std::string id;
+    std::filesystem::path path;
+    ShaderSceneTextureFormat format{ShaderSceneTextureFormat::LinearR8};
+    ShaderSceneTextureEncoding encoding{ShaderSceneTextureEncoding::Raw};
+    bool volume{false}, mipmaps{false};
+    int width{0}, height{0}, depth{1};
+    std::uint32_t seed{0};
+    std::vector<unsigned char> texels;
+    std::string fingerprint;
+    std::size_t encodedBytes{0};
+};
+std::size_t shaderSceneTextureBytes(const ShaderSceneTexture& texture);
+void loadShaderSceneTextureData(ShaderSceneTexture& texture);
 struct ShaderSceneChannel {
     int slot{0};
     std::string source;
@@ -16,6 +34,9 @@ struct ShaderSceneChannel {
     bool previousFrame{false};
     bool linearFilter{false};
     bool repeatWrap{false};
+    bool externalTexture{false};
+    std::size_t sourceTexture{0};
+    bool mipmaps{false};
 };
 struct ShaderScenePass {
     std::string id;
@@ -24,7 +45,7 @@ struct ShaderScenePass {
     int sizeDivisor{1};
     std::vector<ShaderSceneChannel> channels;
 };
-// v1 normalizes to one Image; v2 declares a bounded ordered graph.
+// v1 normalizes to one Image; v2 declares a graph; v3 adds immutable texture inputs.
 struct ShaderScenePackage {
     std::filesystem::path manifest;
     std::filesystem::path root;
@@ -33,10 +54,12 @@ struct ShaderScenePackage {
     std::string license;
     ParameterRegistry parameters;
     int version{1};
-    bool mainImageEntry{false}; // v2 only; applies to every Pass.
+    bool mainImageEntry{false}; // v2/v3; applies to every Pass.
     std::vector<ShaderScenePass> passes;
     std::vector<std::size_t> executionOrder;
+    std::vector<ShaderSceneTexture> textures; // v3 only; CPU staging released after upload.
 };
+bool shaderSceneTextureInputsCurrent(const ShaderScenePackage& package);
 bool loadShaderScenePackage(const std::filesystem::path& path, ShaderScenePackage& package,
     std::string& error);
 }

@@ -16,13 +16,20 @@ namespace iris {
 namespace {
 constexpr std::size_t maximumBufferBytes = 256U * 1024U * 1024U;
 struct PreparationBindings {
-    GLint texture{0}, draw{0}, read{0};
+    GLint texture{0}, volume{0}, draw{0}, read{0}, unpackBuffer{0};
+    std::array<GLint, 6> unpack{};
+    static constexpr std::array<GLenum, 6> unpackNames{GL_UNPACK_ALIGNMENT, GL_UNPACK_ROW_LENGTH,
+        GL_UNPACK_IMAGE_HEIGHT, GL_UNPACK_SKIP_PIXELS, GL_UNPACK_SKIP_ROWS, GL_UNPACK_SKIP_IMAGES};
     PreparationBindings() {
         glGetIntegerv(GL_TEXTURE_BINDING_2D, &texture);
+        glGetIntegerv(GL_TEXTURE_BINDING_3D, &volume); glGetIntegerv(GL_PIXEL_UNPACK_BUFFER_BINDING, &unpackBuffer);
+        for (std::size_t i = 0; i < unpack.size(); ++i) glGetIntegerv(unpackNames[i], &unpack[i]);
         glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &draw); glGetIntegerv(GL_READ_FRAMEBUFFER_BINDING, &read);
     }
     ~PreparationBindings() {
         glBindTexture(GL_TEXTURE_2D, static_cast<GLuint>(texture));
+        glBindTexture(GL_TEXTURE_3D, static_cast<GLuint>(volume)); glBindBuffer(GL_PIXEL_UNPACK_BUFFER, static_cast<GLuint>(unpackBuffer));
+        for (std::size_t i = 0; i < unpack.size(); ++i) glPixelStorei(unpackNames[i], unpack[i]);
         glBindFramebuffer(GL_DRAW_FRAMEBUFFER, static_cast<GLuint>(draw));
         glBindFramebuffer(GL_READ_FRAMEBUFFER, static_cast<GLuint>(read));
     }
@@ -38,6 +45,38 @@ struct Pass {
     std::size_t shaderRevision{0};
     ~Pass() { glDeleteSamplers(4, samplers.data()); }
 };
+struct Texture {
+    GLuint name{0};
+    ~Texture() { glDeleteTextures(1, &name); }
+};
+std::vector<std::unique_ptr<Texture>> allocateTextures(const ShaderScenePackage& package) {
+    PreparationBindings bindings;
+    glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
+    for (const auto field : PreparationBindings::unpackNames) glPixelStorei(field, field == GL_UNPACK_ALIGNMENT ? 1 : 0);
+    std::vector<std::unique_ptr<Texture>> textures;
+    for (const auto& description : package.textures) {
+        GLint maximum = 0; glGetIntegerv(description.volume ? GL_MAX_3D_TEXTURE_SIZE : GL_MAX_TEXTURE_SIZE, &maximum);
+        if (description.width > maximum || description.height > maximum || description.depth > maximum)
+            throw std::runtime_error("Texture extent exceeds GL limit: " + description.id);
+        auto texture = std::make_unique<Texture>(); glGenTextures(1, &texture->name);
+        const GLenum target = description.volume ? GL_TEXTURE_3D : GL_TEXTURE_2D;
+        glBindTexture(target, texture->name);
+        const auto internal = description.format == ShaderSceneTextureFormat::LinearR8 ? GL_R8
+            : description.format == ShaderSceneTextureFormat::LinearRgba8 ? GL_RGBA8 : GL_SRGB8_ALPHA8;
+        const GLenum format = description.format == ShaderSceneTextureFormat::LinearR8 ? GL_RED : GL_RGBA;
+        if (description.volume) glTexImage3D(target, 0, internal, description.width, description.height, description.depth,
+            0, format, GL_UNSIGNED_BYTE, description.texels.data());
+        else glTexImage2D(target, 0, internal, description.width, description.height, 0, format, GL_UNSIGNED_BYTE, description.texels.data());
+        glTexParameteri(target, GL_TEXTURE_BASE_LEVEL, 0);
+        int levels = 0;
+        if (description.mipmaps) for (int size = std::max({description.width, description.height, description.depth}); size > 1; size /= 2) ++levels;
+        glTexParameteri(target, GL_TEXTURE_MAX_LEVEL, levels);
+        if (description.mipmaps) glGenerateMipmap(target);
+        if (glGetError() != GL_NO_ERROR) throw std::runtime_error("Texture upload failed: " + description.id);
+        textures.push_back(std::move(texture));
+    }
+    return textures;
+}
 bool sameMatrix(const glm::mat4& a, const glm::mat4& b) {
     return std::equal(glm::value_ptr(a), glm::value_ptr(a) + 16, glm::value_ptr(b));
 }
@@ -77,8 +116,10 @@ std::vector<std::unique_ptr<Buffer>> allocateBuffers(const ShaderScenePackage& p
 }
 struct ShaderSceneRenderer::State {
     ShaderScenePackage package;
+    capture::InputFile manifestInput;
     std::vector<std::unique_ptr<Pass>> passes;
     std::vector<std::unique_ptr<Buffer>> buffers;
+    std::vector<std::unique_ptr<Texture>> textures;
     int width{0}, height{0};
     bool invalidated{true}, rendered{false}, historyValid{false};
     int readSide{0}, writeSide{1}, frameIndex{0};
@@ -90,6 +131,7 @@ ShaderSceneRenderer::~ShaderSceneRenderer() = default;
 void ShaderSceneRenderer::prepareResources(const RendererSettings& settings, int width, int height) {
     auto candidate = std::make_unique<State>(); std::string error;
     const auto input = capture::snapshot(std::filesystem::u8path(settings.shaderSceneResource));
+    candidate->manifestInput = input;
     if (!loadShaderScenePackage(std::filesystem::u8path(settings.shaderSceneResource), candidate->package, error)) throw std::runtime_error(error);
     for (const auto& description : candidate->package.passes) {
         auto pass = std::make_unique<Pass>();
@@ -100,27 +142,35 @@ void ShaderSceneRenderer::prepareResources(const RendererSettings& settings, int
             {"irisCameraPosition", GL_FLOAT_VEC3}, {"irisView", GL_FLOAT_MAT4}, {"irisProjection", GL_FLOAT_MAT4}};
         for (const auto& parameter : candidate->package.parameters.descriptors()) policy.uniforms.emplace_back(parameter.id, GL_FLOAT);
         for (int slot = 0; slot < 4; ++slot) {
-            const bool declared = std::any_of(description.channels.begin(), description.channels.end(),
+            const auto channel = std::find_if(description.channels.begin(), description.channels.end(),
                 [slot](const auto& channel) { return channel.slot == slot; });
-            policy.uniforms.emplace_back("irisChannel" + std::to_string(slot), declared ? GL_SAMPLER_2D : 0U);
+            const auto type = channel == description.channels.end() ? 0U
+                : channel->externalTexture && candidate->package.textures[channel->sourceTexture].volume ? GL_SAMPLER_3D : GL_SAMPLER_2D;
+            policy.uniforms.emplace_back("irisChannel" + std::to_string(slot), type);
             policy.uniforms.emplace_back("irisChannelResolution" + std::to_string(slot), GL_FLOAT_VEC2);
+            if (candidate->package.version == 3) policy.uniforms.emplace_back("irisChannelExtent" + std::to_string(slot), GL_FLOAT_VEC3);
         }
         try { pass->shader = std::make_unique<Shader>(vertex_, description.fragment, std::move(policy)); }
         catch (const std::exception& exception) { throw std::runtime_error("ShaderScene Pass " + description.id + ": " + exception.what()); }
         pass->shaderRevision = pass->shader->revision();
         for (const auto& channel : description.channels) {
             auto& sampler = pass->samplers[static_cast<std::size_t>(channel.slot)]; glGenSamplers(1, &sampler);
-            glSamplerParameteri(sampler, GL_TEXTURE_MIN_FILTER, channel.linearFilter ? GL_LINEAR : GL_NEAREST);
+            glSamplerParameteri(sampler, GL_TEXTURE_MIN_FILTER, channel.mipmaps
+                ? (channel.linearFilter ? GL_LINEAR_MIPMAP_LINEAR : GL_NEAREST_MIPMAP_LINEAR) : (channel.linearFilter ? GL_LINEAR : GL_NEAREST));
             glSamplerParameteri(sampler, GL_TEXTURE_MAG_FILTER, channel.linearFilter ? GL_LINEAR : GL_NEAREST);
             glSamplerParameteri(sampler, GL_TEXTURE_WRAP_S, channel.repeatWrap ? GL_REPEAT : GL_CLAMP_TO_EDGE);
             glSamplerParameteri(sampler, GL_TEXTURE_WRAP_T, channel.repeatWrap ? GL_REPEAT : GL_CLAMP_TO_EDGE);
+            glSamplerParameteri(sampler, GL_TEXTURE_WRAP_R, channel.repeatWrap ? GL_REPEAT : GL_CLAMP_TO_EDGE);
         }
         candidate->passes.push_back(std::move(pass));
     }
     candidate->buffers = allocateBuffers(candidate->package, width, height);
+    candidate->textures = allocateTextures(candidate->package);
     candidate->width = width; candidate->height = height;
     for (const auto& pass : candidate->passes) if (!pass->shader->sourcesCurrent()) throw std::runtime_error("ShaderScene sources changed during preparation");
     if (!capture::same(input, capture::snapshot(candidate->package.manifest))) throw std::runtime_error("ShaderScene manifest changed during preparation");
+    if (!shaderSceneTextureInputsCurrent(candidate->package)) throw std::runtime_error("ShaderScene textures changed during preparation");
+    for (auto& texture : candidate->package.textures) std::vector<unsigned char>().swap(texture.texels);
     state_.swap(candidate);
 }
 void ShaderSceneRenderer::invalidateHistory() { if (state_) state_->invalidated = true; }
@@ -129,6 +179,13 @@ void ShaderSceneRenderer::renderFrame(const RenderPluginFrame& frame) {
     if (!std::isfinite(frame.timeSeconds) || frame.width < 1 || frame.height < 1
         || frame.target.width() != frame.width || frame.target.height() != frame.height) throw std::runtime_error("Invalid ShaderScene frame");
     auto& state = *state_;
+    if (capture::activeManifest) {
+        if (!capture::same(state.manifestInput, capture::snapshot(state.package.manifest)))
+            throw std::runtime_error("ShaderScene manifest input changed after preparation");
+        capture::recordInput(state.package.manifest);
+        if (!shaderSceneTextureInputsCurrent(state.package)) throw std::runtime_error("ShaderScene texture input changed after preparation");
+        for (const auto& texture : state.package.textures) if (!texture.path.empty()) capture::recordInput(texture.path);
+    }
     if (frame.width != state.width || frame.height != state.height) {
         auto buffers = allocateBuffers(state.package, frame.width, frame.height);
         state.buffers.swap(buffers); state.width = frame.width; state.height = frame.height; state.invalidated = true;
@@ -175,19 +232,28 @@ void ShaderSceneRenderer::renderFrame(const RenderPluginFrame& frame) {
         pass.shader->setMat4("irisProjection", projection);
         for (const auto& parameter : state.package.parameters.descriptors())
             pass.shader->setFloat(parameter.id.c_str(), state.package.parameters.value(parameter.id)->number);
-        for (int slot = 0; slot < 4; ++slot) { glActiveTexture(GL_TEXTURE0 + slot); glBindTexture(GL_TEXTURE_2D, 0); glBindSampler(static_cast<GLuint>(slot), 0); }
+        for (int slot = 0; slot < 4; ++slot) { glActiveTexture(GL_TEXTURE0 + slot); glBindTexture(GL_TEXTURE_2D, 0); glBindTexture(GL_TEXTURE_3D, 0); glBindSampler(static_cast<GLuint>(slot), 0); }
         for (const auto& channel : description.channels) {
-            const auto& source = *state.buffers[channel.sourcePass];
             glActiveTexture(GL_TEXTURE0 + channel.slot);
-            const auto side = static_cast<std::size_t>(channel.previousFrame ? state.readSide : state.writeSide);
-            glBindTexture(GL_TEXTURE_2D, source.textures[side]); glBindSampler(static_cast<GLuint>(channel.slot), pass.samplers[static_cast<std::size_t>(channel.slot)]);
+            glm::vec3 extent(0);
+            if (channel.externalTexture) {
+                const auto& source = state.package.textures[channel.sourceTexture];
+                glBindTexture(source.volume ? GL_TEXTURE_3D : GL_TEXTURE_2D, state.textures[channel.sourceTexture]->name);
+                extent = glm::vec3(source.width, source.height, source.depth);
+            } else {
+                const auto& source = *state.buffers[channel.sourcePass];
+                const auto side = static_cast<std::size_t>(channel.previousFrame ? state.readSide : state.writeSide);
+                glBindTexture(GL_TEXTURE_2D, source.textures[side]); extent = glm::vec3(source.width, source.height, 1);
+            }
+            glBindSampler(static_cast<GLuint>(channel.slot), pass.samplers[static_cast<std::size_t>(channel.slot)]);
             const auto name = "irisChannel" + std::to_string(channel.slot); pass.shader->setInt(name.c_str(), channel.slot);
-            pass.shader->setVec2(("irisChannelResolution" + std::to_string(channel.slot)).c_str(), glm::vec2(source.width, source.height));
+            pass.shader->setVec2(("irisChannelResolution" + std::to_string(channel.slot)).c_str(), glm::vec2(extent));
+            if (state.package.version == 3) pass.shader->setVec3(("irisChannelExtent" + std::to_string(channel.slot)).c_str(), extent);
         }
         glBindVertexArray(frame.fullscreenVertexArray); glDrawArrays(GL_TRIANGLES, 0, 3);
         if (labels) glPopDebugGroup();
     }
-    for (int slot = 0; slot < 4; ++slot) { glActiveTexture(GL_TEXTURE0 + slot); glBindTexture(GL_TEXTURE_2D, 0); glBindSampler(static_cast<GLuint>(slot), 0); }
+    for (int slot = 0; slot < 4; ++slot) { glActiveTexture(GL_TEXTURE0 + slot); glBindTexture(GL_TEXTURE_2D, 0); glBindTexture(GL_TEXTURE_3D, 0); glBindSampler(static_cast<GLuint>(slot), 0); }
     glActiveTexture(static_cast<GLenum>(active)); glBindVertexArray(0); glUseProgram(0); frame.target.unbind();
     state.rendered = true; state.invalidated = false; state.time = frame.timeSeconds; state.view = view; state.projection = projection;
 }
@@ -200,6 +266,7 @@ std::size_t ShaderSceneRenderer::estimatedBytes() const {
     std::size_t bytes = 0;
     if (state_) for (const auto& buffer : state_->buffers) if (buffer)
         bytes += static_cast<std::size_t>(buffer->width) * static_cast<std::size_t>(buffer->height) * 16U;
+    if (state_) for (const auto& texture : state_->package.textures) bytes += shaderSceneTextureBytes(texture);
     return bytes;
 }
 std::vector<RenderPassContext> ShaderSceneRenderer::passContexts() const {

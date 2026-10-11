@@ -20,4 +20,4 @@ irisResolution 是当前 Pass 尺寸；irisChannel0..3 为 sampler2D，irisChann
 时间倒退、步长 >0.25 s、Camera/投影/尺寸变化、显式失效与成功编译发布清零；连续前进只在整帧边界交换双缓冲。
 这是颜色反馈，没有运动重投影。Manifest/default 更改需重新打开；源码使用已有整批事务重载，失败保留全部旧程序和历史。
 
-外部 2D/3D 纹理、固定噪声资源、mainImage 包装与 Enscape 迁移属于后续 S1-A2 工作；工作台文件树、参数覆盖 UI、Job 与模型材质 Shader 仍未实现。
+外部 2D/3D 纹理与固定噪声资源见 [v3 示例](../textures/README.md)，mainImage 包装见 [入口示例](../main-image/README.md)。Enscape 迁移、工作台文件树、参数覆盖 UI、Job 与模型材质 Shader 仍待后续验收。

@@ -26,9 +26,9 @@
 
 A1 是可行性实验，不代表通用插件平台完成。首次迁移不修改 Shader 算法，保留 `.myscene` 旧 Enscape 开关/参数，仍借用 RendererSettings；跨插件配置、通用服务依赖图、动态 UI 与材质扩展在 A2/A3 才实现。只有 A2 证明第二种能力可接入后，才扩展全面迁移。
 
-2026-10-11 A3 首个单 Image 切片已验收：严格 `.shaderscene` v1、包内有界 float 初始值、项目 Camera/时间/分辨率、单 Pass display 输出和 Orbit 模板，通过现有打开/拖入/Scene 相对引用/PNG 捕获运行。双编译器最终 CTest 各 33/33、真实 GL 失败保留/恢复/resize/discard 清零、双尺寸应用往返和重复输出、既有十套图像/Stylized/PT 与带 ShaderScene Image Label 的 RDC 通过；未改基线。后续多 Pass、反馈与 mainImage 入口见下条；A3 父项仍未完成，运行参数覆盖 UI、外部纹理、文件工作台、Job 和模型材质 Shader 按后续切片推进，当前 Job 明确拒绝且无输出。
+2026-10-11 A3 首个单 Image 切片已验收：严格 `.shaderscene` v1、包内有界 float 初始值、项目 Camera/时间/分辨率、单 Pass display 输出和 Orbit 模板，通过现有打开/拖入/Scene 相对引用/PNG 捕获运行。双编译器最终 CTest 各 33/33、真实 GL 失败保留/恢复/resize/discard 清零、双尺寸应用往返和重复输出、既有十套图像/Stylized/PT 与带 ShaderScene Image Label 的 RDC 通过；未改基线。后续多 Pass、反馈、mainImage 和纹理见下条；A3 父项仍未完成，运行参数覆盖 UI、文件工作台、Job 和模型材质 Shader 按后续切片推进，当前 Job 明确拒绝且无输出。
 
-2026-10-11 S1-A2a 已推进 v2 有界多 Pass、二维 Pass 通道、RGBA16F 全/半尺寸与整帧双缓冲反馈，支持拓扑排序、周期拒绝、暂停重绘和历史清零；自制 Feedback 包不需要专用 C++ 场景代码。双编译器 33/33、真实 GPU 通道/采样/失败保留/24 帧重复与双窗口工作台通过。S1-A2b1 增加 v2 `mainImage` 包装，所有 Pass 共用声明入口，复用初始编译、include 跟踪和原子重载；v1 合同不变。S1-A2 父项仍未完成：外部纹理、3D/生成噪声与 Enscape 01/03/noiseReduction 迁移及同输入成本门仍待后续验收。
+2026-10-11 S1-A2a 已推进 v2 有界多 Pass、二维 Pass 通道、RGBA16F 全/半尺寸与整帧双缓冲反馈，支持拓扑排序、周期拒绝、暂停重绘和历史清零；自制 Feedback 包不需要专用 C++ 场景代码。双编译器 33/33、真实 GPU 通道/采样/失败保留/24 帧重复与双窗口工作台通过。S1-A2b1 增加 v2 `mainImage` 包装，所有 Pass 共用声明入口，复用初始编译、include 跟踪和原子重载；v1 合同不变。S1-A2b2 增加 v3 有界 PNG/raw 2D/3D 与固定 Seed hash-v1、sRGB/Mip/通道采样、内容身份和完整资源事务；示例及约定见 assets/shader-scenes/textures。S1-A2 父项仍未完成：Enscape 01/03/noiseReduction 迁移及同输入图像/序列/成本门待后续验收。
 
 PBR/NPR 是着色或管线能力，光追是执行技术，可以组合；后端、管线和效果不混成互斥枚举。Material/Light/Camera 数据合同保持共享，CPU/GPU 支持差异明确诊断。现有 SceneModule 只控制运行场景/模拟，不直接扩充为持有 GL 对象的渲染插件。
 

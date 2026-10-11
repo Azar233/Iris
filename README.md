@@ -16,7 +16,9 @@ A2 收口提供完整候选插件的 Shader/FBO/纹理准备与失败保留、�
 
 A3 首个单 Image 切片提供版本化 `.shaderscene` 包、严格路径/float 参数校验、项目 Camera/时间/分辨率输入，以及打开、拖入、`.myscene` 相对引用保存与失败保留。运行 `build-ci-msvc/Release/Iris.exe assets/shader-scenes/orbit/orbit.shaderscene` 可预览自制 Orbit 包；新包只需 JSON 与 GLSL。该切片支持 GLSL `main()` 与 display RGBA8 预览/PNG，多 Pass/反馈见下方 S1-A2a；参数覆盖 UI、Job 和模型材质 Shader 尚未实现。模板与输入约定见 [Orbit 包说明](assets/shader-scenes/orbit/README.md)。
 
-A3 / S1-A2a 增加 `.shaderscene` v2：最多 4 Pass、每 Pass 4 个二维 Pass 通道、全/半尺寸线性缓冲与显式上一帧反馈。重复时间不会累计，Camera/尺寸/时间跳转/成功重载和显式失效清历史；失败保留旧完整运行状态。运行 `build-ci-msvc/Release/Iris.exe assets/shader-scenes/feedback/feedback.shaderscene` 查看三 Pass 自制示例，约定见 [Feedback 包说明](assets/shader-scenes/feedback/README.md)。S1-A2b1 为 v2 增加 `entry: "mainImage"`，宿主包装每个 Pass 的 `mainImage(out vec4, in vec2)`，使用相同 iris Uniform、编译检查和原子重载，示例见 [mainImage 包说明](assets/shader-scenes/main-image/README.md)。外部纹理、3D/噪声、Enscape 迁移、参数 UI、Job 与模型材质 Shader 仍属后续工作，S1-A2/A3 尚未收口。
+A3 / S1-A2a 增加 `.shaderscene` v2：最多 4 Pass、每 Pass 4 个二维 Pass 通道、全/半尺寸线性缓冲与显式上一帧反馈。重复时间不会累计，Camera/尺寸/时间跳转/成功重载和显式失效清历史；失败保留旧完整运行状态。运行 `build-ci-msvc/Release/Iris.exe assets/shader-scenes/feedback/feedback.shaderscene` 查看三 Pass 自制示例，约定见 [Feedback 包说明](assets/shader-scenes/feedback/README.md)。S1-A2b1 为 v2 增加 `entry: "mainImage"`，宿主包装每个 Pass 的 `mainImage(out vec4, in vec2)`，使用相同 iris Uniform、编译检查和原子重载，示例见 [mainImage 包说明](assets/shader-scenes/main-image/README.md)。Enscape 迁移、参数 UI、Job 与模型材质 Shader 仍属后续工作，S1-A2/A3 尚未收口。
+
+S1-A2b2 的 `.shaderscene` v3 新增最多 8 个有界纹理资源：二维 PNG、二维/三维 raw、固定 uint32 Seed 的 hash-v1 噪声，支持 linear R8/RGBA8、二维 sRGB、Mip 与每通道的过滤/Wrap。总纹理预算含 Mip 为 64 MiB；资源变化核对内容身份，失败保留旧完整运行状态，重新打开成功后清历史。运行 `build-ci-msvc/Release/Iris.exe assets/shader-scenes/textures/textures.shaderscene` 查看自制颜色/体积切片/噪声示例，完整格式与边界见 [纹理包说明](assets/shader-scenes/textures/README.md)。v1/v2 保持兼容，纹理文件通过重新打开包更新，Job 仍明确拒绝。
 
 <p align="center">A C++17 real-time and offline rendering playground.</p>
 

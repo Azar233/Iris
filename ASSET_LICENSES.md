@@ -6,7 +6,7 @@
 | --- | --- | --- |
 | `assets/environments/kloofendal_48d_partly_cloudy_puresky_4k.exr` | Poly Haven, “Kloofendal 48d Partly Cloudy (Pure Sky)”; see the adjacent README | CC0 1.0 |
 | `cube.obj`, `sphere.obj`, material/glass/prism/skinning regression fixtures and their textures | Created or procedurally generated for Iris | MIT, under the project license |
-| `assets/shader-scenes/orbit`, `feedback`, `main-image` | JSON / GLSL examples created for Iris; adjacent license copies | MIT |
+| `assets/shader-scenes/orbit`, `feedback`, `main-image`, `textures` | JSON / GLSL / PNG / raw examples created for Iris; adjacent license copies | MIT |
 | `assets/icons/iris-source.png`, `iris-icon.png`, `iris.ico` | AI-generated iris artwork, revised and selected for Iris; source and export instructions in `assets/icons/README.md` | Distributed under the project MIT license |
 | `assets/readme/*.png` | Captured from the Iris editor; the studio scene uses the CC0 Poly Haven models listed below | MIT, under the project license |
 | `assets/models/polyhaven/*` | Five 1K glTF showcase models from Poly Haven; authors and source URLs are recorded in the adjacent README | CC0 1.0 |

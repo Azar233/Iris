@@ -16,5 +16,5 @@ GLSL 使用 `#version 330 core` 与 `void main()`，负责给完整画面写入 
 公开参数目前支持最多 16 个有界 float，ID 对应同名 uniform，读取包内 default；修改 default 后重新打开包。
 活跃 uniform 类型必须匹配；编译或类型检查失败保留整个旧运行版本。
 
-本切片提供预览及固定 PNG 捕获；参数 Inspector/覆盖值、mainImage 包装、纹理通道、多 Pass、反馈、鼠标/帧序号、关联文件树、Render Jobs 和模型材质 Shader 留待后续阶段。
+本 v1 包提供预览及固定 PNG 捕获。多 Pass/反馈与帧序号见 [v2 示例](../feedback/README.md)，mainImage 见 [入口示例](../main-image/README.md)，纹理与固定噪声见 [v3 示例](../textures/README.md)。参数 Inspector/覆盖值、鼠标输入、关联文件树、Render Jobs 和模型材质 Shader 留待后续阶段。
 每帧 Image 输出先清为不透明黑色，discard 区域不会隐式保留上一帧。

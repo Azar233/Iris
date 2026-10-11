@@ -65,9 +65,21 @@ void resolveGraph(ShaderScenePackage& package) {
     for (std::size_t i = 0; i < package.passes.size(); ++i)
         if (!indices.emplace(package.passes[i].id, i).second) throw std::runtime_error("Duplicate Pass ID");
     if (!indices.count("Image")) throw std::runtime_error("Exactly one Image Pass is required");
+    std::map<std::string, std::size_t> textures;
+    for (std::size_t i = 0; i < package.textures.size(); ++i)
+        if (indices.count(package.textures[i].id) || !textures.emplace(package.textures[i].id, i).second)
+            throw std::runtime_error("Duplicate texture/Pass ID");
     for (auto& pass : package.passes) for (auto& channel : pass.channels) {
+        const auto texture = textures.find(channel.source);
+        if (texture != textures.end()) {
+            channel.externalTexture = true; channel.sourceTexture = texture->second;
+            if (channel.previousFrame || (channel.mipmaps && !package.textures[texture->second].mipmaps))
+                throw std::runtime_error("Static texture requires current frame and declared Mip chain");
+            continue;
+        }
         const auto source = indices.find(channel.source);
-        if (source == indices.end() || channel.source == "Image") throw std::runtime_error("Channel source must name a buffer Pass: " + channel.source);
+        if (source == indices.end() || channel.source == "Image") throw std::runtime_error("Channel source must name a buffer Pass or texture: " + channel.source);
+        if (channel.mipmaps) throw std::runtime_error("Buffer channels do not support Mip chains");
         channel.sourcePass = source->second;
     }
     std::vector<bool> ready(package.passes.size(), false);
@@ -79,7 +91,7 @@ void resolveGraph(ShaderScenePackage& package) {
             if (pass.id == "Image" && package.executionOrder.size() + 1 != package.passes.size()) continue;
             bool available = true;
             for (const auto& channel : pass.channels)
-                if (!channel.previousFrame && !ready[channel.sourcePass]) available = false;
+                if (!channel.externalTexture && !channel.previousFrame && !ready[channel.sourcePass]) available = false;
             if (!available) continue;
             ready[i] = true; package.executionOrder.push_back(i); progress = true;
         }
@@ -101,20 +113,69 @@ bool loadShaderScenePackage(const std::filesystem::path& path, ShaderScenePackag
         if (json.HasParseError()) throw std::runtime_error(std::string("JSON: ") + iris_shader_scene_json::GetParseError_En(json.GetParseError())
             + " at byte " + std::to_string(json.GetErrorOffset()));
         if (!json.IsObject() || !json.HasMember("version") || !json["version"].IsInt()
-            || (json["version"].GetInt() != 1 && json["version"].GetInt() != 2))
-            throw std::runtime_error("Unsupported ShaderScene version (expected 1 or 2)");
+            || (json["version"].GetInt() < 1 || json["version"].GetInt() > 3))
+            throw std::runtime_error("Unsupported ShaderScene version (expected 1..3)");
         loaded.version = json["version"].GetInt();
         if (loaded.version == 1) fields(json, {"version", "id", "resourceRoot", "fragment", "entry", "output", "camera", "author", "license", "parameters"});
-        else fields(json, {"version", "id", "resourceRoot", "entry", "camera", "author", "license", "parameters", "passes"});
+        else if (loaded.version == 2) fields(json, {"version", "id", "resourceRoot", "entry", "camera", "author", "license", "parameters", "passes"});
+        else fields(json, {"version", "id", "resourceRoot", "entry", "camera", "author", "license", "parameters", "passes", "textures"});
         loaded.id = string(json, "id");
         if (!identifier(loaded.id)) throw std::runtime_error("Invalid package id");
         loaded.author = string(json, "author"); loaded.license = string(json, "license");
         const auto entry = string(json, "entry");
-        loaded.mainImageEntry = loaded.version == 2 && entry == "mainImage";
+        loaded.mainImageEntry = loaded.version >= 2 && entry == "mainImage";
         if ((entry != "main" && !loaded.mainImageEntry) || (loaded.version == 1 && string(json, "output") != "display-rgba8")
             || string(json, "camera") != "project") throw std::runtime_error("Unsupported entry/output/camera contract");
         loaded.root = inside(loaded.manifest.parent_path(), string(json, "resourceRoot"));
         if (!std::filesystem::is_directory(loaded.root)) throw std::runtime_error("Resource root must be a directory");
+        if (loaded.version == 3) {
+            if (!json.HasMember("textures") || !json["textures"].IsArray() || json["textures"].Size() > 8)
+                throw std::runtime_error("textures must be an array of at most 8 entries");
+            std::size_t bytes = 0;
+            for (const auto& value : json["textures"].GetArray()) {
+                if (!value.IsObject()) throw std::runtime_error("Texture object required");
+                ShaderSceneTexture texture;
+                const auto encoding = string(value, "encoding");
+                if (encoding == "hash-v1") {
+                    fields(value, {"id", "dimension", "format", "extent", "encoding", "seed", "mip"});
+                    texture.encoding = ShaderSceneTextureEncoding::HashV1;
+                    if (!value.HasMember("seed") || !value["seed"].IsUint()) throw std::runtime_error("Texture Seed must be uint32");
+                    texture.seed = value["seed"].GetUint();
+                } else {
+                    fields(value, {"id", "dimension", "format", "extent", "encoding", "path", "mip"});
+                    if (encoding != "png" && encoding != "raw") throw std::runtime_error("Unsupported texture encoding");
+                    texture.encoding = encoding == "png" ? ShaderSceneTextureEncoding::Png : ShaderSceneTextureEncoding::Raw;
+                    texture.path = inside(loaded.root, string(value, "path"));
+                    if (!std::filesystem::is_regular_file(texture.path)) throw std::runtime_error("Texture path must be a file");
+                }
+                texture.id = string(value, "id");
+                if (!identifier(texture.id)) throw std::runtime_error("Invalid texture ID");
+                const auto dimension = string(value, "dimension"), format = string(value, "format"), mip = string(value, "mip");
+                if (dimension != "2d" && dimension != "3d") throw std::runtime_error("Texture dimension must be 2d/3d");
+                texture.volume = dimension == "3d";
+                if (format != "linear-r8" && format != "linear-rgba8" && format != "srgb-rgba8") throw std::runtime_error("Unsupported texture format");
+                texture.format = format == "linear-r8" ? ShaderSceneTextureFormat::LinearR8
+                    : format == "linear-rgba8" ? ShaderSceneTextureFormat::LinearRgba8 : ShaderSceneTextureFormat::SrgbRgba8;
+                if ((texture.volume && texture.format == ShaderSceneTextureFormat::SrgbRgba8)
+                    || (texture.encoding == ShaderSceneTextureEncoding::Png && (texture.volume || texture.format == ShaderSceneTextureFormat::LinearR8))
+                    || (texture.encoding == ShaderSceneTextureEncoding::HashV1 && texture.format != ShaderSceneTextureFormat::LinearR8))
+                    throw std::runtime_error("Unsupported texture dimension/format/encoding combination");
+                if (mip != "none" && mip != "generate") throw std::runtime_error("Texture Mip must be none/generate");
+                texture.mipmaps = mip == "generate";
+                if (!value.HasMember("extent") || !value["extent"].IsArray() || value["extent"].Size() != (texture.volume ? 3U : 2U))
+                    throw std::runtime_error("Texture extent dimension mismatch");
+                int* dimensions[]{&texture.width, &texture.height, &texture.depth};
+                for (unsigned int axis = 0; axis < value["extent"].Size(); ++axis) {
+                    const auto& extent = value["extent"][axis];
+                    if (!extent.IsInt() || extent.GetInt() < 1 || extent.GetInt() > (texture.volume ? 128 : 2048))
+                        throw std::runtime_error("Texture extent exceeds 2d 2048 / 3d 128 limit");
+                    *dimensions[axis] = extent.GetInt();
+                }
+                bytes += shaderSceneTextureBytes(texture);
+                if (bytes > shaderSceneMaximumTextureBytes) throw std::runtime_error("Texture resources exceed 64 MiB budget");
+                loaded.textures.push_back(std::move(texture));
+            }
+        }
         if (loaded.version == 1) {
             ShaderScenePass pass; pass.id = "Image"; pass.fragment = fragmentPath(loaded.root, string(json, "fragment"));
             loaded.passes.push_back(std::move(pass));
@@ -144,14 +205,17 @@ bool loadShaderScenePackage(const std::filesystem::path& path, ShaderScenePackag
                     channel.slot = input["slot"].GetInt(); channel.source = string(input, "source");
                     const auto frame = string(input, "frame"), filter = string(input, "filter"), wrap = string(input, "wrap");
                     if ((frame != "current" && frame != "previous") || (filter != "nearest" && filter != "linear")
-                        || (wrap != "clamp" && wrap != "repeat") || string(input, "mip") != "none") throw std::runtime_error("Unsupported channel frame/filter/wrap/mip");
+                        || (wrap != "clamp" && wrap != "repeat") || (string(input, "mip") != "none"
+                            && !(loaded.version == 3 && string(input, "mip") == "linear"))) throw std::runtime_error("Unsupported channel frame/filter/wrap/mip");
                     channel.previousFrame = frame == "previous"; channel.linearFilter = filter == "linear"; channel.repeatWrap = wrap == "repeat";
+                    channel.mipmaps = string(input, "mip") == "linear";
                     pass.channels.push_back(std::move(channel));
                 }
                 loaded.passes.push_back(std::move(pass));
             }
         }
         resolveGraph(loaded);
+        for (auto& texture : loaded.textures) loadShaderSceneTextureData(texture);
         if (!json.HasMember("parameters") || !json["parameters"].IsArray() || json["parameters"].Size() > 16)
             throw std::runtime_error("parameters must be an array of at most 16 floats");
         for (const auto& parameter : json["parameters"].GetArray()) {
@@ -163,6 +227,7 @@ bool loadShaderScenePackage(const std::filesystem::path& path, ShaderScenePackag
             if (minimum > maximum || initial < minimum || initial > maximum) throw std::runtime_error("Invalid parameter range: " + id);
             loaded.parameters.registerFloat(id, string(parameter, "label"), initial, minimum, maximum);
         }
+        if (!shaderSceneTextureInputsCurrent(loaded)) throw std::runtime_error("Textures changed during package load");
         package = std::move(loaded); error.clear(); return true;
     } catch (const std::exception& exception) { error = "ShaderScene " + path.string() + ": " + exception.what(); return false; }
 }

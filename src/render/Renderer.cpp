@@ -1852,6 +1852,8 @@ std::unique_ptr<iris::RenderPlugin> Renderer::prepareShaderScene(const RendererS
     iris::RenderPluginDescriptor descriptor("iris.shader-scene", iris::renderPluginApiVersion,
         {iris::openGlFullscreenService}, package.license);
     descriptor.contract.resources.emplace_back("display", iris::TextureFormat::DisplayColor, iris::ResourceScope::Output);
+    for (const auto& texture : package.textures)
+        descriptor.contract.resources.emplace_back("texture/" + texture.id, iris::TextureFormat::Data, iris::ResourceScope::Generated);
     for (const auto& pass : package.passes) if (pass.id != "Image") {
         descriptor.contract.resources.emplace_back("buffer/" + pass.id, iris::TextureFormat::HdrColor, iris::ResourceScope::Transient);
         descriptor.contract.resources.emplace_back("buffer/" + pass.id + "/history", iris::TextureFormat::HdrColor, iris::ResourceScope::History);
@@ -1859,7 +1861,8 @@ std::unique_ptr<iris::RenderPlugin> Renderer::prepareShaderScene(const RendererS
     for (const auto index : package.executionOrder) {
         const auto& pass = package.passes[index]; iris::PluginPass plan{pass.id, {}, {}, {}};
         for (const auto& channel : pass.channels)
-            if (channel.previousFrame) plan.previousFrameReads.push_back("buffer/" + channel.source + "/history");
+            if (channel.externalTexture) plan.reads.push_back("texture/" + channel.source);
+            else if (channel.previousFrame) plan.previousFrameReads.push_back("buffer/" + channel.source + "/history");
             else plan.reads.push_back("buffer/" + channel.source);
         plan.writes = pass.id == "Image" ? std::vector<std::string>{"display"}
             : std::vector<std::string>{"buffer/" + pass.id, "buffer/" + pass.id + "/history"};

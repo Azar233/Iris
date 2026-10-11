@@ -1,0 +1,22 @@
+{
+  "version": 3,
+  "id": "textureGallery",
+  "resourceRoot": ".",
+  "entry": "mainImage",
+  "camera": "project",
+  "author": "Iris contributors",
+  "license": "MIT",
+  "parameters": [{"id": "noiseScale", "label": "Noise scale", "type": "float", "default": 0.65, "min": 0.1, "max": 2.0}],
+  "textures": [
+    {"id": "Palette", "dimension": "2d", "format": "srgb-rgba8", "extent": [8, 8], "encoding": "png", "path": "palette.png", "mip": "generate"},
+    {"id": "Volume", "dimension": "3d", "format": "linear-r8", "extent": [4, 4, 4], "encoding": "raw", "path": "volume.raw", "mip": "none"},
+    {"id": "Noise", "dimension": "3d", "format": "linear-r8", "extent": [32, 32, 32], "encoding": "hash-v1", "seed": 17, "mip": "generate"},
+    {"id": "Grain", "dimension": "2d", "format": "linear-r8", "extent": [16, 16], "encoding": "hash-v1", "seed": 42, "mip": "none"}
+  ],
+  "passes": [{"id": "Image", "fragment": "image.frag", "output": "display-rgba8", "sizeDivisor": 1, "channels": [
+    {"slot": 0, "source": "Palette", "frame": "current", "filter": "nearest", "wrap": "repeat", "mip": "none"},
+    {"slot": 1, "source": "Volume", "frame": "current", "filter": "linear", "wrap": "clamp", "mip": "none"},
+    {"slot": 2, "source": "Noise", "frame": "current", "filter": "linear", "wrap": "repeat", "mip": "linear"},
+    {"slot": 3, "source": "Grain", "frame": "current", "filter": "nearest", "wrap": "repeat", "mip": "none"}
+  ]}]
+}

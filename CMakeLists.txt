@@ -207,9 +207,9 @@ target_link_libraries(MyRendererBatch PRIVATE MyRendererBatchRuntime MyRendererM
 # framework lives in this target together with the concrete modules, so adding a
 # module does not touch the editor or the batch CLI. `Scene` symbols are provided by
 # the consumer, exactly like the other shared sources in this project.
-add_library(IrisParameters STATIC src/module/ParameterRegistry.cpp src/plugin/RenderPluginParameters.cpp src/plugin/ShaderScene.cpp)
+add_library(IrisParameters STATIC src/module/ParameterRegistry.cpp src/plugin/RenderPluginParameters.cpp src/plugin/ShaderScene.cpp src/plugin/ShaderSceneTexture.cpp)
 target_include_directories(IrisParameters PUBLIC src)
-target_include_directories(IrisParameters PRIVATE ${assimp_SOURCE_DIR}/contrib/rapidjson/include)
+target_include_directories(IrisParameters PRIVATE ${assimp_SOURCE_DIR}/contrib/rapidjson/include ${assimp_SOURCE_DIR}/contrib/stb)
 target_link_libraries(IrisParameters PUBLIC glm::glm PRIVATE glad_gl_core_33)
 if(MSVC)
     target_compile_options(IrisParameters PRIVATE /W4 /permissive- /utf-8)
@@ -388,10 +388,10 @@ target_link_libraries(MyRenderer PRIVATE
 )
 
 if(BUILD_TESTING)
-    add_executable(IrisShaderSceneTests tests/ShaderSceneTests.cpp)
+    add_executable(IrisShaderSceneTests tests/ShaderSceneTests.cpp tests/ShaderSceneTextureCpuTests.cpp)
     target_link_libraries(IrisShaderSceneTests PRIVATE IrisParameters)
-    add_test(NAME shader-scene-package COMMAND IrisShaderSceneTests)
-    add_executable(IrisShaderSceneGpuTests tests/ShaderSceneGpuTests.cpp tests/ShaderSceneMultiPassTests.cpp tests/ShaderSceneEntryTests.cpp
+    add_test(NAME shader-scene-package COMMAND IrisShaderSceneTests ${CMAKE_CURRENT_SOURCE_DIR}/assets/shader-scenes/textures)
+    add_executable(IrisShaderSceneGpuTests tests/ShaderSceneGpuTests.cpp tests/ShaderSceneMultiPassTests.cpp tests/ShaderSceneEntryTests.cpp tests/ShaderSceneTextureGpuTests.cpp
         src/render/Shader.cpp src/render/Camera.cpp src/render/RenderTarget.cpp src/render/OpenGlStateCache.cpp
         src/scene/Scene.cpp src/scene/SceneDocument.cpp)
     target_include_directories(IrisShaderSceneGpuTests PRIVATE src ${assimp_SOURCE_DIR}/contrib/rapidjson/include

@@ -3155,8 +3155,11 @@ void Application::runShaderSceneAcceptance(const std::filesystem::path& director
     std::filesystem::create_directories(directory);
     const bool multi = std::getenv("MYRENDERER_SHADER_SCENE_MULTIPASS_ACCEPTANCE") != nullptr;
     const bool mainImage = std::getenv("MYRENDERER_SHADER_SCENE_MAIN_IMAGE_ACCEPTANCE") != nullptr;
-    const auto source = sourceRoot_ / (multi ? "assets/shader-scenes/feedback" : (mainImage ? "assets/shader-scenes/main-image" : "assets/shader-scenes/orbit"));
-    const auto manifest = directory / (multi ? "feedback.shaderscene" : (mainImage ? "main-image.shaderscene" : "orbit.shaderscene"));
+    const bool textures = std::getenv("MYRENDERER_SHADER_SCENE_TEXTURE_ACCEPTANCE") != nullptr;
+    const auto source = sourceRoot_ / (multi ? "assets/shader-scenes/feedback" : (mainImage ? "assets/shader-scenes/main-image"
+        : (textures ? "assets/shader-scenes/textures" : "assets/shader-scenes/orbit")));
+    const auto manifest = directory / (multi ? "feedback.shaderscene" : (mainImage ? "main-image.shaderscene"
+        : (textures ? "textures.shaderscene" : "orbit.shaderscene")));
     const auto fragment = directory / (multi ? "accumulate.frag" : "image.frag");
     for (const auto& entry : std::filesystem::directory_iterator(source))
         if (entry.is_regular_file()) std::filesystem::copy_file(entry.path(), directory / entry.path().filename(), std::filesystem::copy_options::overwrite_existing);
@@ -3181,6 +3184,20 @@ void Application::runShaderSceneAcceptance(const std::filesystem::path& director
     std::filesystem::copy_file(source / fragment.filename(), fragment, std::filesystem::copy_options::overwrite_existing);
     check(openScene(manifest), "Application ShaderScene recovery failed"); processEditorCommands(); draw();
     check(before == pixels(), "Application ShaderScene recovery drifted");
+    if (textures) {
+        const auto volume = directory / "volume.raw";
+        const auto revision = renderer_->historyInvalidationRevision();
+        { std::ofstream file(volume, std::ios::binary | std::ios::trunc); file << "truncated"; }
+        check(!openScene(manifest) && renderer_->historyInvalidationRevision() == revision, "Corrupt texture replaced history");
+        draw(); check(before == pixels(), "Corrupt texture lost live output");
+        { std::ofstream file(volume, std::ios::binary | std::ios::trunc); const char zero[64]{}; file.write(zero, 64); }
+        check(openScene(manifest), "Changed texture reopen failed"); processEditorCommands(); draw();
+        check(before != pixels(), "Changed volume has no image contribution");
+        std::filesystem::copy_file(source / "volume.raw", volume, std::filesystem::copy_options::overwrite_existing);
+        check(openScene(manifest), "Texture recovery failed"); processEditorCommands(); draw();
+        check(before == pixels(), "Texture recovery drifted");
+        std::cout << "ShaderScene application corrupt texture retention / changed volume contribution / recovery PASS\n";
+    }
     check(saveSceneTo(directory / "saved.myscene"), "Application ShaderScene save failed");
     check(openScene(directory / "saved.myscene"), "Application ShaderScene reopen failed"); processEditorCommands(); draw();
     check(before == pixels(), "Application ShaderScene reopen drifted");

@@ -2,3 +2,4 @@
 *.exr binary
 *.png binary
 *.ico binary
+*.raw binary
