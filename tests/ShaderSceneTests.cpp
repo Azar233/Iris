@@ -1,4 +1,5 @@
 #include "plugin/ShaderScene.h"
+#include "render/Renderer.h"
 #include <filesystem>
 #include <fstream>
 #include <iostream>
@@ -17,6 +18,16 @@ int main(int argc, char** argv) {
         iris::ShaderScenePackage package; std::string error;
         write(valid); check(iris::loadShaderScenePackage(path, package, error), error.c_str());
         check(package.parameters.value("gain")->number == 0.5f, "Float default missing");
+        RendererSettings settings; bool changed=false;
+        ModuleParameterOverride gain;gain.id="gain";gain.value.type=ModuleParameterType::Float;gain.value.number=.8f;
+        check(iris::setShaderSceneParameter(package,settings,gain,changed,error) && changed,"Generic override rejected");
+        check(iris::shaderSceneParameterValues(package,settings)[0].number==.8f,"Generic override not consumed");
+        check(iris::setShaderSceneParameter(package,settings,gain,changed,error) && !changed,"No-op reported changed");
+        gain.value.number=2;
+        check(!iris::setShaderSceneParameter(package,settings,gain,changed,error) && settings.shaderSceneParameters[0].value.number==.8f,"Out-of-range override mutated settings");
+        gain.value.number=.5f;
+        check(iris::setShaderSceneParameter(package,settings,gain,changed,error) && settings.shaderSceneParameters.empty(),"Default not canonicalized");
+        gain.id="missing";check(!iris::setShaderSceneParameter(package,settings,gain,changed,error),"Unknown override accepted");
         const auto reject = [&](std::string input) {
             write(input); check(!iris::loadShaderScenePackage(path, package, error), "Invalid package accepted");
             check(package.id == "test" && package.parameters.size() == 1, "Failed load replaced live package");

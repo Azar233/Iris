@@ -470,6 +470,30 @@ int main() {
         require(foundPathTracingPbr && foundPathTracingLights && foundPathTracingVolume,
             "dedicated path-tracing scene fixtures should be bundled");
 
+        const auto shaderManifest=directory/"parameters.shaderscene";
+        std::ofstream(directory/"image.frag") << "#version 330 core\nvoid main(){}\n";
+        std::ofstream(shaderManifest) << R"({"version":1,"id":"parameters","resourceRoot":".","fragment":"image.frag","entry":"main","output":"display-rgba8","camera":"project","author":"test","license":"MIT","parameters":[{"id":"gain","label":"Gain","type":"float","default":0.5,"min":0,"max":1}]})";
+        SceneDocument parameterScene; parameterScene.renderer.shaderSceneResource=shaderManifest.generic_u8string();
+        ModuleParameterOverride gain;gain.id="gain";gain.value.type=ModuleParameterType::Float;gain.value.number=.8f;
+        parameterScene.renderer.shaderSceneParameters={gain};
+        const auto parameterPath=directory/"parameters.myscene";
+        std::string parameterError;
+        require(saveSceneDocument(parameterPath,parameterScene,parameterError),parameterError.c_str());
+        SceneDocument reopened;
+        require(loadSceneDocument(parameterPath,reopened,parameterError),parameterError.c_str());
+        require(reopened.renderer.shaderSceneParameters.size()==1 && reopened.renderer.shaderSceneParameters[0].value.number==.8f,"ShaderScene override roundtrip failed");
+        const auto invalidPath=directory/"invalid-parameters.myscene";
+        const auto rejectParameters=[&](const std::string& values){
+            std::ofstream(invalidPath) << R"({"format":"MyRendererScene","version":2,"renderer":{"shaderSceneResource":"parameters.shaderscene","shaderSceneParameters":{"version":1,"values":)" << values << "}},\"entities\":[]}";
+            require(!loadSceneDocument(invalidPath,reopened,parameterError),"Invalid ShaderScene override accepted");
+            require(reopened.renderer.shaderSceneParameters[0].value.number==.8f,"Rejected override replaced current document");
+        };
+        rejectParameters(R"([{"id":"gain","type":2,"value":2}])");
+        rejectParameters(R"([{"id":"gain","type":0,"value":true}])");
+        rejectParameters(R"([{"id":"missing","type":2,"value":0.4}])");
+        rejectParameters(R"([{"id":"gain","type":2,"value":0.4},{"id":"gain","type":2,"value":0.5}])");
+        require(loadSceneDocument(shaderManifest,reopened,parameterError) && reopened.renderer.shaderSceneParameters.empty(),"New package inherited previous overrides");
+        std::cout << "ShaderScene override relative roundtrip / invalid transaction / new-package defaults PASS\n";
         std::cout << "Scene document repeat-load acceptance test passed\n";
         return 0;
     } catch (const std::exception& exception) {

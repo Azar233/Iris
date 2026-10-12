@@ -61,6 +61,13 @@ struct ShaderScenePackage {
     std::vector<ShaderSceneTexture> textures; // v3 only; CPU staging released after upload.
     std::string parameterSource; // Optional CPU plugin schema, v3 only.
 };
+struct ShaderSceneRuntimeStatus {
+    int width{0}, height{0}, frame{0};
+    float time{0}, timeDelta{0};
+    bool rendered{false}, historyValid{false}, resetPending{false};
+};
+bool setShaderSceneParameter(const ShaderScenePackage& package, RendererSettings& settings,
+    const ModuleParameterOverride& parameter, bool& changed, std::string& error);
 std::string shaderSceneResourceFor(const RendererSettings& settings);
 std::vector<ModuleParameterValue> shaderSceneParameterValues(const ShaderScenePackage& package, const RendererSettings& settings);
 bool shaderScenePassNeedsHistory(const ShaderScenePackage& package, std::size_t index);

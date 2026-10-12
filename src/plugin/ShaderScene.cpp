@@ -3,6 +3,7 @@
 #include "plugin/RenderPluginParameters.h"
 #include "render/Renderer.h"
 #include <cmath>
+#include <algorithm>
 #include <fstream>
 #include <sstream>
 #include <stdexcept>
@@ -260,11 +261,26 @@ std::string shaderSceneResourceFor(const RendererSettings& settings) {
     return settings.enscapeCubeShaderEnabled ? settings.enscapeShaderSceneResource : std::string{};
 }
 std::vector<ModuleParameterValue> shaderSceneParameterValues(const ShaderScenePackage& package, const RendererSettings& settings) {
+    auto registry = package.parameters;
+    if (package.parameterSource.empty()) {
+        std::string error;
+        std::unordered_set<std::string> ids;
+        for (const auto& entry : settings.shaderSceneParameters) {
+            const auto* descriptor = registry.descriptor(entry.id);
+            if (!descriptor || !ids.insert(entry.id).second || entry.value.type != descriptor->type
+                || (entry.value.type == ModuleParameterType::Float && (!std::isfinite(entry.value.number)
+                    || entry.value.number < descriptor->minimum || entry.value.number > descriptor->maximum)))
+                throw std::runtime_error("Invalid ShaderScene override: " + entry.id);
+        }
+        if (!registry.applyOverrides(settings.shaderSceneParameters, error)) throw std::runtime_error(error);
+    } else if (!settings.shaderSceneParameters.empty()) {
+        throw std::runtime_error("Bound ShaderScene parameters must use the CPU schema");
+    }
     std::vector<ModuleParameterOverride> bound;
     if (!package.parameterSource.empty()) bound = builtinRenderPluginParameterSchema(package.parameterSource)->capture(settings);
     std::vector<ModuleParameterValue> result;
     for (const auto& descriptor : package.parameters.descriptors()) {
-        auto value = *package.parameters.value(descriptor.id);
+        auto value = *registry.value(descriptor.id);
         for (const auto& source : bound) if (source.id == descriptor.id) value = source.value;
         if (value.type != descriptor.type || (value.type == ModuleParameterType::Float
             && (!std::isfinite(value.number) || value.number < descriptor.minimum || value.number > descriptor.maximum)))
@@ -272,6 +288,33 @@ std::vector<ModuleParameterValue> shaderSceneParameterValues(const ShaderScenePa
         result.push_back(std::move(value));
     }
     return result;
+}
+bool setShaderSceneParameter(const ShaderScenePackage& package, RendererSettings& settings,
+    const ModuleParameterOverride& parameter, bool& changed, std::string& error) {
+    changed = false;
+    try {
+        auto candidate = settings;
+        const auto before = shaderSceneParameterValues(package, settings);
+        if (!package.parameterSource.empty()) {
+            if (!package.parameters.contains(parameter.id)) throw std::runtime_error("Parameter is not public: " + parameter.id);
+            bool history = false;
+            if (!builtinRenderPluginParameterSchema(package.parameterSource)->apply(candidate, {parameter}, history, error))
+                throw std::runtime_error(error);
+        } else {
+            auto& overrides = candidate.shaderSceneParameters;
+            auto found = std::find_if(overrides.begin(), overrides.end(), [&](const auto& item) { return item.id == parameter.id; });
+            if (found == overrides.end()) overrides.push_back(parameter); else *found = parameter;
+            const auto values = shaderSceneParameterValues(package, candidate); // Strict rejection before canonicalization.
+            auto registry = package.parameters;
+            for (std::size_t i = 0; i < values.size(); ++i)
+                if (!registry.setValue(package.parameters.descriptors()[i].id, values[i], error)) throw std::runtime_error(error);
+            candidate.shaderSceneParameters = registry.overrides();
+        }
+        const auto after = shaderSceneParameterValues(package, candidate);
+        for (std::size_t i = 0; i < before.size(); ++i)
+            changed = changed || before[i].number != after[i].number || before[i].boolean != after[i].boolean;
+        settings = std::move(candidate); error.clear(); return true;
+    } catch (const std::exception& exception) { error = exception.what(); return false; }
 }
 bool shaderScenePassNeedsHistory(const ShaderScenePackage& package, std::size_t index) {
     if (package.version < 3) return true; // Preserve existing v1/v2 allocation contracts.

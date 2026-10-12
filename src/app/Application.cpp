@@ -1045,6 +1045,7 @@ int Application::run(const std::filesystem::path& initialModel) {
     if (std::getenv("IRIS_SHADER_BROWSER_INTERACTION")) smokeTestFrames = 14;
     if (std::getenv("IRIS_SHADER_WORKSPACE_UI_TEST")) smokeTestFrames = 16;
     if (std::getenv("IRIS_SHADER_DIAGNOSTIC_UI_TEST")) smokeTestFrames = 20;
+    if (std::getenv("IRIS_SHADER_PARAMETER_UI_TEST")) smokeTestFrames = 24;
     const auto cpuPreviewSmokeDeadline = std::chrono::steady_clock::now()
         + std::chrono::seconds(30);
     const auto thumbnailDeadline = std::chrono::steady_clock::now() + std::chrono::seconds(30);
@@ -1086,6 +1087,7 @@ int Application::run(const std::filesystem::path& initialModel) {
     if (const char* directory = std::getenv("MYRENDERER_ENSCAPE_SHADER_SCENE_ACCEPTANCE_DIRECTORY"))
         runEnscapeShaderSceneAcceptance(std::filesystem::u8path(directory));
     if(const char* directory=std::getenv("IRIS_SHADER_SOURCE_MAP_ACCEPTANCE_DIRECTORY"))runShaderSourceMapAcceptance(std::filesystem::u8path(directory));
+    if(const char* directory=std::getenv("IRIS_SHADER_PARAMETER_ACCEPTANCE_DIRECTORY"))runShaderParameterAcceptance(std::filesystem::u8path(directory));
     if (std::getenv("IRIS_SHADER_WORKSPACE_UI_BAD") && std::getenv("MYRENDERER_SMOKE_TEST")
         && std::getenv("IRIS_SHADER_WORKSPACE_ACCEPTANCE") && std::getenv("MYRENDERER_SHADER_SCENE_ACCEPTANCE_DIRECTORY")) {
         const auto inspection=inspectWorkspaceShaderPackage(std::filesystem::u8path(iris::shaderSceneResourceFor(rendererSettings_)));
@@ -1419,9 +1421,17 @@ int Application::run(const std::filesystem::path& initialModel) {
     const bool diagnosticUiPassed=!std::getenv("IRIS_SHADER_DIAGNOSTIC_UI_TEST") || (shaderDiagnosticUiPhase_==2
         && inspectedShaderLine_==3 && inspectedShaderFile_.filename()=="second.glsl" && !shaderDiagnosticContext_.empty());
     if(std::getenv("IRIS_SHADER_DIAGNOSTIC_UI_TEST"))std::cout<<"Original include diagnostic real selection: "<<(diagnosticUiPassed?"PASS":"FAIL")<<'\n';
+    bool shaderParameterUiPassed = true;
+    if (std::getenv("IRIS_SHADER_PARAMETER_UI_TEST")) {
+        const auto* package = renderer_->activeShaderScenePackage();
+        const auto values = package ? iris::shaderSceneParameterValues(*package, rendererSettings_) : std::vector<ModuleParameterValue>{};
+        shaderParameterUiPassed = shaderParameterUiPhase_ == 4 && shaderParameterUiFloatChanged_ && shaderParameterUiBoolChanged_
+            && values.size() == 2 && values[0].number > .6f && !values[1].boolean;
+    }
     shutdown();
     if (lightUiInteraction && !lightUiInteractionComplete_) std::cerr << "Light UI incomplete: phase=" << lightUiInteractionPhase_ << ", lights=" << scene_.lightEntityCount() << "\n";
-    return diagnosticUiPassed && workspaceUiPassed && shaderBrowserPassed && recoveryPassed && appendPassed && interactionsPassed && pluginsPassed && pluginParametersPassed
+    if (std::getenv("IRIS_SHADER_PARAMETER_UI_TEST")) std::cout << "ShaderScene real Float+Bool controls: " << (shaderParameterUiPassed ? "PASS" : "FAIL") << '\n';
+    return shaderParameterUiPassed && diagnosticUiPassed && workspaceUiPassed && shaderBrowserPassed && recoveryPassed && appendPassed && interactionsPassed && pluginsPassed && pluginParametersPassed
         && (shaderTransactionSources_.empty() || (shaderTransactionDone && shaderTransactionPassed))
         && (!std::getenv("MYRENDERER_SHADER_TRANSACTION_UI_RETRY") || shaderRetryInteractionComplete_)
         && (!std::getenv("MYRENDERER_PLUGIN_RESOURCE_UI_TEST") || shaderRetryInteractionComplete_)
@@ -1870,6 +1880,11 @@ void Application::drawMainMenu() {
 
 
 void Application::drawInspectorPanel() {
+    if (std::getenv("IRIS_SHADER_PARAMETER_NARROW_PANEL")) {
+        ImGui::SetNextWindowDockID(0, ImGuiCond_Always);
+        ImGui::SetNextWindowPos(ImVec2(1180, 60), ImGuiCond_Always);
+        ImGui::SetNextWindowSize(ImVec2(260, 800), ImGuiCond_Always);
+    }
     ImGui::SetNextWindowSizeConstraints(
         EditorUi::minimumDockedPanelSize,
         ImVec2(FLT_MAX, FLT_MAX)

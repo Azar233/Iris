@@ -56,6 +56,8 @@ enum class EditorCommandType {
     RebuildRenderPluginResources,
     RetryShaderReload,
     RecompileShaderScene,
+    SetShaderSceneParameter,
+    ResetShaderSceneHistory,
     OpenWorkspaceSource,
     OpenWorkspaceDirectory,
     SetRenderPipelineMode,

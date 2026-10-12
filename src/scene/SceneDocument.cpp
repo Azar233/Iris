@@ -54,6 +54,22 @@ void writeRendererSettings(Writer& writer, const RendererSettings& settings,
     writer.String(makeSceneRelativeResource(settings.shaderSceneResource, std::filesystem::absolute(scenePath)).c_str());
     writer.Key("enscapeShaderSceneResource");
     writer.String(makeSceneRelativeResource(settings.enscapeShaderSceneResource, std::filesystem::absolute(scenePath)).c_str());
+    if (!settings.shaderSceneParameters.empty()) {
+        iris::ShaderScenePackage package; std::string error;
+        if (!iris::loadShaderScenePackage(std::filesystem::u8path(iris::shaderSceneResourceFor(settings)), package, error))
+            throw std::runtime_error(error);
+        iris::shaderSceneParameterValues(package, settings);
+        writer.Key("shaderSceneParameters"); writer.StartObject(); writer.Key("version"); writer.Int(1);
+        writer.Key("values"); writer.StartArray();
+        for (const auto& entry : settings.shaderSceneParameters) {
+            writer.StartObject(); writer.Key("id"); writer.String(entry.id.c_str());
+            writer.Key("type"); writer.Int(static_cast<int>(entry.value.type)); writer.Key("value");
+            if (entry.value.type == ModuleParameterType::Bool) writer.Bool(entry.value.boolean);
+            else writer.Double(entry.value.number);
+            writer.EndObject();
+        }
+        writer.EndArray(); writer.EndObject();
+    }
     std::string pluginError;
     if(!iris::validPluginConfigurationShape(settings.renderPlugins,pluginError))throw std::runtime_error(pluginError);
     writer.Key("renderPlugins");writer.StartObject();writer.Key("version");writer.Int(1);
@@ -881,6 +897,28 @@ bool loadSceneDocument(
                     if (!iris::loadShaderScenePackage(std::filesystem::u8path(loaded.renderer.shaderSceneResource), package, error))
                         throw std::runtime_error(error);
                 }
+            }
+            if (const auto* parameters = optionalMember(*renderer, "shaderSceneParameters")) {
+                if (!parameters->IsObject() || !parameters->HasMember("version") || !(*parameters)["version"].IsInt()
+                    || (*parameters)["version"].GetInt() != 1 || !parameters->HasMember("values")
+                    || !(*parameters)["values"].IsArray() || (*parameters)["values"].Size() > 16)
+                    throw std::runtime_error("Invalid shaderSceneParameters version/values");
+                for (const auto& item : (*parameters)["values"].GetArray()) {
+                    if (!item.IsObject() || !item.HasMember("id") || !item["id"].IsString()
+                        || !item.HasMember("type") || !item["type"].IsInt() || !item.HasMember("value"))
+                        throw std::runtime_error("Invalid ShaderScene parameter entry");
+                    ModuleParameterOverride entry;
+                    entry.id.assign(item["id"].GetString(), item["id"].GetStringLength());
+                    entry.value.type = static_cast<ModuleParameterType>(item["type"].GetInt());
+                    if (entry.value.type == ModuleParameterType::Bool && item["value"].IsBool()) entry.value.boolean = item["value"].GetBool();
+                    else if (entry.value.type == ModuleParameterType::Float && item["value"].IsNumber()) entry.value.number = static_cast<float>(item["value"].GetDouble());
+                    else throw std::runtime_error("ShaderScene parameter type/value mismatch");
+                    loaded.renderer.shaderSceneParameters.push_back(std::move(entry));
+                }
+                iris::ShaderScenePackage package;
+                if (!iris::loadShaderScenePackage(std::filesystem::u8path(iris::shaderSceneResourceFor(loaded.renderer)), package, error))
+                    throw std::runtime_error(error);
+                iris::shaderSceneParameterValues(package, loaded.renderer);
             }
             if (const auto* parameters = optionalMember(*renderer, "renderPluginParameters")) {
                 if (!parameters->IsObject() || !parameters->HasMember("version")

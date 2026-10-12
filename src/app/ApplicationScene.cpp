@@ -852,6 +852,25 @@ void Application::processEditorCommands() {
                 shaderWorkspaceFileMessage_=statusMessage_;
                 break;
             }
+            case EditorCommandType::SetShaderSceneParameter:
+            case EditorCommandType::ResetShaderSceneHistory: {
+                const auto* package = renderer_ ? renderer_->activeShaderScenePackage() : nullptr;
+                if (!package || package->manifest != std::filesystem::weakly_canonical(std::filesystem::u8path(command.text))) {
+                    statusMessage_ = "ShaderScene command rejected: package is no longer active"; break;
+                }
+                if (command.type == EditorCommandType::ResetShaderSceneHistory) {
+                    renderer_->invalidateTemporalHistory(); statusMessage_ = "ShaderScene history cleared"; break;
+                }
+                ModuleParameterOverride value; value.id = command.pluginParameterId;
+                value.value.type = static_cast<ModuleParameterType>(command.moduleParameter.type);
+                value.value.boolean = command.moduleParameter.boolean; value.value.number = command.moduleParameter.number;
+                bool changed = false; std::string error;
+                if (!iris::setShaderSceneParameter(*package, rendererSettings_, value, changed, error)) {
+                    statusMessage_ = "ShaderScene parameter rejected: " + error; break;
+                }
+                if (changed) renderer_->invalidateTemporalHistory();
+                statusMessage_ = "ShaderScene parameter updated: " + value.id; break;
+            }
             case EditorCommandType::SetRenderPluginParameter: {
                 ModuleParameterOverride parameter;
                 parameter.id = command.pluginParameterId;
@@ -912,11 +931,13 @@ void Application::processEditorCommands() {
                 if (command.flag && !rendererSettings_.enscapeShaderSceneResource.empty()) {
                     auto candidateSettings = rendererSettings_; candidateSettings.enscapeCubeShaderEnabled = true;
                     candidateSettings.shaderSceneResource.clear();
+                    candidateSettings.shaderSceneParameters.clear();
                     try { prepared = renderer_->prepareShaderScene(candidateSettings); }
                     catch (const std::exception& exception) { statusMessage_ = "Pipeline change rejected: " + std::string(exception.what()); break; }
                 }
                 rendererSettings_.enscapeCubeShaderEnabled=command.flag;
                 rendererSettings_.shaderSceneResource.clear();
+                rendererSettings_.shaderSceneParameters.clear();
                 if (prepared) renderer_->publishShaderScene(std::move(prepared), rendererSettings_.enscapeShaderSceneResource);
                 else if(renderer_)renderer_->invalidateTemporalHistory();
                 break;
@@ -3119,6 +3140,72 @@ bool Application::recompileWorkspaceShaderScene() {
     }
 }
 
+void Application::drawShaderRuntimeInspector() {
+    const auto* package = renderer_ ? renderer_->activeShaderScenePackage() : nullptr;
+    if (!package || package->manifest != workspaceShaderPackage_.manifest) return;
+    const auto runtime = renderer_->shaderSceneRuntimeStatus();
+    ImGui::TextWrapped("%s | %dx%d | Frame %d | %.3f s", EditorUi::chinese ? "实际运行包" : "Live package",
+        runtime.width, runtime.height, runtime.frame, runtime.time);
+    ImGui::TextWrapped("History: %s | dt %.4f s", runtime.resetPending ? "reset pending" : runtime.historyValid ? "valid" : "clear", runtime.timeDelta);
+    if (EditorUi::section("Public parameters", true)) {
+        const auto values = iris::shaderSceneParameterValues(*package, rendererSettings_);
+        if (values.empty()) ImGui::TextWrapped("%s", EditorUi::chinese ? "此包没有公开参数。" : "No public parameters.");
+        for (std::size_t index = 0; index < values.size(); ++index) {
+            const auto& descriptor = package->parameters.descriptors()[index];
+            auto value = values[index]; ImGui::PushID(descriptor.id.c_str());
+            const bool edited = EditorUi::propertyRow(descriptor.displayName.c_str(), [&](const char* id) {
+                const bool changed = descriptor.type == ModuleParameterType::Bool ? ImGui::Checkbox(id, &value.boolean)
+                    : ImGui::SliderFloat(id, &value.number, static_cast<float>(descriptor.minimum), static_cast<float>(descriptor.maximum), "%.3f");
+                if (std::getenv("IRIS_SHADER_PARAMETER_UI_TEST") && shaderBrowserUiFrames_ >= 5) {
+                    const bool floatTarget = descriptor.id == "gain" && shaderParameterUiPhase_ < 2;
+                    const bool boolTarget = descriptor.id == "enabled" && shaderBrowserUiFrames_ >= 9 && shaderParameterUiPhase_ >= 2 && shaderParameterUiPhase_ < 4;
+                    if (floatTarget || boolTarget) {
+                        const auto a = ImGui::GetItemRectMin(), b = ImGui::GetItemRectMax();
+                        if (shaderParameterUiPhase_ % 2 == 0) {
+                            ImGui::GetIO().AddFocusEvent(true);
+                            ImGui::GetIO().AddMousePosEvent(a.x + (b.x-a.x)*(floatTarget ? .8f : .1f), (a.y+b.y)*.5f);
+                            ImGui::GetIO().AddMouseButtonEvent(0, true);
+                        } else ImGui::GetIO().AddMouseButtonEvent(0, false);
+                        ++shaderParameterUiPhase_;
+                    }
+                }
+                return changed;
+            });
+            const bool reset = ImGui::Button(EditorUi::chinese ? "默认值" : "Default");
+            if (edited || reset) {
+                if (reset) value = *package->parameters.value(descriptor.id);
+                EditorCommand command{EditorCommandType::SetShaderSceneParameter}; command.text = package->manifest.u8string();
+                command.pluginParameterId = descriptor.id; command.moduleParameter.type = static_cast<int>(value.type);
+                command.moduleParameter.number = value.number; command.moduleParameter.boolean = value.boolean;
+                editorSession_.request(std::move(command));
+                if (edited && descriptor.id == "gain") shaderParameterUiFloatChanged_ = true;
+                if (edited && descriptor.id == "enabled") shaderParameterUiBoolChanged_ = true;
+            }
+            ImGui::PopID();
+        }
+    }
+    if (EditorUi::section("Pass / Channel configuration", std::getenv("IRIS_SHADER_PARAMETER_UI_TEST") != nullptr || std::getenv("IRIS_SHADER_HISTORY_VIEW") != nullptr)) {
+        ImGui::TextWrapped("%s", EditorUi::chinese ? "已提交的运行配置；外部修改描述文件后重新编译。" : "Committed configuration; edit the Manifest externally and recompile.");
+        ImGui::TextWrapped("Entry: %s | Camera: project", package->mainImageEntry ? "mainImage" : "main");
+        for (const auto index : package->executionOrder) {
+            const auto& pass = package->passes[index];
+            ImGui::TextWrapped("%s | %s | %dx%d", pass.id.c_str(), pass.format == iris::ShaderSceneFormat::DisplayRgba8 ? "display-rgba8" : "linear-rgba16f",
+                (runtime.width+pass.sizeDivisor-1)/pass.sizeDivisor, (runtime.height+pass.sizeDivisor-1)/pass.sizeDivisor);
+            ImGui::TextWrapped("%s", pass.fragment.lexically_relative(package->root).generic_u8string().c_str());
+            if (pass.channels.empty()) ImGui::TextUnformatted("No channels");
+            for (const auto& channel : pass.channels)
+                ImGui::TextWrapped("Channel %d <- %s | %s | %s / %s / %s", channel.slot, channel.source.c_str(),
+                    channel.externalTexture ? "texture" : channel.previousFrame ? "previous frame" : "current frame",
+                    channel.linearFilter ? "linear" : "nearest", channel.repeatWrap ? "repeat" : "clamp", channel.mipmaps ? "mip" : "no mip");
+        }
+    }
+    if (EditorUi::section("History policy", std::getenv("IRIS_SHADER_HISTORY_VIEW") != nullptr)) {
+        ImGui::TextWrapped("%s", EditorUi::chinese ? "参数、相机、尺寸、源码变化清零；时间倒退或跳变超过 0.25 s 清零。暂停保留同一 previous 输入；正常前进使用上一帧。没有运动重投影。" : "Clear on parameter, camera, size or source change, time rewind or jump > 0.25 s. Paused time keeps the same previous input; forward time uses the previous frame. No motion reprojection.");
+        if (ImGui::Button(EditorUi::chinese ? "清空历史" : "Clear history")) {
+            EditorCommand command{EditorCommandType::ResetShaderSceneHistory}; command.text = package->manifest.u8string(); editorSession_.request(std::move(command));
+        }
+    }
+}
 void Application::drawShaderPackageInspector() {
     if (workspaceShaderPackage_.manifest != selectedWorkspaceAsset_
         || workspaceShaderGeneration_ != workspaceAssets_.generation()) {
@@ -3190,6 +3277,7 @@ void Application::drawShaderPackageInspector() {
     }
     if(!compilerDiagnostics.empty() && EditorUi::section("Raw compiler log",false))
         ImGui::TextWrapped("%s",shaderWorkspaceDiagnostics_.empty()?renderer_->shaderReloadStatus().c_str():shaderWorkspaceMessage_.c_str());
+    if (active) drawShaderRuntimeInspector();
     ImGui::TextWrapped("%s",EditorUi::chinese?"文件快照；Refresh 更新。文档不是执行输入。":"File list snapshot; use Refresh. Documentation is not an execution input.");
     if(EditorUi::section("Package files",true)) {
         bool interactionHandled=false;
@@ -3381,6 +3469,38 @@ SceneEntityId Application::pickEntity(const std::vector<RenderItem>& items,
     return hit > 0 && hit <= items.size() ? items[hit - 1].entityId : invalidSceneEntityId;
 }
 
+void Application::runShaderParameterAcceptance(const std::filesystem::path& directory) {
+    const auto check=[](bool ok,const char* message){if(!ok)throw std::runtime_error(message);};
+    std::filesystem::create_directories(directory);
+    const auto manifest=directory/"controls.shaderscene";
+    std::ofstream(manifest) << R"({"version":3,"id":"controls","resourceRoot":".","entry":"main","camera":"project","author":"Iris contributors","license":"MIT","textures":[],"parameters":[{"id":"gain","label":"Procedural intensity with a deliberately long label","type":"float","default":0.5,"min":0,"max":1},{"id":"enabled","label":"Enabled","type":"bool","default":true}],"passes":[{"id":"Accum","fragment":"accum.frag","output":"linear-rgba16f","sizeDivisor":2,"channels":[{"slot":0,"source":"Accum","frame":"previous","filter":"nearest","wrap":"clamp","mip":"none"}]},{"id":"Image","fragment":"image.frag","output":"display-rgba8","sizeDivisor":1,"channels":[{"slot":0,"source":"Accum","frame":"current","filter":"linear","wrap":"clamp","mip":"none"}]}]})";
+    std::ofstream(directory/"accum.frag") << "#version 330 core\nuniform float gain;uniform bool enabled;uniform bool irisHistoryValid;uniform sampler2D irisChannel0;uniform vec2 irisResolution;out vec4 color;void main(){vec4 v=vec4(enabled?gain:0.0,0.2,0.4,1);color=irisHistoryValid?mix(texelFetch(irisChannel0,ivec2(gl_FragCoord.xy),0),v,0.5):v;}\n";
+    std::ofstream(directory/"image.frag") << "#version 330 core\nuniform float gain;uniform bool enabled;uniform sampler2D irisChannel0;uniform vec2 irisResolution;out vec4 color;void main(){color=texture(irisChannel0,gl_FragCoord.xy/irisResolution);}\n";
+    check(openScene(manifest),"Parameter fixture open failed");processEditorCommands();
+    rendererSettings_.shaderHotReloadEnabled=false;animationTimeFixed_=true;animationTimeSeconds_=1.25f;
+    const auto draw=[&](float time){rendererSettings_.water.timeSeconds=time;renderer_->render(scene_.buildRenderItems(),camera_,rendererSettings_,320,180);glFinish();check(glGetError()==GL_NO_ERROR,"Parameter GPU state error");};
+    const auto pixels=[&](){std::vector<unsigned char> bytes(320U*180U*4U);glBindTexture(GL_TEXTURE_2D,renderer_->colorTexture());glGetTexImage(GL_TEXTURE_2D,0,GL_RGBA,GL_UNSIGNED_BYTE,bytes.data());return bytes;};
+    const auto edit=[&](const char* id,ModuleParameterType type,float number,bool flag,const std::string& resource){EditorCommand command{EditorCommandType::SetShaderSceneParameter};command.text=resource;command.pluginParameterId=id;command.moduleParameter.type=static_cast<int>(type);command.moduleParameter.number=number;command.moduleParameter.boolean=flag;editorSession_.request(std::move(command));processEditorCommands();};
+    draw(1.25f);const auto original=pixels();draw(1.3f);check(renderer_->shaderSceneRuntimeStatus().historyValid,"Forward feedback history absent");
+    const auto paused=renderer_->shaderSceneRuntimeStatus().frame;const auto pausedPixels=pixels();draw(1.3f);
+    check(renderer_->shaderSceneRuntimeStatus().frame==paused && pausedPixels==pixels(),"Paused feedback changed frame/pixels");
+    auto revision=renderer_->historyInvalidationRevision();
+    edit("gain",ModuleParameterType::Float,.8f,false,manifest.u8string());check(renderer_->historyInvalidationRevision()>revision,"Parameter command did not clear history");
+    draw(1.3f);check(!renderer_->shaderSceneRuntimeStatus().historyValid && original!=pixels(),"Float did not contribute / clear feedback");
+    const auto changed=pixels();revision=renderer_->historyInvalidationRevision();
+    edit("gain",ModuleParameterType::Float,.8f,false,manifest.u8string());check(renderer_->historyInvalidationRevision()==revision,"No-op parameter cleared history");
+    edit("gain",ModuleParameterType::Float,2,false,manifest.u8string());check(renderer_->historyInvalidationRevision()==revision,"Rejected value cleared history");draw(1.3f);check(changed==pixels(),"Rejected value changed pixels");
+    edit("gain",ModuleParameterType::Float,.2f,false,(directory/"other.shaderscene").u8string());check(renderer_->historyInvalidationRevision()==revision,"Stale package command applied");
+    edit("enabled",ModuleParameterType::Bool,0,false,manifest.u8string());draw(1.3f);check(changed!=pixels(),"Bool did not contribute");
+    check(saveSceneTo(directory/"saved.myscene"),"Parameter save failed");const auto saved=pixels();
+    check(openScene(directory/"saved.myscene"),"Parameter reopen failed");processEditorCommands();draw(1.3f);check(saved==pixels(),"Saved overrides changed GPU output");
+    edit("enabled",ModuleParameterType::Bool,0,true,manifest.u8string());edit("gain",ModuleParameterType::Float,.5f,false,manifest.u8string());
+    check(rendererSettings_.shaderSceneParameters.empty(),"Defaults were retained as overrides");draw(1.3f);check(original==pixels(),"Default recovery changed pixels");
+    draw(1.35f);EditorCommand reset{EditorCommandType::ResetShaderSceneHistory};reset.text=manifest.u8string();editorSession_.request(std::move(reset));processEditorCommands();draw(1.35f);check(!renderer_->shaderSceneRuntimeStatus().historyValid,"Explicit history clear failed");
+    const auto* package=renderer_->activeShaderScenePackage();check(package && package->executionOrder.size()==2 && package->passes[0].channels[0].previousFrame,"Live graph unavailable");
+    selectedWorkspaceAsset_=manifest;focusAssetsTab_=true;
+    std::cout<<"ShaderScene parameter Float/Bool GPU contribution / strict+stale rejection / no-op / history / defaults / save+reopen PASS\n";
+}
 void Application::runShaderSourceMapAcceptance(const std::filesystem::path& directory) {
     const auto check=[](bool ok,const char* message){if(!ok)throw std::runtime_error(message);};
     const auto write=[](const std::filesystem::path& file,const std::string& text){std::ofstream stream(file,std::ios::trunc);stream<<text;if(!stream)throw std::runtime_error("Cannot write diagnostic fixture");};

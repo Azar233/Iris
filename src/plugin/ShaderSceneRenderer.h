@@ -15,6 +15,8 @@ public:
     RenderPluginFrameInfo frameInfo() const override;
     std::size_t estimatedBytes() const override;
     std::vector<RenderPassContext> passContexts() const;
+    const ShaderScenePackage* package() const;
+    ShaderSceneRuntimeStatus runtimeStatus() const;
 private:
     struct State;
     std::filesystem::path vertex_;

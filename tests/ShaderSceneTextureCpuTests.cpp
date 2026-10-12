@@ -90,6 +90,12 @@ void testShaderSceneTexturesCpu(const std::filesystem::path& fixture) {
         const auto sourceValues = iris::shaderSceneParameterValues(package, sourceSettings);
         check(sourceValues[0].boolean && sourceValues[1].number == 0.9f && !package.parameters.value("noiseReduction")->boolean,
             "CPU schema source did not preserve one live value source");
+        ModuleParameterOverride bound; bound.id="noiseReduction"; bound.value.type=ModuleParameterType::Bool; bound.value.boolean=false;
+        bool changed=false;
+        check(iris::setShaderSceneParameter(package,sourceSettings,bound,changed,error) && changed
+            && !sourceSettings.enscapeCube.noiseReduction && sourceSettings.shaderSceneParameters.empty(),"Bound UI created a parallel value source");
+        bound.id="not-public";
+        check(!iris::setShaderSceneParameter(package,sourceSettings,bound,changed,error),"Bound private parameter accepted");
         const auto badSource = [&](const char* from, const char* to) {
             auto text = sourcePackage; text.replace(text.find(from), std::string(from).size(), to); write(text);
             check(!iris::loadShaderScenePackage(manifest, package, error) && package.id == "source", "Bad source schema replaced prior package");

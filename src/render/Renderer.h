@@ -1,4 +1,5 @@
 #pragma once
+namespace iris { struct ShaderScenePackage; struct ShaderSceneRuntimeStatus; }
 #include "render/ShaderSourceMap.h"
 
 #include <array>
@@ -132,6 +133,7 @@ struct RendererSettings {
     iris::RenderPluginConfiguration renderPlugins;
     iris::RenderPluginParameterStore renderPluginValues;
     std::string shaderSceneResource; // Empty selects the existing native/Enscape pipelines.
+    std::vector<ModuleParameterOverride> shaderSceneParameters; // Generic package overrides; bound packages use their existing CPU schema.
     std::string enscapeShaderSceneResource; // Optional package for the existing Enscape mode switch; empty keeps legacy.
     bool enscapeCubeShaderEnabled{false};
     EnscapeCubeSettings enscapeCube;
@@ -330,6 +332,8 @@ public:
     const std::vector<ShaderSourceDiagnostic>& shaderReloadDiagnostics() const { return shaderReloadDiagnostics_; }
     bool shaderReloadFailed() const { return shaderReloadFailed_; }
     bool reloadShaderResources(bool retryPending = false);
+    const iris::ShaderScenePackage* activeShaderScenePackage() const;
+    iris::ShaderSceneRuntimeStatus shaderSceneRuntimeStatus() const;
     bool rebuildPluginResources(const std::string& id, const RendererSettings& settings);
     std::unique_ptr<iris::RenderPlugin> prepareShaderScene(const RendererSettings& settings);
     void publishShaderScene(std::unique_ptr<iris::RenderPlugin> candidate, const std::string& resource);

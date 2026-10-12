@@ -98,6 +98,8 @@ private:
     bool runLightEntityAcceptance(const std::filesystem::path& directory);
     void runShaderSceneAcceptance(const std::filesystem::path& directory);
     void runShaderSourceMapAcceptance(const std::filesystem::path& directory);
+    void runShaderParameterAcceptance(const std::filesystem::path& directory);
+    void drawShaderRuntimeInspector();
     void runEnscapeShaderSceneAcceptance(const std::filesystem::path& directory);
     void updateViewportCameraNavigation();
     void drawModulePanel();
@@ -219,6 +221,8 @@ private:
     int inspectedShaderLine_{0};
     std::vector<std::string> shaderDiagnosticContext_;
     int shaderDiagnosticUiPhase_{0};
+    int shaderParameterUiPhase_{0};
+    bool shaderParameterUiFloatChanged_{false}, shaderParameterUiBoolChanged_{false};
     int shaderWorkspaceUiPhase_{0};
     int shaderWorkspaceCompileAttempts_{0};
     bool shaderWorkspaceLastCompileAccepted_{false};

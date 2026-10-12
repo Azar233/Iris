@@ -1887,6 +1887,14 @@ std::unique_ptr<iris::RenderPlugin> Renderer::prepareShaderScene(const RendererS
     if (!capture::same(identity, capture::snapshot(manifest))) throw std::runtime_error("ShaderScene manifest changed while building the Pass contract");
     return candidate;
 }
+const iris::ShaderScenePackage* Renderer::activeShaderScenePackage() const {
+    const auto* shader = dynamic_cast<const iris::ShaderSceneRenderer*>(shaderSceneRenderer_.get());
+    return shader ? shader->package() : nullptr;
+}
+iris::ShaderSceneRuntimeStatus Renderer::shaderSceneRuntimeStatus() const {
+    const auto* shader = dynamic_cast<const iris::ShaderSceneRenderer*>(shaderSceneRenderer_.get());
+    return shader ? shader->runtimeStatus() : iris::ShaderSceneRuntimeStatus{};
+}
 void Renderer::publishShaderScene(std::unique_ptr<iris::RenderPlugin> candidate, const std::string& resource) {
     auto preparedResource = resource;
     shaderSceneRenderer_.swap(candidate); shaderSceneResource_.swap(preparedResource);

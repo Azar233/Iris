@@ -147,6 +147,12 @@ struct ShaderSceneRenderer::State {
 };
 ShaderSceneRenderer::ShaderSceneRenderer(const std::filesystem::path& directory) : vertex_(directory / "fullscreen.vert") {}
 ShaderSceneRenderer::~ShaderSceneRenderer() = default;
+const ShaderScenePackage* ShaderSceneRenderer::package() const { return state_ ? &state_->package : nullptr; }
+ShaderSceneRuntimeStatus ShaderSceneRenderer::runtimeStatus() const {
+    if (!state_) return {};
+    return {state_->width, state_->height, state_->frameIndex, state_->time, state_->timeDelta,
+        state_->rendered, state_->historyValid, state_->invalidated};
+}
 void ShaderSceneRenderer::prepareResources(const RendererSettings& settings, int width, int height) {
     auto candidate = std::make_unique<State>(); std::string error;
     const auto resource = shaderSceneResourceFor(settings);
