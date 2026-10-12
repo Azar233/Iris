@@ -28,4 +28,4 @@ Get-FileHash output/weather.raw
 
 65536 bytes 的 SHA256 是 `9D00A62E5B1496A6F7CC12ACC1035FC50C6442CC5CD42EEB94F7A548C78A8943`。原纹理不是随原 Shadertoy 源码提供的素材；这里保留 Iris 的确定性替代数据。
 
-已有 07 Raster Job 保留支持并记录包资源身份。独立 ShaderScene Job、任意公开参数覆盖界面、文件树/诊断定位、模型材质 Shader 仍属后续工作；该迁移不代表整项 A3 完成。
+已有 07 Raster Job 保留支持并记录包资源身份。独立 schema 4 ShaderScene Job、公开参数覆盖界面、文件树/诊断定位已接通，见 [当前支持范围](../README.md)。鼠标 uniform 与模型材质 Shader 尚未实现；整项 A3 保持未完成。

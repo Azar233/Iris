@@ -32,10 +32,13 @@ try {
     & $command convert -f $capture -o $xml -c xml *> (Join-Path $out 'convert.log')
     $convertExit=$LASTEXITCODE;$ErrorActionPreference='Stop'
     if($convertExit -ne 0 -or -not(Test-Path -LiteralPath $xml)){throw 'Capture conversion failed'}
-    if(-not(Select-String -LiteralPath $xml -Pattern $ExpectedLabel -Quiet)){
-        throw 'Capture did not contain renderer debug-group labels'
+    $labels=@($ExpectedLabel -split '\|')
+    foreach($label in $labels){
+        if(-not $label -or -not(Select-String -LiteralPath $xml -Pattern $label -Quiet)){
+            throw "Capture did not contain required renderer debug-group label: $label"
+        }
     }
-    @{capture=$capture;structured=$xml;labelsVerified=$true;fixture=$Fixture} |
+    @{capture=$capture;structured=$xml;labelsVerified=$true;verifiedLabels=$labels;fixture=$Fixture} |
         ConvertTo-Json | Set-Content -Encoding UTF8 (Join-Path $out 'report.json')
     Write-Output "Real RenderDoc frame / debug-group labels PASS: $capture"
 } finally {

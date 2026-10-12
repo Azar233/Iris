@@ -14,13 +14,13 @@ A2-B2b2 提供未绑定参数的独立值存储与可扩展 CPU schema 目录：
 
 A2 收口提供完整候选插件的 Shader/FBO/纹理准备与失败保留、取消/过期检查、全/半分辨率输入校验及 Plugins 页的资源重建命令。三种构建 CTest 各 32/32，真实 GPU、旧输入/Job、图像与 CPU PT/Module/云回归、带标签帧捕获和既有 GPU 性能门槛通过；源代码与 CI 交付状态见共享路线。
 
-A3 首个单 Image 切片提供版本化 `.shaderscene` 包、严格路径/float 参数校验、项目 Camera/时间/分辨率输入，以及打开、拖入、`.myscene` 相对引用保存与失败保留。运行 `build-ci-msvc/Release/Iris.exe assets/shader-scenes/orbit/orbit.shaderscene` 可预览自制 Orbit 包；新包只需 JSON 与 GLSL。该切片支持 GLSL `main()` 与 display RGBA8 预览/PNG，多 Pass/反馈见下方 S1-A2a；参数覆盖 UI、Job 和模型材质 Shader 尚未实现。模板与输入约定见 [Orbit 包说明](assets/shader-scenes/orbit/README.md)。
+A3 首个单 Image 切片提供版本化 `.shaderscene` 包、严格路径/float 参数校验、项目 Camera/时间/分辨率输入，以及打开、拖入、`.myscene` 相对引用保存与失败保留。运行 `build-ci-msvc/Release/Iris.exe assets/shader-scenes/orbit/orbit.shaderscene` 可预览自制 Orbit 包；新包只需 JSON 与 GLSL。该切片支持 GLSL `main()` 与 display RGBA8 预览/PNG，多 Pass/反馈见下方 S1-A2a；参数覆盖 UI 和 schema 4 序列 Job 已接通，模型材质 Shader 尚未实现。模板与输入约定见 [Orbit 包说明](assets/shader-scenes/orbit/README.md)和[当前支持范围](assets/shader-scenes/README.md)。
 
 A3 / S1-A2a 增加 `.shaderscene` v2：最多 4 Pass、每 Pass 4 个二维 Pass 通道、全/半尺寸线性缓冲与显式上一帧反馈。重复时间不会累计，Camera/尺寸/时间跳转/成功重载和显式失效清历史；失败保留旧完整运行状态。运行 `build-ci-msvc/Release/Iris.exe assets/shader-scenes/feedback/feedback.shaderscene` 查看三 Pass 自制示例，约定见 [Feedback 包说明](assets/shader-scenes/feedback/README.md)。S1-A2b1 为 v2 增加 `entry: "mainImage"`，宿主包装每个 Pass 的 `mainImage(out vec4, in vec2)`，使用相同 iris Uniform、编译检查和原子重载，示例见 [mainImage 包说明](assets/shader-scenes/main-image/README.md)。通用参数 UI、Job 与模型材质 Shader 仍属后续工作，A3 尚未收口。
 
-S1-A2b2 的 `.shaderscene` v3 新增最多 8 个有界纹理资源：二维 PNG、二维/三维 raw、固定 uint32 Seed 的 hash-v1 噪声，支持 linear R8/RGBA8、二维 sRGB、Mip 与每通道的过滤/Wrap。总纹理预算含 Mip 为 64 MiB；资源变化核对内容身份，失败保留旧完整运行状态，重新打开成功后清历史。运行 `build-ci-msvc/Release/Iris.exe assets/shader-scenes/textures/textures.shaderscene` 查看自制颜色/体积切片/噪声示例，完整格式与边界见 [纹理包说明](assets/shader-scenes/textures/README.md)。v1/v2 保持兼容，纹理文件支持完整包热重载或重新打开更新，通用 ShaderScene Job 仍明确拒绝。
+S1-A2b2 的 `.shaderscene` v3 新增最多 8 个有界纹理资源：二维 PNG、二维/三维 raw、固定 uint32 Seed 的 hash-v1 噪声，支持 linear R8/RGBA8、二维 sRGB、Mip 与每通道的过滤/Wrap。总纹理预算含 Mip 为 64 MiB；资源变化核对内容身份，失败保留旧完整运行状态，重新打开成功后清历史。运行 `build-ci-msvc/Release/Iris.exe assets/shader-scenes/textures/textures.shaderscene` 查看自制颜色/体积切片/噪声示例，完整格式与边界见 [纹理包说明](assets/shader-scenes/textures/README.md)。v1/v2 保持兼容，纹理文件支持完整包热重载或重新打开更新，通用 ShaderScene Job 使用 schema 4 显式启用，旧 schema 仍拒绝。
 
-S1-A2b3 将 01/03 的 Enscape 四 Pass 迁入 [Enscape ShaderScene 包](assets/shader-scenes/enscape/README.md)，继续使用共享 Camera 和已有 13 个参数（含 `noiseReduction`）、保存重开、模式切换及 07 Raster Job。v3 的可选 CPU `parameterSource` 和 bool 参数连接兼容值；无新引用的旧 Scene 仍使用原插件。新旧同输入图像/24 帧和成本通过固定门槛；只对 previous 引用分配双缓冲，私有纹理预算不增加。独立 ShaderScene Job 仍拒绝；S1-B 已接通分类、声明依赖、源码操作、原始诊断、公开参数和完整包自动事务重载；可保存的历史策略已接入，任务闭环继续推进。
+S1-A2b3 将 01/03 的 Enscape 四 Pass 迁入 [Enscape ShaderScene 包](assets/shader-scenes/enscape/README.md)，继续使用共享 Camera 和已有 13 个参数（含 `noiseReduction`）、保存重开、模式切换及 07 Raster Job。v3 的可选 CPU `parameterSource` 和 bool 参数连接兼容值；无新引用的旧 Scene 仍使用原插件。新旧同输入图像/24 帧和成本通过固定门槛；只对 previous 引用分配双缓冲，私有纹理预算不增加。独立 ShaderScene Job 已由 schema 4 接通；S1-B 已接通分类、声明依赖、源码操作、原始诊断、公开参数和完整包自动事务重载；可保存的历史策略已接入，任务闭环继续推进。
 
 <p align="center">A C++17 real-time and offline rendering playground.</p>
 

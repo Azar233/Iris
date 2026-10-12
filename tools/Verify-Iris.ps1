@@ -16,7 +16,17 @@ $out=Join-Path $root ('.local/verification/'+$Compiler+'-'+$Area+'-'+$Level.ToLo
 New-Item -ItemType Directory -Force $out | Out-Null
 Push-Location $root
 try {
-    if($Configure -or -not(Test-Path (Join-Path $build 'iris-test-targets.json'))) {
+    $indexPath=Join-Path $build 'iris-test-targets.json'
+    $staleIndex=-not(Test-Path $indexPath)
+    if(-not $staleIndex){
+        $indexTime=(Get-Item -LiteralPath $indexPath).LastWriteTimeUtc
+        foreach($registrationFile in @('CMakeLists.txt','CMakePresets.json','cmake/IrisVerification.cmake')){
+            if((Get-Item -LiteralPath (Join-Path $root $registrationFile)).LastWriteTimeUtc -gt $indexTime){$staleIndex=$true;break}
+        }
+    }
+    # Discover tests only after the registration inputs match this build tree.
+    # Otherwise an automatic configure during build can add unbuilt test owners.
+    if($Configure -or $staleIndex) {
         if($PlanOnly){throw 'Configure this preset before asking for an executable plan'}
         & cmake --preset $Compiler *> (Join-Path $out 'configure.log')
         if($LASTEXITCODE -ne 0){throw "Configure failed: $out"}

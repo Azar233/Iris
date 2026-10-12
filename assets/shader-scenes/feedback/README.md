@@ -17,7 +17,7 @@ Buffer 固定 linear-rgba16f，sizeDivisor 为 1/2（奇数向上取整）；Ima
 输入沿用 v1，增加 irisViewportResolution vec2、irisTimeDelta float、irisFrame int、irisHistoryValid bool；
 irisResolution 是当前 Pass 尺寸；irisChannel0..3 为 sampler2D，irisChannelResolution0..3 为对应输入 vec2。
 所有 buffer 在首次帧与历史失效时两侧清零；每个输出在绘制前清零。重复时间使用同一上一帧侧重绘，反馈不会累计。
-时间倒退、步长 >0.25 s、Camera/投影/尺寸变化、显式失效与成功编译发布清零；连续前进只在整帧边界交换双缓冲。
-这是颜色反馈，没有运动重投影。Manifest/default 更改需重新打开；源码使用已有整批事务重载，失败保留全部旧程序和历史。
+时间倒退、步长超过 Scene 策略（默认 0.25 s）、Camera/投影/尺寸变化、显式失效与成功编译发布清零；连续前进只在整帧边界交换双缓冲。
+这是颜色反馈，没有运动重投影。Manifest/default 与源码支持完整包事务重载，失败保留全部旧程序和历史。
 
-外部 2D/3D 纹理与固定噪声资源见 [v3 示例](../textures/README.md)，mainImage 包装见 [入口示例](../main-image/README.md)。Enscape 迁移、工作台文件树、参数覆盖 UI、Job 与模型材质 Shader 仍待后续验收。
+外部 2D/3D 纹理与固定噪声资源见 [v3 示例](../textures/README.md)，mainImage 包装见 [入口示例](../main-image/README.md)。Enscape 迁移、工作台文件树、参数覆盖 UI 和 schema 4 序列 Job 已接通；模型材质 Shader 尚未实现，见 [当前支持范围](../README.md)。

@@ -28,6 +28,6 @@ PNG 支持二维 RGBA8 / sRGB RGBA8，声明尺寸必须与文件一致。raw �
 
 二维使用 `sampler2D irisChannelN`，三维使用 `sampler3D irisChannelN`，类型不匹配的初始编译和热重载均拒绝。v3 新增 `vec3 irisChannelExtentN`，深度是实际 z 尺寸；旧 `vec2 irisChannelResolutionN` 继续给出 x/y。Image 的 display 编码仍由包完成，sRGB 纹理在读取时解码为线性颜色。
 
-资源在重新打开包时整体准备和提交；失败保留原资源、画面及历史，成功重新打开从清零历史开始。已加载资源是不可变快照，纹理文件没有自动热重载；GLSL 的既有热重载继续可用。InputManifest 捕获会核对准备时的清单/文件身份，拒绝变化后的发布输入；同大小、同 mtime 的内容变化也能检测。资源上传恢复原 unpack buffer/layout 和绑定，各 Pass 开始时清理旧通道，帧结束清理所有用到的 2D/3D 通道。
+资源在重新打开包时整体准备和提交；失败保留原资源、画面及历史，成功重新打开从清零历史开始。已加载资源是不可变快照，纹理、Manifest、GLSL/include 已支持完整包事务热重载，失败保留当前状态。InputManifest 捕获会核对准备时的清单/文件身份，拒绝变化后的发布输入；同大小、同 mtime 的内容变化也能检测。资源上传恢复原 unpack buffer/layout 和绑定，各 Pass 开始时清理旧通道，帧结束清理所有用到的 2D/3D 通道。
 
-v3 可以保存为 `.myscene` 的相对引用；当前 Raster / CPU Job 仍明确拒绝 ShaderScene。本工作包没有迁移 Enscape 01/03/noiseReduction，也没有完整 Shadertoy Uniform 自动注入；后续按路线图单独验收。
+v3 可以保存为 `.myscene` 的相对引用；Raster schema 4 已支持独立 ShaderScene 序列，CPU Job 继续拒绝 GLSL；Enscape 已迁移，仍不提供完整 Shadertoy Uniform 自动注入。见 [当前支持范围](../README.md)。
