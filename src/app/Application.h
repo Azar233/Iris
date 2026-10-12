@@ -19,6 +19,7 @@
 #include "io/ModelImporter.h"
 #include "app/EditorSession.h"
 #include "app/WorkspaceAssets.h"
+#include "app/WorkspaceShaderPackage.h"
 #include "app/AssetThumbnail.h"
 #include "module/ModuleRegistry.h"
 #include "module/ModuleRuntime.h"
@@ -70,6 +71,7 @@ private:
     void applyVsync(bool enabled);
     void drawScenePanel();
     void drawAssetsPanel();
+    void drawShaderPackageInspector();
     void drawEditorLayout();
     void newEmptyScene();
     SceneDocument captureSceneDocument() const;
@@ -206,6 +208,12 @@ private:
     bool contentFoldersExpanded_{true};
     std::filesystem::path selectedWorkspaceAsset_;
     WorkspaceAssetCatalog workspaceAssets_;
+    WorkspaceShaderPackage workspaceShaderPackage_;
+    std::uint64_t workspaceShaderGeneration_{0};
+    std::filesystem::path inspectedShaderFile_;
+    int shaderBrowserInteractionPhase_{0};
+    int shaderBrowserUiFrames_{0};
+    std::uint64_t shaderBrowserInitialGeneration_{0};
     std::uint64_t thumbnailCacheGeneration_{0U};
     struct UploadedThumbnail {
         std::uint64_t key{0U};

@@ -307,6 +307,7 @@ add_executable(MyRenderer
     src/app/RenderPluginPanel.cpp
     src/app/EditorSession.cpp
     src/app/WorkspaceAssets.cpp
+    src/app/WorkspaceShaderPackage.cpp
     src/asset/BuiltinModels.cpp
     src/app/FileDialog.cpp
     src/io/AssimpImporter.cpp
@@ -685,6 +686,17 @@ if(BUILD_TESTING)
         target_compile_options(MyRendererWorkspaceAssetsTests PRIVATE -Wall -Wextra -Wpedantic)
     endif()
     iris_add_test(NAME workspace-assets COMMAND MyRendererWorkspaceAssetsTests)
+
+    add_executable(IrisWorkspaceShaderPackageTests tests/WorkspaceShaderPackageTests.cpp src/app/WorkspaceShaderPackage.cpp)
+    target_include_directories(IrisWorkspaceShaderPackageTests PRIVATE src)
+    target_include_directories(IrisWorkspaceShaderPackageTests SYSTEM PRIVATE ${assimp_SOURCE_DIR}/contrib/rapidjson/include)
+    target_compile_definitions(IrisWorkspaceShaderPackageTests PRIVATE IRIS_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
+    if(MSVC)
+        target_compile_options(IrisWorkspaceShaderPackageTests PRIVATE /W4 /permissive- /utf-8)
+    else()
+        target_compile_options(IrisWorkspaceShaderPackageTests PRIVATE -Wall -Wextra -Wpedantic)
+    endif()
+    iris_add_test(NAME workspace-shader-package COMMAND IrisWorkspaceShaderPackageTests)
 
     add_executable(MyRendererAssetThumbnailTests
         tests/AssetThumbnailTests.cpp

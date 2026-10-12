@@ -91,6 +91,18 @@ int main() {
         require(catalog.records().size() == preservedCount && catalog.generation() == 2U,
                 "failed refresh replaced the last valid catalog");
 
+        writeFixture(root / "assets/shader-scenes/custom/custom.shaderscene");
+        writeFixture(root / "assets/shader-scenes/custom/resources/image.frag");
+        writeFixture(root / "shaders/packages/external-root/scene.shaderscene");
+        writeFixture(root / "shaders/packages/external-root/nested/input.glsl");
+        require(catalog.refresh(root,error),error.c_str());
+        require(catalog.count(WorkspaceAssetCategory::ShaderScenes)==2U,
+                "ShaderScene category omitted project shader root manifests");
+        require(catalog.count(WorkspaceAssetCategory::Shaders)==2U,
+                "Shader category omitted declared package root or native GLSL");
+        require(catalog.filter(WorkspaceAssetCategory::Shaders,"EXTERNAL-ROOT").size()==1U,
+                "shader path search did not cover resources outside assets");
+
         std::filesystem::remove_all(root, cleanupError);
         std::cout << "Workspace asset catalog classification, filtering, and refresh tests passed\n";
         return 0;

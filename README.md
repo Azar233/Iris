@@ -20,7 +20,7 @@ A3 / S1-A2a 增加 `.shaderscene` v2：最多 4 Pass、每 Pass 4 个二维 Pass
 
 S1-A2b2 的 `.shaderscene` v3 新增最多 8 个有界纹理资源：二维 PNG、二维/三维 raw、固定 uint32 Seed 的 hash-v1 噪声，支持 linear R8/RGBA8、二维 sRGB、Mip 与每通道的过滤/Wrap。总纹理预算含 Mip 为 64 MiB；资源变化核对内容身份，失败保留旧完整运行状态，重新打开成功后清历史。运行 `build-ci-msvc/Release/Iris.exe assets/shader-scenes/textures/textures.shaderscene` 查看自制颜色/体积切片/噪声示例，完整格式与边界见 [纹理包说明](assets/shader-scenes/textures/README.md)。v1/v2 保持兼容，纹理文件通过重新打开包更新，Job 仍明确拒绝。
 
-S1-A2b3 将 01/03 的 Enscape 四 Pass 迁入 [Enscape ShaderScene 包](assets/shader-scenes/enscape/README.md)，继续使用共享 Camera 和已有 13 个参数（含 `noiseReduction`）、保存重开、模式切换及 07 Raster Job。v3 的可选 CPU `parameterSource` 和 bool 参数连接兼容值；无新引用的旧 Scene 仍使用原插件。新旧同输入图像/24 帧和成本通过固定门槛；只对 previous 引用分配双缓冲，私有纹理预算不增加。独立 ShaderScene Job 仍拒绝，文件树与通用参数工作台按 S1-B 继续推进。
+S1-A2b3 将 01/03 的 Enscape 四 Pass 迁入 [Enscape ShaderScene 包](assets/shader-scenes/enscape/README.md)，继续使用共享 Camera 和已有 13 个参数（含 `noiseReduction`）、保存重开、模式切换及 07 Raster Job。v3 的可选 CPU `parameterSource` 和 bool 参数连接兼容值；无新引用的旧 Scene 仍使用原插件。新旧同输入图像/24 帧和成本通过固定门槛；只对 previous 引用分配双缓冲，私有纹理预算不增加。独立 ShaderScene Job 仍拒绝；S1-B1 已完成分类与依赖展示，源码操作和编译诊断继续按 S1-B 推进。
 
 <p align="center">A C++17 real-time and offline rendering playground.</p>
 
@@ -125,6 +125,8 @@ GLSL 海面来自 Thomas / @Thomas_ensc 的 Enscape Cube，海面过程署名 Al
 .\build-ci-msvc\Release\IrisBatch.exe render-sequence assets/renderjobs/01_cpu_reference.renderjob
 ctest --preset msvc
 ```
+
+Content Browser 提供 ShaderScenes/Shaders 分类。选中包可在 Inspector 浏览声明的源码、include、纹理与许可文件，查看 Pass/Channel 归属和缺失状态；Refresh 更新只读依赖快照。源码打开、重新编译和编译诊断定位仍在后续工作台切片中。
 
 目录、Iris 状态迁移和按领域的最小验证入口见 [项目工作区说明](WORKSPACE.md)。普通开发 CI 构建与 CPU 检查，发布打包单独触发。
 

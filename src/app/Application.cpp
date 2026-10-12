@@ -1017,6 +1017,14 @@ int Application::run(const std::filesystem::path& initialModel) {
     const bool cpuPreviewSmoke = std::getenv("MYRENDERER_SMOKE_TEST") != nullptr
         && editorSession_.backend() == EditorRenderBackend::CpuPathTraced;
     const bool thumbnailAcceptance = std::getenv("MYRENDERER_ASSET_THUMBNAIL_ACCEPTANCE") != nullptr;
+    if (const char* package = std::getenv("IRIS_SHADER_BROWSER_PACKAGE")) {
+        focusAssetsTab_ = true; resetEditorLayout_ = true;
+        contentCategory_ = static_cast<int>(WorkspaceAssetCategory::ShaderScenes);
+        contentGridView_ = false;
+        shaderBrowserInitialGeneration_ = workspaceAssets_.generation();
+        if (!std::getenv("IRIS_SHADER_BROWSER_INTERACTION"))
+            selectedWorkspaceAsset_ = std::filesystem::weakly_canonical(std::filesystem::u8path(package));
+    }
     if (thumbnailAcceptance) {
         focusAssetsTab_ = true;
         contentCategory_ = static_cast<int>(WorkspaceAssetCategory::Scenes);
@@ -1034,6 +1042,7 @@ int Application::run(const std::filesystem::path& initialModel) {
     bool renderdocCaptureTriggered=false;
     int smokeTestFrames = std::getenv("MYRENDERER_SMOKE_TEST") == nullptr ? -1
         : (!shaderTransactionSources_.empty() ? 12 : (lightUiInteraction ? 16 : 5));
+    if (std::getenv("IRIS_SHADER_BROWSER_INTERACTION")) smokeTestFrames = 14;
     const auto cpuPreviewSmokeDeadline = std::chrono::steady_clock::now()
         + std::chrono::seconds(30);
     const auto thumbnailDeadline = std::chrono::steady_clock::now() + std::chrono::seconds(30);
@@ -1383,9 +1392,16 @@ int Application::run(const std::filesystem::path& initialModel) {
             << "x" << (viewport == nullptr ? 0.0f : viewport->Size.y)
             << ", uploads=" << uploadedThumbnails_.size() << ")\n";
     }
+    const bool shaderBrowserPassed = !std::getenv("IRIS_SHADER_BROWSER_INTERACTION")
+        || (shaderBrowserInteractionPhase_ >= 6 && workspaceAssets_.generation() > shaderBrowserInitialGeneration_
+            && !workspaceShaderPackage_.files.empty() && !selectedWorkspaceAsset_.empty() && !inspectedShaderFile_.empty());
+    if (std::getenv("IRIS_SHADER_BROWSER_INTERACTION"))
+        std::cout << "Shader browser real selection/refresh: " << (shaderBrowserPassed ? "PASS" : "FAIL")
+            << " phase=" << shaderBrowserInteractionPhase_ << " generation=" << workspaceAssets_.generation()
+            << " files=" << workspaceShaderPackage_.files.size() << '\n';
     shutdown();
     if (lightUiInteraction && !lightUiInteractionComplete_) std::cerr << "Light UI incomplete: phase=" << lightUiInteractionPhase_ << ", lights=" << scene_.lightEntityCount() << "\n";
-    return recoveryPassed && appendPassed && interactionsPassed && pluginsPassed && pluginParametersPassed
+    return shaderBrowserPassed && recoveryPassed && appendPassed && interactionsPassed && pluginsPassed && pluginParametersPassed
         && (shaderTransactionSources_.empty() || (shaderTransactionDone && shaderTransactionPassed))
         && (!std::getenv("MYRENDERER_SHADER_TRANSACTION_UI_RETRY") || shaderRetryInteractionComplete_)
         && (!std::getenv("MYRENDERER_PLUGIN_RESOURCE_UI_TEST") || shaderRetryInteractionComplete_)
@@ -1844,6 +1860,13 @@ void Application::drawInspectorPanel() {
         return;
     }
 
+    const auto* asset = workspaceAssets_.find(selectedWorkspaceAsset_);
+    if (asset && asset->category == WorkspaceAssetCategory::ShaderScenes) {
+        if (pendingBufferExportDirectory_.empty()) renderer_->clearBufferPreviews();
+        drawShaderPackageInspector();
+        ImGui::End();
+        return;
+    }
     if (ImGui::BeginTabBar("InspectorTabs")) {
         const bool showObject = focusObjectTab_;
         focusObjectTab_ = false;

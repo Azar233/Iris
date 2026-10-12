@@ -37,7 +37,9 @@ bool isOneOf(const std::string& extension, const std::initializer_list<const cha
 bool classify(const std::filesystem::path& relativePath, WorkspaceAssetCategory& category) {
     const std::string generic = lowercase(relativePath.generic_u8string());
     const std::string extension = lowercase(relativePath.extension().string());
-    if (extension == ".myscene") category = WorkspaceAssetCategory::Scenes;
+    if (extension == ".shaderscene") category = WorkspaceAssetCategory::ShaderScenes;
+    else if (isOneOf(extension, {".glsl", ".frag", ".vert", ".geom"})) category = WorkspaceAssetCategory::Shaders;
+    else if (extension == ".myscene") category = WorkspaceAssetCategory::Scenes;
     else if (extension == ".renderjob") category = WorkspaceAssetCategory::RenderJobs;
     else if (endsWith(generic, ".module.json")) category = WorkspaceAssetCategory::Modules;
     else if (endsWith(generic, ".simulation.json")) category = WorkspaceAssetCategory::Simulations;
@@ -128,6 +130,8 @@ const char* workspaceAssetCategoryName(WorkspaceAssetCategory category) {
         case WorkspaceAssetCategory::Caches: return "Caches";
         case WorkspaceAssetCategory::RenderJobs: return "RenderJobs";
         case WorkspaceAssetCategory::Presets: return "Presets";
+        case WorkspaceAssetCategory::ShaderScenes: return "ShaderScenes";
+        case WorkspaceAssetCategory::Shaders: return "Shaders";
         case WorkspaceAssetCategory::Count: break;
     }
     return "Unknown";
@@ -145,6 +149,8 @@ const char* workspaceAssetCategoryBadge(WorkspaceAssetCategory category) {
         case WorkspaceAssetCategory::Caches: return "CACHE";
         case WorkspaceAssetCategory::RenderJobs: return "JOB";
         case WorkspaceAssetCategory::Presets: return "PRESET";
+        case WorkspaceAssetCategory::ShaderScenes: return "PACKAGE";
+        case WorkspaceAssetCategory::Shaders: return "GLSL";
         case WorkspaceAssetCategory::Count: break;
     }
     return "ASSET";
@@ -160,8 +166,11 @@ bool WorkspaceAssetCatalog::refresh(const std::filesystem::path& sourceRoot,
         }
 
         std::vector<WorkspaceAssetRecord> candidate;
+        // Package manifests and native shader roots are both project resources.
+        for (const auto& scanRoot : {assetRoot, sourceRoot / "shaders"}) {
+        if (!std::filesystem::is_directory(scanRoot)) continue;
         for (const auto& entry : std::filesystem::recursive_directory_iterator(
-                 assetRoot, std::filesystem::directory_options::skip_permission_denied)) {
+                 scanRoot, std::filesystem::directory_options::skip_permission_denied)) {
             if (!entry.is_regular_file()) continue;
             const std::filesystem::path relative = entry.path().lexically_relative(sourceRoot);
             // Stage and regression scenes remain directly loadable by the acceptance tools, but
@@ -184,6 +193,7 @@ bool WorkspaceAssetCatalog::refresh(const std::filesystem::path& sourceRoot,
                 previewCacheKey(relative, sizeError ? 0U : size,
                                 timeError ? std::filesystem::file_time_type{} : modified)
             });
+        }
         }
         std::sort(candidate.begin(), candidate.end(), [](const auto& left, const auto& right) {
             if (left.category != right.category) return left.category < right.category;

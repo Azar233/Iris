@@ -16,6 +16,8 @@ enum class WorkspaceAssetCategory {
     Caches,
     RenderJobs,
     Presets,
+    ShaderScenes,
+    Shaders,
     Count
 };
 

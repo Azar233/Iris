@@ -7,6 +7,8 @@
 #include <algorithm>
 #include <iostream>
 #include <limits>
+#include <functional>
+#include <set>
 #include <stdexcept>
 #include <glad/gl.h>
 #include <glm/gtc/matrix_transform.hpp>
@@ -1963,6 +1965,12 @@ void Application::drawAssetsPanel() {
             : ImGuiTabItemFlags_None;
         if (ImGui::BeginTabItem("Assets", nullptr, assetsTabFlags)) {
             focusAssetsTab_ = false;
+            ++shaderBrowserUiFrames_;
+            // The initial dock rebuild can briefly create category tabs before
+            // the sidebar exists. Begin interaction only after that layout settles.
+            if (std::getenv("IRIS_SHADER_BROWSER_PACKAGE") && shaderBrowserInteractionPhase_ == 0
+                && shaderBrowserUiFrames_ >= 4)
+                contentCategory_ = static_cast<int>(WorkspaceAssetCategory::ShaderScenes);
             updateAssetThumbnail();
             const auto queueAssetAction = [&](const WorkspaceAssetRecord& asset) {
                 EditorCommand command;
@@ -2003,6 +2011,13 @@ void Application::drawAssetsPanel() {
             ImGui::SameLine();
             if (ImGui::SmallButton("Refresh")) {
                 editorSession_.request(EditorCommand{EditorCommandType::RefreshAssetCatalog});
+            }
+            if (std::getenv("IRIS_SHADER_BROWSER_INTERACTION") && shaderBrowserInteractionPhase_ == 2) {
+                const auto a=ImGui::GetItemRectMin(), b=ImGui::GetItemRectMax();
+                ImGui::GetIO().AddMousePosEvent((a.x+b.x)*0.5f,(a.y+b.y)*0.5f);
+                ImGui::GetIO().AddMouseButtonEvent(0,true); ++shaderBrowserInteractionPhase_;
+            } else if (std::getenv("IRIS_SHADER_BROWSER_INTERACTION") && shaderBrowserInteractionPhase_ == 3) {
+                ImGui::GetIO().AddMouseButtonEvent(0,false); ++shaderBrowserInteractionPhase_;
             }
             ImGui::SameLine();
             ImGui::TextDisabled("%zu assets | cache #%llu", workspaceAssets_.records().size(),
@@ -2250,6 +2265,19 @@ void Application::drawAssetsPanel() {
                             selectedWorkspaceAsset_ = asset->path;
                             if (ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) {
                                 queueAssetAction(*asset);
+                            }
+                        }
+                        if (const char* target=std::getenv("IRIS_SHADER_BROWSER_PACKAGE")) {
+                            if (std::getenv("IRIS_SHADER_BROWSER_INTERACTION")
+                                && asset->path == std::filesystem::weakly_canonical(std::filesystem::u8path(target))) {
+                                if(shaderBrowserInteractionPhase_==0 && shaderBrowserUiFrames_>=4) {
+                                    const auto a=ImGui::GetItemRectMin(),b=ImGui::GetItemRectMax();
+                                    ImGui::GetIO().AddFocusEvent(true);
+                                    ImGui::GetIO().AddMousePosEvent((a.x+b.x)*0.5f,(a.y+b.y)*0.5f);
+                                    ImGui::GetIO().AddMouseButtonEvent(0,true); ++shaderBrowserInteractionPhase_;
+                                } else if(shaderBrowserInteractionPhase_==1) {
+                                    ImGui::GetIO().AddMouseButtonEvent(0,false); ++shaderBrowserInteractionPhase_;
+                                }
                             }
                         }
                         ImGui::PopID();
@@ -3040,6 +3068,62 @@ bool Application::openScene(const std::filesystem::path& path) {
         std::cerr << statusMessage_ << '\n';
         return false;
     }
+}
+
+void Application::drawShaderPackageInspector() {
+    if (workspaceShaderPackage_.manifest != selectedWorkspaceAsset_
+        || workspaceShaderGeneration_ != workspaceAssets_.generation()) {
+        workspaceShaderPackage_ = inspectWorkspaceShaderPackage(selectedWorkspaceAsset_);
+        workspaceShaderGeneration_ = workspaceAssets_.generation();
+        inspectedShaderFile_.clear();
+    }
+    const auto& package = workspaceShaderPackage_;
+    ImGui::TextWrapped("ShaderScene: %s", package.id.empty()?"(invalid Manifest)":package.id.c_str());
+    ImGui::TextWrapped("%s: %s", EditorUi::chinese?"作者":"Author", package.author.c_str());
+    ImGui::TextWrapped("%s: %s", EditorUi::chinese?"许可":"License", package.license.c_str());
+    ImGui::TextWrapped("%s: %s", EditorUi::chinese?"资源根":"Resource root",package.root.generic_u8string().c_str());
+    if(ImGui::Button(EditorUi::chinese?"返回场景 Inspector":"Back to scene Inspector")) selectedWorkspaceAsset_.clear();
+    ImGui::TextWrapped("%s",EditorUi::chinese?"只读依赖快照；Refresh 更新。文档不是执行输入。":"Read-only dependency snapshot; use Refresh. Documentation is not an execution input.");
+    if(EditorUi::section("Package files",true)) {
+        bool interactionHandled=false;
+        std::function<void(const std::filesystem::path&)> drawDirectory;
+        drawDirectory = [&](const std::filesystem::path& directory) {
+        std::set<std::filesystem::path> children;
+        for(const auto& file:package.files) {
+            const auto relative=file.path.lexically_relative(directory);
+            if(relative.empty() || *relative.begin()=="..") continue;
+            if(file.path.parent_path()!=directory) {children.insert(directory / *relative.begin());continue;}
+            ImGui::PushID(file.path.u8string().c_str());
+            const auto label=(file.missing?"[Missing] ":"")+file.path.filename().u8string();
+            if(ImGui::Selectable(label.c_str(),inspectedShaderFile_==file.path)) inspectedShaderFile_=file.path;
+            if(!interactionHandled && file.role=="Pass source" && std::getenv("IRIS_SHADER_BROWSER_INTERACTION")
+                && workspaceAssets_.generation()>shaderBrowserInitialGeneration_) {
+                interactionHandled=true;
+                if(shaderBrowserInteractionPhase_==4) {
+                    const auto a=ImGui::GetItemRectMin(),b=ImGui::GetItemRectMax();
+                    ImGui::GetIO().AddMousePosEvent((a.x+b.x)*0.5f,(a.y+b.y)*0.5f);
+                    ImGui::GetIO().AddMouseButtonEvent(0,true);++shaderBrowserInteractionPhase_;
+                } else if(shaderBrowserInteractionPhase_==5) {
+                    ImGui::GetIO().AddMouseButtonEvent(0,false);++shaderBrowserInteractionPhase_;
+                }
+            }
+            if(ImGui::IsItemHovered()) ImGui::SetTooltip("%s | %s | %s",file.role.c_str(),formatAssetSize(file.sizeBytes).c_str(),file.executionInput?"Execution input":"Documentation only");
+            if(inspectedShaderFile_==file.path) {
+                ImGui::TextWrapped("%s | %s | %s",file.role.c_str(),formatAssetSize(file.sizeBytes).c_str(),file.missing?"Missing":"Present");
+                for(const auto& owner:file.owners) ImGui::TextWrapped("%s",owner.c_str());
+            }
+            ImGui::PopID();
+        }
+        for(const auto& child:children)
+            if(ImGui::TreeNodeEx(child.generic_u8string().c_str(),ImGuiTreeNodeFlags_DefaultOpen,"%s",child.filename().u8string().c_str())) {
+                drawDirectory(child);ImGui::TreePop();
+            }
+        };
+        drawDirectory(package.manifest.parent_path());
+    }
+    for(const auto& generated:package.generatedInputs) ImGui::TextWrapped("%s",generated.c_str());
+    if(!package.diagnostics.empty() && EditorUi::section("Inspection diagnostics",true))
+        for(const auto& diagnostic:package.diagnostics) ImGui::TextWrapped("%s",diagnostic.c_str());
 }
 
 void Application::rememberRecentScene(const std::filesystem::path& path) {
