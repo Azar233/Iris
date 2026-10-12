@@ -72,6 +72,7 @@ private:
     void drawScenePanel();
     void drawAssetsPanel();
     void drawShaderPackageInspector();
+    bool recompileWorkspaceShaderScene();
     void drawEditorLayout();
     void newEmptyScene();
     SceneDocument captureSceneDocument() const;
@@ -209,6 +210,11 @@ private:
     std::filesystem::path selectedWorkspaceAsset_;
     WorkspaceAssetCatalog workspaceAssets_;
     WorkspaceShaderPackage workspaceShaderPackage_;
+    std::string shaderWorkspaceMessage_{"No workspace compile requested"};
+    std::string shaderWorkspaceFileMessage_;
+    int shaderWorkspaceUiPhase_{0};
+    int shaderWorkspaceCompileAttempts_{0};
+    bool shaderWorkspaceLastCompileAccepted_{false};
     std::uint64_t workspaceShaderGeneration_{0};
     std::filesystem::path inspectedShaderFile_;
     int shaderBrowserInteractionPhase_{0};

@@ -1043,6 +1043,7 @@ int Application::run(const std::filesystem::path& initialModel) {
     int smokeTestFrames = std::getenv("MYRENDERER_SMOKE_TEST") == nullptr ? -1
         : (!shaderTransactionSources_.empty() ? 12 : (lightUiInteraction ? 16 : 5));
     if (std::getenv("IRIS_SHADER_BROWSER_INTERACTION")) smokeTestFrames = 14;
+    if (std::getenv("IRIS_SHADER_WORKSPACE_UI_TEST")) smokeTestFrames = 16;
     const auto cpuPreviewSmokeDeadline = std::chrono::steady_clock::now()
         + std::chrono::seconds(30);
     const auto thumbnailDeadline = std::chrono::steady_clock::now() + std::chrono::seconds(30);
@@ -1083,6 +1084,17 @@ int Application::run(const std::filesystem::path& initialModel) {
         runShaderSceneAcceptance(std::filesystem::u8path(directory));
     if (const char* directory = std::getenv("MYRENDERER_ENSCAPE_SHADER_SCENE_ACCEPTANCE_DIRECTORY"))
         runEnscapeShaderSceneAcceptance(std::filesystem::u8path(directory));
+    if (std::getenv("IRIS_SHADER_WORKSPACE_UI_BAD") && std::getenv("MYRENDERER_SMOKE_TEST")
+        && std::getenv("IRIS_SHADER_WORKSPACE_ACCEPTANCE") && std::getenv("MYRENDERER_SHADER_SCENE_ACCEPTANCE_DIRECTORY")) {
+        const auto inspection=inspectWorkspaceShaderPackage(std::filesystem::u8path(iris::shaderSceneResourceFor(rendererSettings_)));
+        const auto source=std::find_if(inspection.files.begin(),inspection.files.end(),[](const auto& file){return file.role=="Pass source";});
+        const auto acceptanceRoot=std::filesystem::weakly_canonical(std::filesystem::u8path(std::getenv("MYRENDERER_SHADER_SCENE_ACCEPTANCE_DIRECTORY")));
+        if(source!=inspection.files.end()) {
+            const auto relative=std::filesystem::weakly_canonical(source->path).lexically_relative(acceptanceRoot);
+            if(relative.empty() || *relative.begin()=="..") throw std::runtime_error("Refusing mutation outside acceptance fixture");
+            std::ofstream file(source->path,std::ios::trunc);file<<"#version 330 core\ninvalid shader\n";
+        }
+    }
     while (!glfwWindowShouldClose(window_)) {
         const double cpuFrameStart = glfwGetTime();
         glfwPollEvents();
@@ -1399,9 +1411,12 @@ int Application::run(const std::filesystem::path& initialModel) {
         std::cout << "Shader browser real selection/refresh: " << (shaderBrowserPassed ? "PASS" : "FAIL")
             << " phase=" << shaderBrowserInteractionPhase_ << " generation=" << workspaceAssets_.generation()
             << " files=" << workspaceShaderPackage_.files.size() << '\n';
+    const bool workspaceUiPassed=!std::getenv("IRIS_SHADER_WORKSPACE_UI_TEST") || (shaderWorkspaceUiPhase_==2
+        && shaderWorkspaceCompileAttempts_==1 && shaderWorkspaceLastCompileAccepted_==!std::getenv("IRIS_SHADER_WORKSPACE_UI_BAD"));
+    if(std::getenv("IRIS_SHADER_WORKSPACE_UI_TEST")) std::cout<<"Workspace compile button real interaction: "<<(workspaceUiPassed?"PASS":"FAIL")<<'\n';
     shutdown();
     if (lightUiInteraction && !lightUiInteractionComplete_) std::cerr << "Light UI incomplete: phase=" << lightUiInteractionPhase_ << ", lights=" << scene_.lightEntityCount() << "\n";
-    return shaderBrowserPassed && recoveryPassed && appendPassed && interactionsPassed && pluginsPassed && pluginParametersPassed
+    return workspaceUiPassed && shaderBrowserPassed && recoveryPassed && appendPassed && interactionsPassed && pluginsPassed && pluginParametersPassed
         && (shaderTransactionSources_.empty() || (shaderTransactionDone && shaderTransactionPassed))
         && (!std::getenv("MYRENDERER_SHADER_TRANSACTION_UI_RETRY") || shaderRetryInteractionComplete_)
         && (!std::getenv("MYRENDERER_PLUGIN_RESOURCE_UI_TEST") || shaderRetryInteractionComplete_)
@@ -1861,7 +1876,9 @@ void Application::drawInspectorPanel() {
     }
 
     const auto* asset = workspaceAssets_.find(selectedWorkspaceAsset_);
-    if (asset && asset->category == WorkspaceAssetCategory::ShaderScenes) {
+    if ((asset && asset->category == WorkspaceAssetCategory::ShaderScenes)
+        || (!selectedWorkspaceAsset_.empty() && selectedWorkspaceAsset_.extension()==".shaderscene"
+            && std::filesystem::is_regular_file(selectedWorkspaceAsset_))) {
         if (pendingBufferExportDirectory_.empty()) renderer_->clearBufferPreviews();
         drawShaderPackageInspector();
         ImGui::End();
@@ -4280,7 +4297,9 @@ void Application::discoverModels() {
     }
     if (!selectedWorkspaceAsset_.empty()
         && workspaceAssets_.find(selectedWorkspaceAsset_) == nullptr) {
-        selectedWorkspaceAsset_.clear();
+        const auto active=iris::shaderSceneResourceFor(rendererSettings_);
+        if(active.empty() || std::filesystem::weakly_canonical(std::filesystem::u8path(active))
+            != std::filesystem::weakly_canonical(selectedWorkspaceAsset_)) selectedWorkspaceAsset_.clear();
     }
 }
 

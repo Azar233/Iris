@@ -126,7 +126,7 @@ GLSL 海面来自 Thomas / @Thomas_ensc 的 Enscape Cube，海面过程署名 Al
 ctest --preset msvc
 ```
 
-Content Browser 提供 ShaderScenes/Shaders 分类。选中包可在 Inspector 浏览声明的源码、include、纹理与许可文件，查看 Pass/Channel 归属和缺失状态；Refresh 更新只读依赖快照。源码打开、重新编译和编译诊断定位仍在后续工作台切片中。
+Content Browser 提供 ShaderScenes/Shaders 分类。选中包可在 Inspector 浏览声明的源码、include、纹理与许可文件，查看 Pass/Channel 归属和缺失状态；Refresh 更新依赖快照。可打开包、外部文本编辑器和所在目录，并对活跃包执行完整事务式重新编译：失败保留运行实例，成功重置历史。编译日志的原始行号映射与包装器对应仍在后续切片中。
 
 目录、Iris 状态迁移和按领域的最小验证入口见 [项目工作区说明](WORKSPACE.md)。普通开发 CI 构建与 CPU 检查，发布打包单独触发。
 

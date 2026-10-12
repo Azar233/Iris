@@ -308,6 +308,7 @@ add_executable(MyRenderer
     src/app/EditorSession.cpp
     src/app/WorkspaceAssets.cpp
     src/app/WorkspaceShaderPackage.cpp
+    src/app/WorkspaceFileActions.cpp
     src/asset/BuiltinModels.cpp
     src/app/FileDialog.cpp
     src/io/AssimpImporter.cpp
@@ -697,6 +698,18 @@ if(BUILD_TESTING)
         target_compile_options(IrisWorkspaceShaderPackageTests PRIVATE -Wall -Wextra -Wpedantic)
     endif()
     iris_add_test(NAME workspace-shader-package COMMAND IrisWorkspaceShaderPackageTests)
+
+    add_executable(IrisWorkspaceFileActionsTests tests/WorkspaceFileActionsTests.cpp src/app/WorkspaceFileActions.cpp)
+    target_include_directories(IrisWorkspaceFileActionsTests PRIVATE src)
+    if(MSVC)
+        target_compile_options(IrisWorkspaceFileActionsTests PRIVATE /W4 /permissive- /utf-8)
+    else()
+        target_compile_options(IrisWorkspaceFileActionsTests PRIVATE -Wall -Wextra -Wpedantic)
+    endif()
+    if(WIN32)
+        target_link_libraries(IrisWorkspaceFileActionsTests PRIVATE shell32)
+    endif()
+    iris_add_test(NAME workspace-file-actions COMMAND IrisWorkspaceFileActionsTests)
 
     add_executable(MyRendererAssetThumbnailTests
         tests/AssetThumbnailTests.cpp

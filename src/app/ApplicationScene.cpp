@@ -1,6 +1,7 @@
 #include "app/Application.h"
 #include "plugin/ShaderScene.h"
 #include "app/StatePaths.h"
+#include "app/WorkspaceFileActions.h"
 #include "optics/CloudNoiseVolume.h"
 #include "optics/CloudLightingLut.h"
 
@@ -833,6 +834,22 @@ void Application::processEditorCommands() {
                     shaderRetryInteractionComplete_ = true;
                     std::cout << "Shader transaction retry UI interaction: PASS\n";
                 }
+                break;
+            }
+            case EditorCommandType::RecompileShaderScene:
+                if(command.text.empty() || std::filesystem::weakly_canonical(std::filesystem::u8path(command.text))
+                    ==std::filesystem::weakly_canonical(std::filesystem::u8path(iris::shaderSceneResourceFor(rendererSettings_)))) {
+                    shaderWorkspaceLastCompileAccepted_=recompileWorkspaceShaderScene();++shaderWorkspaceCompileAttempts_;
+                } else shaderWorkspaceMessage_="Compile selection is no longer the active package";
+                break;
+            case EditorCommandType::OpenWorkspaceSource:
+            case EditorCommandType::OpenWorkspaceDirectory: {
+                WorkspaceFileRequest request; std::string error;
+                const bool directory=command.type==EditorCommandType::OpenWorkspaceDirectory;
+                const bool opened=prepareWorkspaceFileRequest(std::filesystem::u8path(command.text),directory,request,error)
+                    && launchWorkspaceFileRequest(request,error);
+                statusMessage_=opened ? "Opened " + request.target.u8string() : "Workspace open failed: " + error;
+                shaderWorkspaceFileMessage_=statusMessage_;
                 break;
             }
             case EditorCommandType::SetRenderPluginParameter: {
@@ -1976,7 +1993,11 @@ void Application::drawAssetsPanel() {
                 EditorCommand command;
                 switch (asset.category) {
                     case WorkspaceAssetCategory::Scenes:
+                    case WorkspaceAssetCategory::ShaderScenes:
                         command.type = EditorCommandType::OpenSceneAsset;
+                        break;
+                    case WorkspaceAssetCategory::Shaders:
+                        command.type = EditorCommandType::OpenWorkspaceSource;
                         break;
                     case WorkspaceAssetCategory::Models:
                         command.type = EditorCommandType::ImportModelAsset;
@@ -1992,6 +2013,7 @@ void Application::drawAssetsPanel() {
             };
             const auto hasAssetAction = [](WorkspaceAssetCategory category) {
                 return category == WorkspaceAssetCategory::Scenes
+                    || category == WorkspaceAssetCategory::ShaderScenes || category == WorkspaceAssetCategory::Shaders
                     || category == WorkspaceAssetCategory::Models
                     || category == WorkspaceAssetCategory::RenderJobs;
             };
@@ -2301,7 +2323,9 @@ void Application::drawAssetsPanel() {
                     static_cast<unsigned long long>(selectedAsset->previewCacheKey));
                 ImGui::SameLine();
                 ImGui::BeginDisabled(!hasAssetAction(selectedAsset->category));
-                const char* actionLabel = selectedAsset->category == WorkspaceAssetCategory::Scenes
+                const char* actionLabel = selectedAsset->category == WorkspaceAssetCategory::ShaderScenes
+                    ? "Open ShaderScene" : selectedAsset->category == WorkspaceAssetCategory::Shaders
+                    ? "Open source" : selectedAsset->category == WorkspaceAssetCategory::Scenes
                     ? "Open Scene" : selectedAsset->category == WorkspaceAssetCategory::Models
                     ? "Import Model" : selectedAsset->category == WorkspaceAssetCategory::RenderJobs
                     ? "Send to Render Queue" : "Read-only metadata";
@@ -2953,7 +2977,9 @@ bool Application::openScene(const std::filesystem::path& path) {
         emptySceneSession_ = false;
         rendererSettings_ = document.renderer;
         renderer_->publishShaderScene(std::move(preparedShaderScene), iris::shaderSceneResourceFor(document.renderer));
-        if (absolute.extension() == ".shaderscene") currentScenePath_.clear();
+        if (absolute.extension() == ".shaderscene") {
+            currentScenePath_.clear();selectedWorkspaceAsset_=absolute;
+        }
         if (!iris::shaderSceneResourceFor(document.renderer).empty()) editorSession_.requestBackend(EditorRenderBackend::Raster);
         if (document.entities.empty() && rendererSettings_.enscapeCubeShaderEnabled) {
             focusRendererTab_ = true;
@@ -3070,6 +3096,21 @@ bool Application::openScene(const std::filesystem::path& path) {
     }
 }
 
+bool Application::recompileWorkspaceShaderScene() {
+    const auto resource=iris::shaderSceneResourceFor(rendererSettings_);
+    if(resource.empty()) {shaderWorkspaceMessage_="No active ShaderScene to compile";return false;}
+    try {
+        auto candidate=renderer_->prepareShaderScene(rendererSettings_);
+        renderer_->publishShaderScene(std::move(candidate),resource);
+        shaderWorkspaceMessage_="ShaderScene complete package committed; history reset";
+        statusMessage_=shaderWorkspaceMessage_;
+        return true;
+    } catch(const std::exception& error) {
+        shaderWorkspaceMessage_="ShaderScene compile rejected; previous complete instance retained:\n"+std::string(error.what());
+        statusMessage_=shaderWorkspaceMessage_;std::cerr<<shaderWorkspaceMessage_<<'\n';return false;
+    }
+}
+
 void Application::drawShaderPackageInspector() {
     if (workspaceShaderPackage_.manifest != selectedWorkspaceAsset_
         || workspaceShaderGeneration_ != workspaceAssets_.generation()) {
@@ -3083,7 +3124,27 @@ void Application::drawShaderPackageInspector() {
     ImGui::TextWrapped("%s: %s", EditorUi::chinese?"许可":"License", package.license.c_str());
     ImGui::TextWrapped("%s: %s", EditorUi::chinese?"资源根":"Resource root",package.root.generic_u8string().c_str());
     if(ImGui::Button(EditorUi::chinese?"返回场景 Inspector":"Back to scene Inspector")) selectedWorkspaceAsset_.clear();
-    ImGui::TextWrapped("%s",EditorUi::chinese?"只读依赖快照；Refresh 更新。文档不是执行输入。":"Read-only dependency snapshot; use Refresh. Documentation is not an execution input.");
+    if(ImGui::Button(EditorUi::chinese?"打开 ShaderScene":"Open ShaderScene")) {
+        EditorCommand command{EditorCommandType::OpenSceneAsset};command.text=package.manifest.u8string();editorSession_.request(std::move(command));
+    }
+    const auto resource=iris::shaderSceneResourceFor(rendererSettings_);
+    const bool active=!resource.empty() && std::filesystem::weakly_canonical(std::filesystem::u8path(resource))==std::filesystem::weakly_canonical(package.manifest);
+    ImGui::BeginDisabled(!active);
+    if(ImGui::Button(EditorUi::chinese?"重新编译完整包":"Recompile active package")) {
+        EditorCommand command{EditorCommandType::RecompileShaderScene};command.text=package.manifest.u8string();editorSession_.request(std::move(command));
+    }
+    if(active && std::getenv("IRIS_SHADER_WORKSPACE_UI_TEST") && shaderBrowserUiFrames_>=5) {
+        if(shaderWorkspaceUiPhase_==0) {
+            const auto a=ImGui::GetItemRectMin(),b=ImGui::GetItemRectMax();
+            ImGui::GetIO().AddFocusEvent(true);ImGui::GetIO().AddMousePosEvent((a.x+b.x)*0.5f,(a.y+b.y)*0.5f);
+            ImGui::GetIO().AddMouseButtonEvent(0,true);++shaderWorkspaceUiPhase_;
+        } else if(shaderWorkspaceUiPhase_==1) {ImGui::GetIO().AddMouseButtonEvent(0,false);++shaderWorkspaceUiPhase_;}
+    }
+    ImGui::EndDisabled();
+    ImGui::TextWrapped("%s",active?"Active package":"Not the active package; open it before compiling");
+    ImGui::TextWrapped("%s",shaderWorkspaceMessage_.c_str());
+    if(active && renderer_->shaderReloadFailed()) ImGui::TextWrapped("%s",renderer_->shaderReloadStatus().c_str());
+    ImGui::TextWrapped("%s",EditorUi::chinese?"文件快照；Refresh 更新。文档不是执行输入。":"File list snapshot; use Refresh. Documentation is not an execution input.");
     if(EditorUi::section("Package files",true)) {
         bool interactionHandled=false;
         std::function<void(const std::filesystem::path&)> drawDirectory;
@@ -3122,8 +3183,23 @@ void Application::drawShaderPackageInspector() {
         drawDirectory(package.manifest.parent_path());
     }
     for(const auto& generated:package.generatedInputs) ImGui::TextWrapped("%s",generated.c_str());
+    WorkspaceFileRequest sourceRequest,directoryRequest; std::string fileError;
+    const auto selected=inspectedShaderFile_.empty()?package.manifest:inspectedShaderFile_;
+    const bool canEdit=prepareWorkspaceFileRequest(selected,false,sourceRequest,fileError);
+    const bool canBrowse=prepareWorkspaceFileRequest(selected,true,directoryRequest,fileError);
+    ImGui::BeginDisabled(!canEdit);
+    if(ImGui::Button(EditorUi::chinese?"外部编辑器打开":"Open source externally")) {
+        EditorCommand command{EditorCommandType::OpenWorkspaceSource};command.text=selected.u8string();editorSession_.request(std::move(command));
+    }
+    ImGui::EndDisabled();
+    ImGui::BeginDisabled(!canBrowse);
+    if(ImGui::Button(EditorUi::chinese?"打开所在目录":"Open containing directory")) {
+        EditorCommand command{EditorCommandType::OpenWorkspaceDirectory};command.text=selected.u8string();editorSession_.request(std::move(command));
+    }
+    ImGui::EndDisabled();
     if(!package.diagnostics.empty() && EditorUi::section("Inspection diagnostics",true))
         for(const auto& diagnostic:package.diagnostics) ImGui::TextWrapped("%s",diagnostic.c_str());
+    if(!shaderWorkspaceFileMessage_.empty()) ImGui::TextWrapped("%s",shaderWorkspaceFileMessage_.c_str());
 }
 
 void Application::rememberRecentScene(const std::filesystem::path& path) {
@@ -3274,12 +3350,26 @@ void Application::runShaderSceneAcceptance(const std::filesystem::path& director
     check(renderer_->saveScreenshot(directory / "before.png", error), "ShaderScene before PNG failed");
     const auto history = renderer_->historyInvalidationRevision();
     { std::ofstream file(fragment, std::ios::trunc); file << "#version 330 core\ninvalid shader\n"; }
+    if(std::getenv("IRIS_SHADER_WORKSPACE_ACCEPTANCE")) {
+        const auto camera=camera_.viewMatrix();const auto scenePath=currentScenePath_;
+        check(!recompileWorkspaceShaderScene() && renderer_->historyInvalidationRevision()==history,
+            "Workspace failed compile replaced history");
+        check(camera==camera_.viewMatrix() && scenePath==currentScenePath_,"Workspace compile changed camera/scene identity");
+        draw();check(before==pixels(),"Workspace rejected compile changed pixels");
+    }
     check(!openScene(manifest), "Application accepted invalid ShaderScene");
     check(renderer_->historyInvalidationRevision() == history
         && rendererSettings_.shaderSceneResource == settings.shaderSceneResource, "Rejected scene replaced live settings/history");
     draw(); check(before == pixels(), "Rejected scene lost old application output");
     check(renderer_->saveScreenshot(directory / "retained.png", error), "ShaderScene retained PNG failed");
     std::filesystem::copy_file(source / fragment.filename(), fragment, std::filesystem::copy_options::overwrite_existing);
+    if(std::getenv("IRIS_SHADER_WORKSPACE_ACCEPTANCE")) {
+        const auto camera=camera_.viewMatrix();const auto scenePath=currentScenePath_;
+        check(recompileWorkspaceShaderScene() && renderer_->historyInvalidationRevision()>history,"Workspace recovery did not commit/reset history");
+        check(camera==camera_.viewMatrix() && scenePath==currentScenePath_,"Workspace recovery changed camera/scene identity");
+        draw();check(before==pixels(),"Workspace recovery pixels drifted");
+        std::cout<<"Workspace full package compile failure retention / camera+scene identity / recovery / history reset PASS\n";
+    }
     check(openScene(manifest), "Application ShaderScene recovery failed"); processEditorCommands(); draw();
     check(before == pixels(), "Application ShaderScene recovery drifted");
     if (textures) {
