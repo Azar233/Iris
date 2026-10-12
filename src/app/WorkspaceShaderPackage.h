@@ -12,6 +12,7 @@ struct WorkspaceShaderFile {
     bool executionInput{true};
 };
 struct WorkspaceShaderPackage {
+    bool manifestReadable{false}; // Header/root parsed; dependency diagnostics may still exist.
     std::filesystem::path manifest, root;
     std::string id, author, license;
     std::vector<WorkspaceShaderFile> files;

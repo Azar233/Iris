@@ -99,6 +99,7 @@ private:
     void runShaderSceneAcceptance(const std::filesystem::path& directory);
     void runShaderSourceMapAcceptance(const std::filesystem::path& directory);
     void runShaderParameterAcceptance(const std::filesystem::path& directory);
+    void runExternalShaderPackageAcceptance(const std::filesystem::path& directory);
     void drawShaderRuntimeInspector();
     void runEnscapeShaderSceneAcceptance(const std::filesystem::path& directory);
     void updateViewportCameraNavigation();
@@ -127,6 +128,7 @@ private:
     void drawDiagnostics();
 
     void discoverModels();
+    void updateWorkspaceAssetViews();
     void updateAssetThumbnail();
     void requestAssetThumbnail(const WorkspaceAssetRecord& asset);
     bool loadModel(const std::filesystem::path& path, bool append = false);
@@ -213,6 +215,7 @@ private:
     bool contentFoldersExpanded_{true};
     std::filesystem::path selectedWorkspaceAsset_;
     WorkspaceAssetCatalog workspaceAssets_;
+    bool scrollWorkspaceSelection_{false};
     WorkspaceShaderPackage workspaceShaderPackage_;
     std::string shaderWorkspaceMessage_{"No workspace compile requested"};
     std::string shaderWorkspaceFileMessage_;

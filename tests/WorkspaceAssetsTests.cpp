@@ -103,6 +103,46 @@ int main() {
         require(catalog.filter(WorkspaceAssetCategory::Shaders,"EXTERNAL-ROOT").size()==1U,
                 "shader path search did not cover resources outside assets");
 
+        const auto project=root/"isolated-project";
+        std::filesystem::create_directories(project/"assets");
+        const auto external=root/std::filesystem::u8path(u8"外部包 空间");
+        const auto manifest=external/"scene.shaderscene";
+        const auto include=external/std::filesystem::u8path(u8"resources/nested/细节.glsl");
+        const std::string description=R"({"version":3,"id":"external","resourceRoot":"resources","entry":"main","camera":"project","author":"test","license":"MIT","parameters":[],"passes":[{"id":"Image","fragment":"image.frag","output":"display-rgba8","sizeDivisor":1,"channels":[{"slot":0,"source":"Raw","frame":"current","filter":"nearest","wrap":"clamp","mip":"none"}]}],"textures":[{"id":"Raw","dimension":"2d","format":"linear-r8","extent":[1,1],"encoding":"raw","path":"input.raw","mip":"none"}]})";
+        writeFixture(manifest,description);
+        writeFixture(external/"resources/image.frag",u8"#include \"nested/细节.glsl\"\n");
+        writeFixture(include);writeFixture(external/"resources/input.raw","x");
+        writeFixture(external/"README.md");writeFixture(external/"resources/unused.frag");writeFixture(external/"unrelated.obj");
+        WorkspaceAssetCatalog externalCatalog;
+        require(externalCatalog.refresh(project,error),error.c_str());
+        require(externalCatalog.registerShaderPackage(project,manifest,error),error.c_str());
+        require(externalCatalog.registeredShaderPackageCount()==1 && externalCatalog.records().size()==4,"External declared input registration failed");
+        require(externalCatalog.find(include) && externalCatalog.find(include)->displayName==u8"细节.glsl","Unicode source identity lost");
+        require(!externalCatalog.find(external/"resources/unused.frag") && !externalCatalog.find(external/"unrelated.obj"),"Unreferenced external files were indexed");
+        require(externalCatalog.registerShaderPackage(project,external/"resources/../scene.shaderscene",error)
+            && externalCatalog.registeredShaderPackageCount()==1 && externalCatalog.records().size()==4,"Alias registration duplicated files");
+        const auto generation=externalCatalog.generation();
+        require(!externalCatalog.registerShaderPackage(project,external/"missing.shaderscene",error)
+            && externalCatalog.generation()==generation && externalCatalog.registeredShaderPackageCount()==1,"Rejected registration changed catalog");
+        std::filesystem::remove(external/"resources/input.raw");
+        require(externalCatalog.refresh(project,error) && externalCatalog.find(external/"resources/input.raw")->missing,"Missing declared texture was discarded");
+        writeFixture(manifest,"{");
+        require(externalCatalog.refresh(project,error) && externalCatalog.find(include),"Malformed Manifest lost known dependencies");
+        std::filesystem::remove(manifest);
+        require(externalCatalog.refresh(project,error) && externalCatalog.find(manifest)->missing && externalCatalog.find(include),"Missing Manifest lost package identity");
+        writeFixture(manifest,description);writeFixture(external/"resources/input.raw","restored");
+        require(externalCatalog.refresh(project,error) && !externalCatalog.find(manifest)->missing
+            && externalCatalog.find(external/"resources/input.raw")->sizeBytes==8,"External recovery not reflected");
+        writeFixture(external/"alias.shaderscene",description);
+        require(externalCatalog.registerShaderPackage(project,external/"alias.shaderscene",error)
+            && externalCatalog.records().size()==5,"Shared dependencies duplicated catalog rows");
+        const auto other=external/"other";
+        writeFixture(other/"scene.shaderscene",description);writeFixture(other/"resources/image.frag","void main(){}\n");writeFixture(other/"resources/input.raw","x");
+        require(externalCatalog.registerShaderPackage(project,other/"scene.shaderscene",error),error.c_str());
+        require(externalCatalog.filter(WorkspaceAssetCategory::ShaderScenes,"scene.shaderscene").size()==2
+            && externalCatalog.registeredShaderPackageCount()==3,"Same-name packages merged identities");
+        require(!externalCatalog.refresh(project/"missing",error) && externalCatalog.registeredShaderPackageCount()==3,"Failed refresh changed registrations");
+        std::cout<<"External packages / Unicode / declared-only / alias+shared identity / missing+malformed recovery / same-name / transactional refresh PASS\n";
         std::filesystem::remove_all(root, cleanupError);
         std::cout << "Workspace asset catalog classification, filtering, and refresh tests passed\n";
         return 0;

@@ -16,6 +16,13 @@ std::string lowercase(std::string value) {
     });
     return value;
 }
+std::string pathKey(const std::filesystem::path& path) {
+#ifdef _WIN32
+    return lowercase(path.generic_u8string());
+#else
+    return path.generic_u8string();
+#endif
+}
 
 bool endsWith(const std::string& value, const char* suffix) {
     const std::size_t suffixLength = std::char_traits<char>::length(suffix);
@@ -166,6 +173,7 @@ bool WorkspaceAssetCatalog::refresh(const std::filesystem::path& sourceRoot,
         }
 
         std::vector<WorkspaceAssetRecord> candidate;
+        std::set<std::string> identities;
         // Package manifests and native shader roots are both project resources.
         for (const auto& scanRoot : {assetRoot, sourceRoot / "shaders"}) {
         if (!std::filesystem::is_directory(scanRoot)) continue;
@@ -179,21 +187,49 @@ bool WorkspaceAssetCatalog::refresh(const std::filesystem::path& sourceRoot,
             if (isInternalSceneFixture(relative)) continue;
             WorkspaceAssetCategory category;
             if (!classify(relative, category)) continue;
+            const auto canonical=std::filesystem::weakly_canonical(entry.path());
+            const bool shaderAsset=category==WorkspaceAssetCategory::ShaderScenes || category==WorkspaceAssetCategory::Shaders;
+            const bool inserted=identities.insert(pathKey(canonical)).second;
+            if (shaderAsset && !inserted) continue;
             std::error_code sizeError;
             const std::uintmax_t size = entry.file_size(sizeError);
             std::error_code timeError;
             const auto modified = entry.last_write_time(timeError);
             candidate.push_back(WorkspaceAssetRecord{
                 category,
-                entry.path().lexically_normal(),
+                shaderAsset?canonical:entry.path().lexically_normal(),
                 relative,
-                entry.path().filename().string(),
+                entry.path().filename().u8string(),
                 lowercase(entry.path().extension().string()),
                 sizeError ? 0U : size,
                 previewCacheKey(relative, sizeError ? 0U : size,
-                                timeError ? std::filesystem::file_time_type{} : modified)
+                                timeError ? std::filesystem::file_time_type{} : modified),
+                false
             });
         }
+        }
+        auto packages=shaderPackages_;
+        for (auto& package:packages) {
+            const auto inspected=inspectWorkspaceShaderPackage(package.manifest);
+            // Keep known dependencies if the Manifest is temporarily missing or malformed.
+            if (inspected.manifestReadable) package=inspected;
+            for (const auto& file:package.files) {
+                WorkspaceAssetCategory category;
+                if (file.role=="Manifest") category=WorkspaceAssetCategory::ShaderScenes;
+                else if (file.role=="Pass source" || file.role=="include") category=WorkspaceAssetCategory::Shaders;
+                else if (file.role=="Texture") category=WorkspaceAssetCategory::Textures;
+                else continue; // README/LICENSE remain visible in the package Inspector.
+                const auto canonical=std::filesystem::weakly_canonical(file.path);
+                if (!identities.insert(pathKey(canonical)).second) continue;
+                std::error_code fileError;
+                const bool missing=!std::filesystem::is_regular_file(canonical,fileError);
+                const auto size=missing?0U:std::filesystem::file_size(canonical,fileError);
+                const auto bytes=fileError?0U:size;
+                fileError.clear();const auto modified=std::filesystem::last_write_time(canonical,fileError);
+                candidate.push_back({category,canonical,canonical,canonical.filename().u8string(),
+                    lowercase(canonical.extension().u8string()),bytes,
+                    previewCacheKey(canonical,bytes,fileError?std::filesystem::file_time_type{}:modified),missing});
+            }
         }
         std::sort(candidate.begin(), candidate.end(), [](const auto& left, const auto& right) {
             if (left.category != right.category) return left.category < right.category;
@@ -201,6 +237,7 @@ bool WorkspaceAssetCatalog::refresh(const std::filesystem::path& sourceRoot,
                 < lowercase(right.relativePath.generic_u8string());
         });
         records_ = std::move(candidate);
+        shaderPackages_=std::move(packages);
         ++generation_;
         error.clear();
         return true;
@@ -209,6 +246,27 @@ bool WorkspaceAssetCatalog::refresh(const std::filesystem::path& sourceRoot,
         return false;
     }
 }
+bool WorkspaceAssetCatalog::registerShaderPackage(const std::filesystem::path& sourceRoot,
+    const std::filesystem::path& manifest,std::string& error) {
+    try {
+        const auto canonical=std::filesystem::weakly_canonical(manifest);
+        auto package=inspectWorkspaceShaderPackage(canonical);
+        if (lowercase(canonical.extension().u8string())!=".shaderscene" || !package.manifestReadable
+            || !std::filesystem::is_directory(package.root)) {
+            error="Cannot register ShaderScene package: "+canonical.u8string();return false;
+        }
+        auto candidate=*this;
+        auto found=std::find_if(candidate.shaderPackages_.begin(),candidate.shaderPackages_.end(),
+            [&](const auto& entry){return pathKey(entry.manifest)==pathKey(canonical);});
+        if (found==candidate.shaderPackages_.end()) {
+            if (find(canonical)) {error.clear();return true;} // Already owned by a project scan root.
+            if (candidate.shaderPackages_.size()>=64) {error="Workspace supports at most 64 session ShaderScene packages";return false;}
+            candidate.shaderPackages_.push_back(std::move(package));
+        } else *found=std::move(package);
+        if (!candidate.refresh(sourceRoot,error)) return false;
+        *this=std::move(candidate);return true;
+    } catch (const std::exception& exception) {error="ShaderScene registration failed: "+std::string(exception.what());return false;}
+}
 
 std::size_t WorkspaceAssetCatalog::count(WorkspaceAssetCategory category) const {
     return static_cast<std::size_t>(std::count_if(records_.begin(), records_.end(),
@@ -216,9 +274,9 @@ std::size_t WorkspaceAssetCatalog::count(WorkspaceAssetCategory category) const 
 }
 
 const WorkspaceAssetRecord* WorkspaceAssetCatalog::find(const std::filesystem::path& path) const {
-    const std::filesystem::path normalized = path.lexically_normal();
+    const auto normalized = pathKey(path.lexically_normal());
     const auto found = std::find_if(records_.begin(), records_.end(), [&](const auto& record) {
-        return record.path == normalized;
+        return pathKey(record.path) == normalized;
     });
     return found == records_.end() ? nullptr : &*found;
 }

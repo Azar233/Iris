@@ -79,6 +79,7 @@ WorkspaceShaderPackage inspectWorkspaceShaderPackage(const std::filesystem::path
         index.result.id=field(json,"id"); index.result.author=field(json,"author"); index.result.license=field(json,"license");
         const auto parent=std::filesystem::weakly_canonical(index.result.root);
         index.result.root=inside(parent,parent,field(json,"resourceRoot"));
+        index.result.manifestReadable=true;
         std::map<std::string,std::string> textureOwners;
         if(json.HasMember("passes") && json["passes"].IsArray()) {
             if(json["passes"].Size()>4) throw std::runtime_error("Inspection supports at most 4 Passes");

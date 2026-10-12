@@ -105,7 +105,8 @@ std::string Shader::expandIncludes(
         // uses -- the project already resolves assets relative to the executable or the source root
         // rather than to the including file, so both habits exist here and a shader should not have
         // to know which one it is standing in.
-        std::filesystem::path resolved = path.parent_path() / requested;
+        std::filesystem::path resolved = path.parent_path()
+            / (root.empty() ? std::filesystem::path(requested) : std::filesystem::u8path(requested));
         watchSource(resolved, dependencies, times);
         if (root.empty() && !std::filesystem::is_regular_file(resolved)) {
             constexpr int maximumAncestors = 6;

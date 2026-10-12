@@ -1088,6 +1088,7 @@ int Application::run(const std::filesystem::path& initialModel) {
         runEnscapeShaderSceneAcceptance(std::filesystem::u8path(directory));
     if(const char* directory=std::getenv("IRIS_SHADER_SOURCE_MAP_ACCEPTANCE_DIRECTORY"))runShaderSourceMapAcceptance(std::filesystem::u8path(directory));
     if(const char* directory=std::getenv("IRIS_SHADER_PARAMETER_ACCEPTANCE_DIRECTORY"))runShaderParameterAcceptance(std::filesystem::u8path(directory));
+    if(const char* directory=std::getenv("IRIS_EXTERNAL_SHADER_PACKAGE_ACCEPTANCE_DIRECTORY"))runExternalShaderPackageAcceptance(std::filesystem::u8path(directory));
     if (std::getenv("IRIS_SHADER_WORKSPACE_UI_BAD") && std::getenv("MYRENDERER_SMOKE_TEST")
         && std::getenv("IRIS_SHADER_WORKSPACE_ACCEPTANCE") && std::getenv("MYRENDERER_SHADER_SCENE_ACCEPTANCE_DIRECTORY")) {
         const auto inspection=inspectWorkspaceShaderPackage(std::filesystem::u8path(iris::shaderSceneResourceFor(rendererSettings_)));
@@ -4288,7 +4289,9 @@ void Application::discoverModels() {
         statusMessage_ = error;
         return;
     }
-
+    updateWorkspaceAssetViews();
+}
+void Application::updateWorkspaceAssetViews() {
     std::vector<std::filesystem::path> models;
     std::vector<std::filesystem::path> scenes;
     for (const WorkspaceAssetRecord& asset : workspaceAssets_.records()) {

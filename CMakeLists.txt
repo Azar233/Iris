@@ -687,8 +687,10 @@ if(BUILD_TESTING)
     add_executable(MyRendererWorkspaceAssetsTests
         tests/WorkspaceAssetsTests.cpp
         src/app/WorkspaceAssets.cpp
+        src/app/WorkspaceShaderPackage.cpp
     )
     target_include_directories(MyRendererWorkspaceAssetsTests PRIVATE src)
+    target_include_directories(MyRendererWorkspaceAssetsTests SYSTEM PRIVATE ${assimp_SOURCE_DIR}/contrib/rapidjson/include)
     if(MSVC)
         target_compile_options(MyRendererWorkspaceAssetsTests PRIVATE /W4 /permissive- /utf-8)
     else()
@@ -727,8 +729,10 @@ if(BUILD_TESTING)
         tests/AssetThumbnailTests.cpp
         src/app/AssetThumbnail.cpp
         src/app/WorkspaceAssets.cpp
+        src/app/WorkspaceShaderPackage.cpp
     )
     target_include_directories(MyRendererAssetThumbnailTests PRIVATE src)
+    target_include_directories(MyRendererAssetThumbnailTests SYSTEM PRIVATE ${assimp_SOURCE_DIR}/contrib/rapidjson/include)
     target_compile_definitions(MyRendererAssetThumbnailTests PRIVATE
         MYRENDERER_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}"
     )

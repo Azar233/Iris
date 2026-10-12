@@ -2065,6 +2065,8 @@ void Application::drawAssetsPanel() {
             ImGui::SameLine();
             ImGui::TextDisabled("%zu assets | cache #%llu", workspaceAssets_.records().size(),
                 static_cast<unsigned long long>(thumbnailCacheGeneration_));
+            if (workspaceAssets_.registeredShaderPackageCount())
+                ImGui::TextDisabled("%s: %zu",EditorUi::chinese?"本次会话注册包":"Session packages",workspaceAssets_.registeredShaderPackageCount());
 
             const bool showFolderSidebar = contentFoldersExpanded_
                 && ImGui::GetContentRegionAvail().x >= 600.0f;
@@ -2181,7 +2183,7 @@ void Application::drawAssetsPanel() {
             );
             if (contentGridView_) {
                 for (const WorkspaceAssetRecord* asset : visibleAssets) {
-                    if (isPreviewableAsset(asset->category)
+                    if (!asset->missing && isPreviewableAsset(asset->category)
                         && uploadedThumbnails_.find(asset->path) == uploadedThumbnails_.end()) {
                         requestAssetThumbnail(*asset);
                         break;
@@ -2253,7 +2255,7 @@ void Application::drawAssetsPanel() {
                                 ImGui::SetTooltip("%s", asset->relativePath.generic_u8string().c_str());
                             }
                             ImGui::SetCursorPosX(columnLeft);
-                            std::string cardLabel = asset->displayName;
+                            std::string cardLabel = (asset->missing?"[Missing] ":"")+asset->displayName;
                             if (ImGui::CalcTextSize(cardLabel.c_str()).x > labelWidth) {
                                 while (!cardLabel.empty()
                                     && ImGui::CalcTextSize((cardLabel + "...").c_str()).x > labelWidth) {
@@ -2302,13 +2304,17 @@ void Application::drawAssetsPanel() {
                         ImGui::TextUnformatted(workspaceAssetCategoryBadge(asset->category));
                         ImGui::TableSetColumnIndex(1);
                         ImGui::PushID(asset->relativePath.generic_u8string().c_str());
-                        if (ImGui::Selectable(asset->displayName.c_str(),
+                        const auto assetLabel=(asset->missing?"[Missing] ":"")+asset->displayName;
+                        if (ImGui::Selectable(assetLabel.c_str(),
                                 selectedWorkspaceAsset_ == asset->path,
                                 ImGuiSelectableFlags_SpanAllColumns)) {
                             selectedWorkspaceAsset_ = asset->path;
                             if (ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) {
                                 queueAssetAction(*asset);
                             }
+                        }
+                        if (scrollWorkspaceSelection_ && selectedWorkspaceAsset_==asset->path) {
+                            ImGui::SetScrollHereY(.5f);scrollWorkspaceSelection_=false;
                         }
                         if (const char* target=std::getenv("IRIS_SHADER_BROWSER_PACKAGE")) {
                             if (std::getenv("IRIS_SHADER_BROWSER_INTERACTION")
@@ -2326,8 +2332,9 @@ void Application::drawAssetsPanel() {
                         ImGui::PopID();
                         ImGui::TableSetColumnIndex(2);
                         ImGui::TextUnformatted(asset->relativePath.generic_u8string().c_str());
+                        if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s",asset->path.generic_u8string().c_str());
                         ImGui::TableSetColumnIndex(3);
-                        ImGui::TextUnformatted(formatAssetSize(asset->sizeBytes).c_str());
+                        ImGui::TextUnformatted(asset->missing?"Missing":formatAssetSize(asset->sizeBytes).c_str());
                     }
                     ImGui::EndTable();
                 }
@@ -3108,6 +3115,18 @@ bool Application::openScene(const std::filesystem::path& path) {
         statusMessage_ = "Opened scene " + absolute.filename().u8string() + " ("
             + std::to_string(scene_.size()) + " entities, "
             + std::to_string(counted.size()) + " model assets)";
+        if (const auto* package=renderer_->activeShaderScenePackage()) {
+            std::string catalogError;const auto generation=workspaceAssets_.generation();
+            if (!workspaceAssets_.registerShaderPackage(sourceRoot_,package->manifest,catalogError))
+                statusMessage_+="; resource browser: "+catalogError;
+            else if (workspaceAssets_.generation()!=generation) {
+                updateWorkspaceAssetViews();focusAssetsTab_=true;scrollWorkspaceSelection_=true;
+                selectedWorkspaceAsset_=package->manifest;
+                contentCategory_=static_cast<int>(WorkspaceAssetCategory::ShaderScenes);
+                contentSearch_.fill(0);contentExtensionFilter_.clear();contentGridView_=false;
+            }
+            if (absolute.extension()==".shaderscene") selectedWorkspaceAsset_=package->manifest;
+        }
         std::cout << statusMessage_ << '\n';
         return true;
     } catch (const std::exception& exception) {
@@ -3469,6 +3488,44 @@ SceneEntityId Application::pickEntity(const std::vector<RenderItem>& items,
     return hit > 0 && hit <= items.size() ? items[hit - 1].entityId : invalidSceneEntityId;
 }
 
+void Application::runExternalShaderPackageAcceptance(const std::filesystem::path& directory) {
+    const auto check=[](bool ok,const char* message){if(!ok)throw std::runtime_error(message);};
+    const auto write=[](const std::filesystem::path& path,const std::string& text){std::filesystem::create_directories(path.parent_path());std::ofstream stream(path,std::ios::binary|std::ios::trunc);stream<<text;if(!stream)throw std::runtime_error("External fixture write failed");};
+    const auto relative=std::filesystem::absolute(directory).lexically_relative(sourceRoot_);
+    check(relative.empty() || relative.is_absolute() || *relative.begin()=="..","Acceptance package must be outside runtime project");
+    const auto manifest=directory/"scene.shaderscene",second=directory/"second/scene.shaderscene",bad=directory/"rejected/scene.shaderscene";
+    const std::string description=R"({"version":1,"id":"outside","resourceRoot":"resources","fragment":"image.frag","entry":"main","output":"display-rgba8","camera":"project","author":"Iris contributors","license":"MIT","parameters":[]})";
+    for(const auto& path:{manifest,second,bad}) {
+        write(path,description);
+        write(path.parent_path()/"resources/image.frag",u8"#version 330 core\n#include \"nested/细节.glsl\"\nout vec4 color;void main(){color=vec4(packageColor(),1);}\n");
+        write(path.parent_path()/std::filesystem::u8path(u8"resources/nested/细节.glsl"),path==second?"vec3 packageColor(){return vec3(0.75,0.25,0.5);}\n":"vec3 packageColor(){return vec3(0.25,0.5,0.75);}\n");
+        write(path.parent_path()/"resources/unreferenced.frag","not a shader");write(path.parent_path()/"unrelated.obj","not a model");write(path.parent_path()/"README.md","External fixture; MIT");
+    }
+    const auto open=[&](const std::filesystem::path& path){EditorCommand command{EditorCommandType::OpenSceneAsset};command.text=path.u8string();editorSession_.request(std::move(command));processEditorCommands();};
+    const auto draw=[&](){auto settings=rendererSettings_;settings.shaderHotReloadEnabled=false;settings.water.timeSeconds=1.25f;renderer_->render(scene_.buildRenderItems(),camera_,settings,320,180);glFinish();check(glGetError()==GL_NO_ERROR,"External package GL error");};
+    const auto pixels=[&](){std::vector<unsigned char> bytes(320U*180U*4U);glBindTexture(GL_TEXTURE_2D,renderer_->colorTexture());glGetTexImage(GL_TEXTURE_2D,0,GL_RGBA,GL_UNSIGNED_BYTE,bytes.data());return bytes;};
+    const auto registrations=workspaceAssets_.registeredShaderPackageCount();
+    open(manifest);draw();const auto firstPixels=pixels();
+    check(workspaceAssets_.find(manifest) && workspaceAssets_.registeredShaderPackageCount()==registrations+1,"Successful external open not registered");
+    check(!workspaceAssets_.find(directory/"unrelated.obj") && !workspaceAssets_.find(directory/"resources/unreferenced.frag"),"External open scanned unrelated files");
+    open(directory/"resources/../scene.shaderscene");check(workspaceAssets_.registeredShaderPackageCount()==registrations+1,"Repeated open duplicated registration");
+    const auto generation=workspaceAssets_.generation(),history=renderer_->historyInvalidationRevision();
+    write(bad.parent_path()/"resources/image.frag","#version 330 core\ninvalid source\n");open(bad);
+    check(workspaceAssets_.generation()==generation && !workspaceAssets_.find(bad) && renderer_->historyInvalidationRevision()==history,"Failed package open changed catalog/history");
+    draw();check(firstPixels==pixels(),"Failed package open changed retained pixels");
+    open(second);draw();check(firstPixels!=pixels() && workspaceAssets_.find(manifest) && workspaceAssets_.find(second),"Package switch lost earlier registration or output");
+    check(saveSceneTo(directory/"saved.myscene"),"External reference save failed");
+    editorSession_.request(EditorCommand{EditorCommandType::NewScene});processEditorCommands();check(workspaceAssets_.find(manifest),"New scene discarded session packages");
+    open(directory/"saved.myscene");check(workspaceAssets_.registeredShaderPackageCount()==registrations+2,"Scene reference reopen duplicated package");draw();const auto retained=pixels();
+    const auto revision=renderer_->historyInvalidationRevision();
+    const auto include=directory/std::filesystem::u8path(u8"resources/nested/细节.glsl");std::filesystem::remove(include);
+    editorSession_.request(EditorCommand{EditorCommandType::RefreshAssetCatalog});processEditorCommands();
+    check(workspaceAssets_.find(include) && workspaceAssets_.find(include)->missing && renderer_->historyInvalidationRevision()==revision,"Refresh lost missing dependency or cleared history");draw();check(retained==pixels(),"Catalog refresh changed active pixels");
+    write(include,"vec3 packageColor(){return vec3(0.25,0.5,0.75);}\n");discoverModels();check(!workspaceAssets_.find(include)->missing,"Dependency restoration not reflected");
+    if(std::getenv("IRIS_EXTERNAL_SHADER_PACKAGE_MISSING")) {std::filesystem::remove(include);discoverModels();}
+    selectedWorkspaceAsset_=manifest;scrollWorkspaceSelection_=true;focusAssetsTab_=true;contentCategory_=static_cast<int>(WorkspaceAssetCategory::ShaderScenes);
+    std::cout<<"External package successful open / rejected-open catalog+pixels+history retention / aliases / same-name switch / session lifetime / Scene reference / missing+recovery / refresh pixel retention PASS\n";
+}
 void Application::runShaderParameterAcceptance(const std::filesystem::path& directory) {
     const auto check=[](bool ok,const char* message){if(!ok)throw std::runtime_error(message);};
     std::filesystem::create_directories(directory);
