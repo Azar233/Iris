@@ -3176,6 +3176,11 @@ void Application::drawShaderRuntimeInspector() {
     ImGui::TextWrapped("%s | %dx%d | Frame %d | %.3f s", EditorUi::chinese ? "实际运行包" : "Live package",
         runtime.width, runtime.height, runtime.frame, runtime.time);
     ImGui::TextWrapped("History: %s | dt %.4f s", runtime.resetPending ? "reset pending" : runtime.historyValid ? "valid" : "clear", runtime.timeDelta);
+    if (!rendererSettings_.shaderSceneResource.empty() && EditorUi::section("GPU passes", true)) {
+        if (renderer_->gpuPassTimings().empty()) ImGui::TextDisabled("Collecting GPU timestamps...");
+        for (const auto& timing : renderer_->gpuPassTimings())
+            ImGui::TextWrapped("%s: %.3f ms", timing.name.c_str(), timing.milliseconds);
+    }
     if (EditorUi::section("Package hot reload", true)) {
         EditorUi::Checkbox(EditorUi::label("Shader hot reload"), &rendererSettings_.shaderHotReloadEnabled);
         ImGui::TextWrapped("%s", renderer_->shaderReloadFailed()
@@ -3812,6 +3817,8 @@ void Application::runShaderSceneAcceptance(const std::filesystem::path& director
     processEditorCommands(); check(rendererSettings_.shaderSceneResource.empty(), "Native mode retained ShaderScene selection");
     renderer_->render(scene_.buildRenderItems(), camera_, rendererSettings_, 320, 180);
     glFinish(); check(glGetError() == GL_NO_ERROR, "Native draw after ShaderScene switch failed");
+    check(std::none_of(renderer_->gpuPassTimings().begin(),renderer_->gpuPassTimings().end(),
+        [](const auto& timing){return timing.name.find("ShaderScene ")==0;}),"Native mode retained ShaderScene timing metadata");
     check(openScene(directory / "saved.myscene"), "Native to ShaderScene switch failed"); processEditorCommands(); draw();
     check(before == pixels(), "Native to ShaderScene drifted");
     rendererSettings_.shaderHotReloadEnabled = false;

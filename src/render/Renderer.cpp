@@ -241,6 +241,11 @@ void Renderer::render(
         if (shaderFrame.gpuTimeUpdated) {
             latestGpuFrameMeasurementMilliseconds_ = gpuFrameTimeMilliseconds_; ++gpuFrameMeasurementSerial_;
         }
+        if (shaderRuntime) {
+            const auto times = shaderRuntime->passGpuMilliseconds();
+            for (std::size_t i = 0; i < times.size(); ++i)
+                gpuPassTimings_.push_back({shaderFrame.passNames[i], times[i], times[i], gpuFrameMeasurementSerial_});
+        }
         activeRenderPath_ = RenderPath::Forward; drawCallCount_ = shaderFrame.drawCalls;
         submittedInstanceCount_ = visibleInstanceCount_ = culledInstanceCount_ = renderedInstanceTriangleCount_ = 0;
         previousViewProjectionValid_ = false;
@@ -248,7 +253,7 @@ void Renderer::render(
         stateCache_.invalidate(); return;
     }
     if (shaderSceneRenderer_) {
-        shaderSceneRenderer_.reset(); shaderSceneResource_.clear(); invalidateTemporalHistory();
+        shaderSceneRenderer_.reset(); shaderSceneResource_.clear(); gpuPassTimings_.clear(); invalidateTemporalHistory();
     }
     if (settings.enscapeCubeShaderEnabled) {
         if (!enscapeCubeActive_) invalidateTemporalHistory();

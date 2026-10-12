@@ -15,6 +15,7 @@
 namespace iris {
 namespace {
 constexpr std::size_t maximumBufferBytes = 256U * 1024U * 1024U;
+constexpr std::size_t timingStride = 2 + 2 * shaderSceneMaximumPasses;
 struct PreparationBindings {
     GLint texture{0}, volume{0}, draw{0}, read{0}, unpackBuffer{0};
     std::array<GLint, 6> unpack{};
@@ -52,10 +53,11 @@ struct Texture {
 struct FrameQuery {
     GLuint end{0};
     bool& pending;
-    FrameQuery(GLuint first, GLuint last, bool& value) : end(last), pending(value) {
+    const bool& complete;
+    FrameQuery(GLuint first, GLuint last, bool& value, const bool& success) : end(last), pending(value), complete(success) {
         if (first) glQueryCounter(first, GL_TIMESTAMP);
     }
-    ~FrameQuery() { if (end) { glQueryCounter(end, GL_TIMESTAMP); pending = true; } }
+    ~FrameQuery() { if (end) { glQueryCounter(end, GL_TIMESTAMP); pending = complete; } }
 };
 std::vector<std::unique_ptr<Texture>> allocateTextures(const ShaderScenePackage& package) {
     PreparationBindings bindings;
@@ -139,11 +141,12 @@ struct ShaderSceneRenderer::State {
     std::vector<ModuleParameterValue> parameterValues;
     ShaderSceneHistoryPolicy historyPolicy;
     int seed{0};
-    std::array<GLuint, 8> timingQueries{};
+    std::array<GLuint, 4 * timingStride> timingQueries{};
     std::array<bool, 4> timingPending{};
     std::size_t timingCursor{0};
     bool gpuTimeValid{false}, gpuTimeUpdated{false};
     double gpuMilliseconds{0};
+    std::vector<double> passMilliseconds;
     ~State() { glDeleteQueries(static_cast<GLsizei>(timingQueries.size()), timingQueries.data()); }
 };
 ShaderSceneRenderer::ShaderSceneRenderer(const std::filesystem::path& directory) : vertex_(directory / "fullscreen.vert") {}
@@ -267,6 +270,7 @@ void ShaderSceneRenderer::renderFrame(const RenderPluginFrame& frame) {
     if (frame.width != state.width || frame.height != state.height) {
         auto buffers = allocateBuffers(state.package, frame.width, frame.height);
         state.buffers.swap(buffers); state.width = frame.width; state.height = frame.height; state.invalidated = true;
+        state.timingPending.fill(false); state.gpuTimeValid = false; state.passMilliseconds.clear();
     }
     const auto view = frame.camera.viewMatrix();
     const auto projection = frame.camera.projectionMatrix(static_cast<float>(frame.width) / frame.height);
@@ -281,21 +285,30 @@ void ShaderSceneRenderer::renderFrame(const RenderPluginFrame& frame) {
         const auto index = (state.timingCursor + offset) % state.timingPending.size();
         if (state.timingPending[index]) {
             GLint available = GL_FALSE;
-            glGetQueryObjectiv(state.timingQueries[index * 2 + 1], GL_QUERY_RESULT_AVAILABLE, &available);
+            glGetQueryObjectiv(state.timingQueries[index * timingStride + 1], GL_QUERY_RESULT_AVAILABLE, &available);
             if (available == GL_TRUE) {
                 GLuint64 first = 0, last = 0;
-                glGetQueryObjectui64v(state.timingQueries[index * 2], GL_QUERY_RESULT, &first);
-                glGetQueryObjectui64v(state.timingQueries[index * 2 + 1], GL_QUERY_RESULT, &last);
+                glGetQueryObjectui64v(state.timingQueries[index * timingStride], GL_QUERY_RESULT, &first);
+                glGetQueryObjectui64v(state.timingQueries[index * timingStride + 1], GL_QUERY_RESULT, &last);
                 state.gpuMilliseconds = static_cast<double>(last - first) / 1e6;
+                state.passMilliseconds.resize(state.package.executionOrder.size());
+                for (std::size_t pass = 0; pass < state.passMilliseconds.size(); ++pass) {
+                    const auto offset = index * timingStride + 2 + pass * 2;
+                    glGetQueryObjectui64v(state.timingQueries[offset], GL_QUERY_RESULT, &first);
+                    glGetQueryObjectui64v(state.timingQueries[offset + 1], GL_QUERY_RESULT, &last);
+                    state.passMilliseconds[pass] = static_cast<double>(last - first) / 1e6;
+                }
                 state.gpuTimeValid = state.gpuTimeUpdated = true; state.timingPending[index] = false;
             }
         }
         if (!state.timingPending[index] && timingIndex == state.timingPending.size()) timingIndex = index;
     }
     bool unusedPending = false;
+    bool timingComplete = false;
     const bool timed = timingIndex < state.timingPending.size();
-    FrameQuery query(timed ? state.timingQueries[timingIndex * 2] : 0,
-        timed ? state.timingQueries[timingIndex * 2 + 1] : 0, timed ? state.timingPending[timingIndex] : unusedPending);
+    FrameQuery query(timed ? state.timingQueries[timingIndex * timingStride] : 0,
+        timed ? state.timingQueries[timingIndex * timingStride + 1] : 0,
+        timed ? state.timingPending[timingIndex] : unusedPending, timingComplete);
     if (timed) state.timingCursor = (timingIndex + 1) % state.timingPending.size();
     OpenGlStateCache cache; RenderState desired; desired.depthTest = false; desired.depthWrite = false; cache.apply(desired);
     glDisable(GL_SCISSOR_TEST); glDisable(GL_FRAMEBUFFER_SRGB); glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
@@ -312,7 +325,10 @@ void ShaderSceneRenderer::renderFrame(const RenderPluginFrame& frame) {
     // Repeated time uses the same immutable previous side and recomputes identically.
     GLint active = 0; glGetIntegerv(GL_ACTIVE_TEXTURE, &active);
     const bool labels = GLAD_GL_KHR_debug && glPushDebugGroup && glPopDebugGroup;
+    std::size_t timedPass = 0;
     for (const auto index : state.package.executionOrder) {
+        const auto timingOffset = timingIndex * timingStride + 2 + timedPass++ * 2;
+        if (timed) glQueryCounter(state.timingQueries[timingOffset], GL_TIMESTAMP);
         const auto& description = state.package.passes[index]; auto& pass = *state.passes[index];
         const auto* buffer = state.buffers[index].get();
         const int width = buffer ? buffer->width : frame.width, height = buffer ? buffer->height : frame.height;
@@ -358,6 +374,7 @@ void ShaderSceneRenderer::renderFrame(const RenderPluginFrame& frame) {
         }
         glBindVertexArray(frame.fullscreenVertexArray); glDrawArrays(GL_TRIANGLES, 0, 3);
         if (labels) glPopDebugGroup();
+        if (timed) glQueryCounter(state.timingQueries[timingOffset + 1], GL_TIMESTAMP);
     }
     for (int slot = 0; slot < 4; ++slot) { glActiveTexture(GL_TEXTURE0 + slot); glBindTexture(GL_TEXTURE_2D, 0); glBindTexture(GL_TEXTURE_3D, 0); glBindSampler(static_cast<GLuint>(slot), 0); }
     glActiveTexture(static_cast<GLenum>(active)); glBindVertexArray(0); glUseProgram(0); frame.target.unbind();
@@ -365,6 +382,10 @@ void ShaderSceneRenderer::renderFrame(const RenderPluginFrame& frame) {
     state.parameterValues = parameters;
     state.historyPolicy = policy;
     state.seed = frame.settings.shaderSceneSeed;
+    timingComplete = true;
+}
+std::vector<double> ShaderSceneRenderer::passGpuMilliseconds() const {
+    return state_ ? state_->passMilliseconds : std::vector<double>{};
 }
 RenderPluginFrameInfo ShaderSceneRenderer::frameInfo() const {
     RenderPluginFrameInfo info;

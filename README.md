@@ -149,6 +149,8 @@ ShaderScene 序列仅支持 Beauty PNG，禁用热重载，拒绝 Resume、Cache
 
 [Enscape 共享序列 Job](assets/renderjobs/09_enscape_shader_sequence.renderjob) 使用相同 schema 4，包及输入、许可随 Release ZIP 安装。自制包使用 MIT，Enscape 包保留 CC BY-NC-SA 3.0 及原作者说明。报告另记录 Pass/Channel 格式与采样、纹理尺寸/编码/Seed 和许可；Queue 失败显示执行器退出码与有界日志（最多 2 KiB 开头和 14 KiB 尾部，中间截断有标记），修复输入后可重新提交。GUI Queue 执行限 Windows；CLI 需要可用的 OpenGL 3.3 上下文。跨驱动像素一致性未作保证。
 
+独立 ShaderScene 的 Inspector 显示各 Pass 的最近 GPU 耗时，现有 benchmark 报告记录其 P50/P95 和样本数。计时使用有界异步 timestamp 查询，等待整帧完成后发布同一组结果；resize、包替换和切回 Native 不沿用旧 Pass 数据。暂不可用时显示 collecting，查询槽满时跳过测量。运行 `tools/ShaderSceneTimingAcceptance.ps1` 验证双包、双分辨率和现有迁移成本门；GPU 时间受设备负载和频率影响。
+
 ```powershell
 .\build-ci-msvc\Release\Iris.exe raster-sequence assets/renderjobs/08_shader_scene_sequence.renderjob
 .\tools\ShaderSceneSequenceAcceptance.ps1

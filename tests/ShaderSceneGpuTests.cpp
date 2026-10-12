@@ -11,6 +11,11 @@
 #include <iostream>
 #include <stdexcept>
 #include <vector>
+#include <algorithm>
+#include <cmath>
+#include <cstdlib>
+#include <iomanip>
+#include <sstream>
 
 namespace {
 void check(bool ok, const char* message) { if (!ok) throw std::runtime_error(message); }
@@ -23,6 +28,62 @@ std::vector<unsigned char> pixels(const RenderTarget& target) {
     std::vector<unsigned char> image(static_cast<std::size_t>(target.width() * target.height() * 4));
     glBindTexture(GL_TEXTURE_2D, target.colorTexture());
     glGetTexImage(GL_TEXTURE_2D, 0, GL_RGBA, GL_UNSIGNED_BYTE, image.data()); return image;
+}
+double percentile(std::vector<double> values,double fraction) {
+    std::sort(values.begin(),values.end());
+    return values[static_cast<std::size_t>(std::ceil(fraction*values.size()))-1];
+}
+void testPassTimings(const std::filesystem::path& shaders,unsigned int vao) {
+    std::ostringstream report;
+    report<<std::setprecision(12)<<"{\"gpu\":"<<std::quoted(reinterpret_cast<const char*>(glGetString(GL_RENDERER)))
+        <<",\"openGl\":"<<std::quoted(reinterpret_cast<const char*>(glGetString(GL_VERSION)))<<",\"cases\":[";
+    bool firstCase=true;
+    for(const auto* name:{"sequence","enscape"}) {
+        iris::ShaderSceneRenderer runtime(shaders);RenderTarget target;Camera camera;SceneDocument document;std::string error;
+        check(loadSceneDocument(shaders.parent_path()/"assets/shader-scenes"/name/(std::string(name)+".shaderscene"),document,error),error.c_str());
+        auto settings=document.renderer;settings.shaderSceneSeed=7;
+        camera.setOrbitState(document.camera);
+        for(const auto width:{320,640}) {
+            const int height=width*9/16;target.resize(width,height,1);
+            if(width==320)runtime.prepareResources(settings,width,height);
+            runtime.invalidateHistory();
+            std::vector<double> cpu,gpu;std::vector<std::vector<double>> passes;
+            for(int frame=0;frame<96;++frame) {
+                const auto start=std::chrono::steady_clock::now();
+                runtime.renderFrame({target,camera,settings,width,height,static_cast<float>(frame)/24,vao});
+                const auto end=std::chrono::steady_clock::now();glFinish();
+                const auto info=runtime.frameInfo();const auto timings=runtime.passGpuMilliseconds();
+                if(frame==0)check(!info.gpuTimeValid&&timings.empty(),"New package/resize retained stale timing sample");
+                if(frame<24)continue;
+                check(info.gpuTimeValid&&info.gpuTimeUpdated&&timings.size()==info.passNames.size(),"Incomplete asynchronous Pass timing");
+                double sum=0;
+                if(passes.empty())passes.resize(timings.size());
+                for(std::size_t i=0;i<timings.size();++i){
+                    check(std::isfinite(timings[i])&&timings[i]>=0,"Invalid Pass timestamp interval");
+                    passes[i].push_back(timings[i]);sum+=timings[i];
+                }
+                check(sum>0&&sum<=info.gpuMilliseconds+1e-6,"Pass samples do not belong to enclosing frame interval");
+                gpu.push_back(info.gpuMilliseconds);cpu.push_back(std::chrono::duration<double,std::milli>(end-start).count());
+            }
+            check(glGetError()==GL_NO_ERROR,"Pass timing GL error");
+            if(!firstCase)report<<',';
+            firstCase=false;
+            report<<"{\"package\":"<<std::quoted(name)<<",\"width\":"<<width<<",\"height\":"<<height
+                <<",\"samples\":"<<gpu.size()<<",\"warmupFrames\":24,\"fps\":24,\"seed\":7,\"privateTextureBytes\":"<<runtime.estimatedBytes()
+                <<",\"cpuP50Ms\":"<<percentile(cpu,0.5)<<",\"cpuP95Ms\":"<<percentile(cpu,0.95)
+                <<",\"gpuP50Ms\":"<<percentile(gpu,0.5)<<",\"gpuP95Ms\":"<<percentile(gpu,0.95)<<",\"passes\":[";
+            const auto names=runtime.frameInfo().passNames;
+            for(std::size_t i=0;i<passes.size();++i){if(i)report<<',';
+                report<<"{\"name\":"<<std::quoted(names[i])<<",\"p50Ms\":"<<percentile(passes[i],0.5)<<",\"p95Ms\":"<<percentile(passes[i],0.95)<<'}';}
+            report<<"]}";
+        }
+    }
+    report<<"]}\n";
+    if(const char* path=std::getenv("IRIS_SHADER_SCENE_COST_REPORT")){
+        std::ofstream output(std::filesystem::u8path(path),std::ios::binary);output<<report.str();output.flush();
+        check(static_cast<bool>(output),"Cannot write ShaderScene cost report");
+    }
+    std::cout<<"ShaderScene dual-package asynchronous Pass timings / 320+640 / resize invalidation / 72 samples: PASS\n";
 }
 }
 void testShaderSceneMultiPass(const std::filesystem::path&, const std::filesystem::path&, unsigned int);
@@ -99,6 +160,7 @@ int main(int argc, char** argv) {
         testShaderSceneTexturesGpu(std::filesystem::u8path(argv[1]), directory, vao);
         testShaderSceneReload(std::filesystem::u8path(argv[1]), directory, vao);
         testShaderSceneHistory(std::filesystem::u8path(argv[1]), directory, vao);
+        testPassTimings(std::filesystem::u8path(argv[1]),vao);
         glDeleteVertexArrays(1, &vao);
         check(glGetError() == GL_NO_ERROR, "Exit GL error");
         std::cout << "ShaderScene real GL: parameters/time/camera, fixed repeat, Scene reference, compile/type/include failure retention, recovery, resize, discard clear and destruction PASS\n";

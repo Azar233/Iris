@@ -19,6 +19,8 @@ public:
     std::vector<RenderPassContext> passContexts() const;
     const ShaderScenePackage* package() const;
     ShaderSceneRuntimeStatus runtimeStatus() const;
+    // Last complete asynchronous sample, in frameInfo().passNames order.
+    std::vector<double> passGpuMilliseconds() const;
     Shader::ReloadReport reloadResources(const RendererSettings& settings, bool retryPending = false);
 private:
     struct State;
