@@ -55,7 +55,7 @@ std::string Shader::expandIncludes(
     int depth,
     std::vector<std::filesystem::path>& dependencies,
     std::vector<std::filesystem::file_time_type>& times,
-    const std::filesystem::path& root
+    const std::filesystem::path& root, ShaderSourceMap* map
 ) {
     if (!root.empty()) {
         const auto relative = std::filesystem::canonical(path).lexically_relative(root);
@@ -77,10 +77,13 @@ std::string Shader::expandIncludes(
         throw std::runtime_error("Shader include nesting is too deep at " + path.string());
     }
     watchSource(path, dependencies, times);
+    const int sourceId=map?map->add(path):0;
     std::istringstream input(readFile(path));
     std::ostringstream output;
     std::string line;
+    int physicalLine=0;
     while (std::getline(input, line)) {
+        ++physicalLine;
         const std::size_t firstToken = line.find_first_not_of(" \t");
         const bool isInclude = firstToken != std::string::npos
             && line.compare(firstToken, 8, "#include") == 0;
@@ -124,9 +127,11 @@ std::string Shader::expandIncludes(
         }
         // Each included file is wrapped in a `#line` pair so a compiler error inside it still names
         // the real file and line rather than a position in the expanded text.
-        output << "#line 1 \"" << resolved.generic_string() << "\"\n";
-        output << expandIncludes(resolved, depth + 1, dependencies, times, root);
-        output << "#line 1 \"" << path.generic_string() << "\"\n";
+        if(map)output<<"#line 1 "<<map->add(resolved)<<'\n';
+        else output << "#line 1 \"" << resolved.generic_string() << "\"\n";
+        output << expandIncludes(resolved, depth + 1, dependencies, times, root,map);
+        if(map)output<<"#line "<<physicalLine+1<<' '<<sourceId<<'\n';
+        else output << "#line 1 \"" << path.generic_string() << "\"\n";
     }
     return output.str();
 }
@@ -157,23 +162,22 @@ unsigned int Shader::buildProgram(const std::array<std::filesystem::path, 3>& pa
     for (std::size_t i = 0; i < paths.size(); ++i)
         if (!paths[i].empty()) watchSource(paths[i], snapshot.paths[i], snapshot.times[i]);
     std::array<std::string, 3> sources;
-    for (std::size_t i = 0; i < paths.size(); ++i)
-        if (!paths[i].empty()) sources[i] = expandIncludes(paths[i], 0, snapshot.paths[i], snapshot.times[i], i == 2 ? policy.fragmentRoot : std::filesystem::path{});
+    for (std::size_t i = 0; i < paths.size(); ++i) {
+        const bool mapped=i==2 && !policy.fragmentRoot.empty();
+        if(mapped){snapshot.maps[i].pass=policy.passLabel;snapshot.maps[i].root=policy.fragmentRoot;}
+        if (!paths[i].empty()) sources[i] = expandIncludes(paths[i], 0, snapshot.paths[i], snapshot.times[i], i == 2 ? policy.fragmentRoot : std::filesystem::path{},mapped?&snapshot.maps[i]:nullptr);
+    }
     if (policy.mainImageEntry) {
         // Append after user includes so their #version and source locations survive.
         // The same policy is used for initial compilation and atomic hot reload.
-        sources[2] += "\n// Iris generated mainImage adapter\n"
-            "layout(location = 0) out vec4 irisMainImageOutput;\n"
-            "void main() {\n"
-            "    vec4 irisMainImageColor = vec4(0.0);\n"
-            "    mainImage(irisMainImageColor, gl_FragCoord.xy);\n"
-            "    irisMainImageOutput = irisMainImageColor;\n"
-            "}\n";
+        sources[2]+='\n';
+        if(!snapshot.maps[2].locations.empty())sources[2]+="#line 1 "+std::to_string(snapshot.maps[2].add("<Iris mainImage adapter>",true))+"\n";
+        sources[2]+=shaderMainImageAdapter();
     }
     CompilationResources resources;
     const std::array<unsigned int, 3> types{GL_VERTEX_SHADER, GL_GEOMETRY_SHADER, GL_FRAGMENT_SHADER};
     for (std::size_t i = 0; i < paths.size(); ++i)
-        if (!paths[i].empty()) resources.stages[i] = compile(types[i], sources[i], paths[i]);
+        if (!paths[i].empty()) resources.stages[i] = compile(types[i], sources[i], paths[i],snapshot.maps[i].locations.empty()?nullptr:&snapshot.maps[i]);
     resources.program = glCreateProgram();
     if (!resources.program) throw std::runtime_error("Cannot allocate Shader program");
     for (auto stage : resources.stages) if (stage) glAttachShader(resources.program, stage);
@@ -247,6 +251,10 @@ Shader::ReloadReport Shader::reloadChangedShaders(bool retryPending) {
         auto candidate = std::make_unique<Candidate>(shader);
         try {
             candidate->program = buildProgram(shader->stagePaths_, candidate->sources, shader->sourcePolicy_);
+        } catch (const ShaderSourceError& error) {
+            ++report.failed;
+            report.diagnostics.insert(report.diagnostics.end(),error.diagnostics.begin(),error.diagnostics.end());
+            report.message+=error.what();report.message+='\n';
         } catch (const std::exception& error) {
             ++report.failed;
             if (!report.message.empty()) report.message += '\n';
@@ -371,7 +379,14 @@ std::string Shader::readFile(const std::filesystem::path& path) {
     return buffer.str();
 }
 
-unsigned int Shader::compile(unsigned int type, const std::string& source, const std::filesystem::path& path) {
+std::vector<ShaderSourceMap> Shader::sourceMapsForRoot(const std::filesystem::path& root) {
+    std::vector<ShaderSourceMap> maps;
+    for(const auto* shader:shaderRegistry())if(shader->sourcePolicy_.fragmentRoot==root && !shader->watchedSources_.maps[2].locations.empty())
+        maps.push_back(shader->watchedSources_.maps[2]);
+    return maps;
+}
+
+unsigned int Shader::compile(unsigned int type, const std::string& source, const std::filesystem::path& path, const ShaderSourceMap* map) {
     CompilationResources resources;
     const unsigned int shader = resources.stages[0] = glCreateShader(type);
     if (!shader) throw std::runtime_error("Cannot allocate Shader stage: " + path.string());
@@ -386,6 +401,7 @@ unsigned int Shader::compile(unsigned int type, const std::string& source, const
         glGetShaderiv(shader, GL_INFO_LOG_LENGTH, &logLength);
         std::vector<char> log(static_cast<std::size_t>(std::max(logLength, 1)));
         glGetShaderInfoLog(shader, logLength, nullptr, log.data());
+        if(map)throw ShaderSourceError(path,log.data(),*map);
         throw std::runtime_error("Shader compile failed (" + path.string() + "):\n" + log.data());
     }
     resources.stages[0] = 0;

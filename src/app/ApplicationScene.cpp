@@ -3102,10 +3102,18 @@ bool Application::recompileWorkspaceShaderScene() {
     try {
         auto candidate=renderer_->prepareShaderScene(rendererSettings_);
         renderer_->publishShaderScene(std::move(candidate),resource);
+        shaderWorkspaceDiagnostics_.clear();
+        const auto package=inspectWorkspaceShaderPackage(std::filesystem::u8path(resource));
+        shaderWorkspaceSourceMaps_=Shader::sourceMapsForRoot(package.root);
         shaderWorkspaceMessage_="ShaderScene complete package committed; history reset";
         statusMessage_=shaderWorkspaceMessage_;
         return true;
+    } catch(const ShaderSourceError& error) {
+        shaderWorkspaceDiagnostics_=error.diagnostics;shaderWorkspaceSourceMaps_={error.sources};
+        shaderWorkspaceMessage_="ShaderScene compile rejected; previous complete instance retained:\n"+std::string(error.what());
+        statusMessage_=shaderWorkspaceMessage_;std::cerr<<shaderWorkspaceMessage_<<'\n';return false;
     } catch(const std::exception& error) {
+        shaderWorkspaceDiagnostics_.clear();
         shaderWorkspaceMessage_="ShaderScene compile rejected; previous complete instance retained:\n"+std::string(error.what());
         statusMessage_=shaderWorkspaceMessage_;std::cerr<<shaderWorkspaceMessage_<<'\n';return false;
     }
@@ -3117,6 +3125,10 @@ void Application::drawShaderPackageInspector() {
         workspaceShaderPackage_ = inspectWorkspaceShaderPackage(selectedWorkspaceAsset_);
         workspaceShaderGeneration_ = workspaceAssets_.generation();
         inspectedShaderFile_.clear();
+        inspectedShaderLine_=0;
+        shaderDiagnosticContext_.clear();
+        if(!shaderWorkspaceSourceMaps_.empty() && shaderWorkspaceSourceMaps_.front().root!=workspaceShaderPackage_.root)shaderWorkspaceDiagnostics_.clear();
+        if(shaderWorkspaceDiagnostics_.empty())shaderWorkspaceSourceMaps_=Shader::sourceMapsForRoot(workspaceShaderPackage_.root);
     }
     const auto& package = workspaceShaderPackage_;
     ImGui::TextWrapped("ShaderScene: %s", package.id.empty()?"(invalid Manifest)":package.id.c_str());
@@ -3142,8 +3154,42 @@ void Application::drawShaderPackageInspector() {
     }
     ImGui::EndDisabled();
     ImGui::TextWrapped("%s",active?"Active package":"Not the active package; open it before compiling");
-    ImGui::TextWrapped("%s",shaderWorkspaceMessage_.c_str());
-    if(active && renderer_->shaderReloadFailed()) ImGui::TextWrapped("%s",renderer_->shaderReloadStatus().c_str());
+    static const std::vector<ShaderSourceDiagnostic> noDiagnostics;
+    const auto& compilerDiagnostics=shaderWorkspaceDiagnostics_.empty()?(active?renderer_->shaderReloadDiagnostics():noDiagnostics):shaderWorkspaceDiagnostics_;
+    if(compilerDiagnostics.empty())ImGui::TextWrapped("%s",active?shaderWorkspaceMessage_.c_str():"Compiler diagnostics are available for the active package");
+    else ImGui::TextWrapped("%s",EditorUi::chinese?"编译被拒绝，保留上一个完整运行实例。":"Compilation rejected; previous complete instance retained.");
+    if(!compilerDiagnostics.empty() && EditorUi::section("Compiler locations",true)) {
+        for(std::size_t index=0;index<compilerDiagnostics.size();++index) {
+            const auto& diagnostic=compilerDiagnostics[index];
+            const auto label="Pass "+diagnostic.pass+" | "+(diagnostic.generated?"Generated: ":"")
+                +(diagnostic.mapped?diagnostic.file.filename().u8string():"Unmapped")+":"
+                +(diagnostic.line>0?std::to_string(diagnostic.line):"unknown line");
+            ImGui::PushID(static_cast<int>(index));
+            ImGui::BeginDisabled(!diagnostic.mapped || diagnostic.generated);
+            if(ImGui::Selectable(label.c_str())) {
+                inspectedShaderFile_=diagnostic.file;inspectedShaderLine_=diagnostic.line;shaderDiagnosticContext_.clear();
+                if(inspectedShaderLine_>0 && std::filesystem::is_regular_file(inspectedShaderFile_)) {
+                    std::ifstream source(inspectedShaderFile_);std::string line;int number=0;
+                    while(std::getline(source,line) && ++number<=inspectedShaderLine_+1)
+                        if(number>=inspectedShaderLine_-1)shaderDiagnosticContext_.push_back((number==inspectedShaderLine_?"> ":"  ")+std::to_string(number)+": "+line);
+                }
+            }
+            if(index==0 && !diagnostic.generated && std::getenv("IRIS_SHADER_DIAGNOSTIC_UI_TEST") && shaderBrowserUiFrames_>=5) {
+                if(shaderDiagnosticUiPhase_==0) {
+                    const auto a=ImGui::GetItemRectMin(),b=ImGui::GetItemRectMax();
+                    ImGui::GetIO().AddFocusEvent(true);ImGui::GetIO().AddMousePosEvent((a.x+b.x)*.5f,(a.y+b.y)*.5f);
+                    ImGui::GetIO().AddMouseButtonEvent(0,true);++shaderDiagnosticUiPhase_;
+                } else if(shaderDiagnosticUiPhase_==1){ImGui::GetIO().AddMouseButtonEvent(0,false);++shaderDiagnosticUiPhase_;}
+            }
+            ImGui::EndDisabled();ImGui::TextWrapped("%s",diagnostic.message.c_str());ImGui::PopID();
+        }
+    }
+    if(inspectedShaderLine_>0 && !shaderDiagnosticContext_.empty()) {
+        ImGui::TextWrapped("%s:%d",inspectedShaderFile_.lexically_relative(package.root).generic_u8string().c_str(),inspectedShaderLine_);
+        for(const auto& line:shaderDiagnosticContext_)ImGui::TextWrapped("%s",line.c_str());
+    }
+    if(!compilerDiagnostics.empty() && EditorUi::section("Raw compiler log",false))
+        ImGui::TextWrapped("%s",shaderWorkspaceDiagnostics_.empty()?renderer_->shaderReloadStatus().c_str():shaderWorkspaceMessage_.c_str());
     ImGui::TextWrapped("%s",EditorUi::chinese?"文件快照；Refresh 更新。文档不是执行输入。":"File list snapshot; use Refresh. Documentation is not an execution input.");
     if(EditorUi::section("Package files",true)) {
         bool interactionHandled=false;
@@ -3156,7 +3202,7 @@ void Application::drawShaderPackageInspector() {
             if(file.path.parent_path()!=directory) {children.insert(directory / *relative.begin());continue;}
             ImGui::PushID(file.path.u8string().c_str());
             const auto label=(file.missing?"[Missing] ":"")+file.path.filename().u8string();
-            if(ImGui::Selectable(label.c_str(),inspectedShaderFile_==file.path)) inspectedShaderFile_=file.path;
+            if(ImGui::Selectable(label.c_str(),inspectedShaderFile_==file.path)) {inspectedShaderFile_=file.path;inspectedShaderLine_=0;shaderDiagnosticContext_.clear();}
             if(!interactionHandled && file.role=="Pass source" && std::getenv("IRIS_SHADER_BROWSER_INTERACTION")
                 && workspaceAssets_.generation()>shaderBrowserInitialGeneration_) {
                 interactionHandled=true;
@@ -3183,6 +3229,17 @@ void Application::drawShaderPackageInspector() {
         drawDirectory(package.manifest.parent_path());
     }
     for(const auto& generated:package.generatedInputs) ImGui::TextWrapped("%s",generated.c_str());
+    if(!shaderWorkspaceSourceMaps_.empty() && EditorUi::section("Compiler source IDs / adapter",std::getenv("IRIS_SHADER_SOURCE_MAP_VIEW")!=nullptr)) {
+        for(const auto& map:shaderWorkspaceSourceMaps_) {
+            if(map.root!=package.root)continue;
+            ImGui::TextWrapped("Pass %s",map.pass.c_str());
+            for(std::size_t id=0;id<map.locations.size();++id) {
+                const auto& location=map.locations[id];
+                ImGui::TextWrapped("%zu -> %s%s",id,location.generated?"Generated: ":"",location.file.generic_u8string().c_str());
+                if(location.generated)ImGui::TextUnformatted(shaderMainImageAdapter());
+            }
+        }
+    }
     WorkspaceFileRequest sourceRequest,directoryRequest; std::string fileError;
     const auto selected=inspectedShaderFile_.empty()?package.manifest:inspectedShaderFile_;
     const bool canEdit=prepareWorkspaceFileRequest(selected,false,sourceRequest,fileError);
@@ -3322,6 +3379,45 @@ SceneEntityId Application::pickEntity(const std::vector<RenderItem>& items,
     glUseProgram(program); glBindVertexArray(vao); glPixelStorei(GL_PACK_ALIGNMENT, packAlignment);
     if (!complete) throw std::runtime_error("Editor picking framebuffer is incomplete");
     return hit > 0 && hit <= items.size() ? items[hit - 1].entityId : invalidSceneEntityId;
+}
+
+void Application::runShaderSourceMapAcceptance(const std::filesystem::path& directory) {
+    const auto check=[](bool ok,const char* message){if(!ok)throw std::runtime_error(message);};
+    const auto write=[](const std::filesystem::path& file,const std::string& text){std::ofstream stream(file,std::ios::trunc);stream<<text;if(!stream)throw std::runtime_error("Cannot write diagnostic fixture");};
+    std::filesystem::create_directories(directory/"nested");
+    const auto manifest=directory/"mapping.shaderscene",parent=directory/"image.frag",first=directory/"nested/first.glsl",second=directory/"nested/second.glsl";
+    write(manifest,R"({"version":2,"id":"mapping","resourceRoot":".","entry":"mainImage","camera":"project","author":"Iris contributors","license":"MIT","parameters":[],"passes":[{"id":"Image","fragment":"image.frag","output":"display-rgba8","sizeDivisor":1,"channels":[]}]})");
+    const std::string validParent="#version 330 core\n#include \"nested/first.glsl\"\nvoid mainImage(out vec4 color, in vec2 coord) {\n color=vec4(sampleColor(),1.0);\n}\n";
+    const std::string validSecond="// nested source\nvec3 nestedColor() {\n return vec3(0.25,0.5,0.75);\n}\n";
+    write(parent,validParent);write(first,"#include \"second.glsl\"\nvec3 sampleColor() { return nestedColor(); }\n");write(second,validSecond);
+    check(openScene(manifest),"Source map fixture open failed");processEditorCommands();
+    rendererSettings_.shaderHotReloadEnabled=false;animationTimeFixed_=true;animationTimeSeconds_=1.25f;
+    const auto draw=[&](){renderer_->render(scene_.buildRenderItems(),camera_,rendererSettings_,320,180);glFinish();check(glGetError()==GL_NO_ERROR,"Source map GPU state error");};
+    const auto pixels=[&](){std::vector<unsigned char> bytes(320U*180U*4U);glBindTexture(GL_TEXTURE_2D,renderer_->colorTexture());glGetTexImage(GL_TEXTURE_2D,0,GL_RGBA,GL_UNSIGNED_BYTE,bytes.data());return bytes;};
+    draw();const auto before=pixels();
+    const auto expectLocation=[&](const char* file,int line,bool generated){
+        check(std::any_of(shaderWorkspaceDiagnostics_.begin(),shaderWorkspaceDiagnostics_.end(),[&](const auto& d){return d.pass=="Image" && d.file.filename()==file && d.line==line && d.generated==generated && d.mapped;}),"GPU original source/line mapping disagrees");
+    };
+    auto history=renderer_->historyInvalidationRevision();
+    write(second,"// nested source\nvec3 nestedColor() {\n return nonexistentDiagnosticSymbol;\n}\n");
+    check(!recompileWorkspaceShaderScene(),"Broken nested include compiled");expectLocation("second.glsl",3,false);
+    check(renderer_->historyInvalidationRevision()==history,"Diagnostic failure reset history");draw();check(before==pixels(),"Diagnostic failure changed pixels");
+    write(second,validSecond);check(recompileWorkspaceShaderScene(),"Include recovery failed");draw();check(before==pixels(),"Include recovery pixels differ");
+    write(parent,"#version 330 core\n#include \"nested/first.glsl\"\nvoid mainImage(out vec4 color, in vec2 coord) {\n color=nonexistentParentSymbol;\n}\n");
+    check(!recompileWorkspaceShaderScene(),"Broken parent compiled");expectLocation("image.frag",4,false);
+    write(parent,"#version 330 core\n#include \"nested/first.glsl\"\nvoid unrelatedFunction() {}\n");
+    check(!recompileWorkspaceShaderScene(),"Missing mainImage compiled");expectLocation("<Iris mainImage adapter>",5,true);
+    write(parent,validParent);check(recompileWorkspaceShaderScene(),"Adapter recovery failed");draw();check(before==pixels(),"Adapter recovery pixels differ");
+    history=renderer_->historyInvalidationRevision();
+    write(second,"// nested source\nvec3 nestedColor() {\n return nonexistentDiagnosticSymbol;\n}\n");
+    check(!renderer_->reloadShaderResources(true) && renderer_->historyInvalidationRevision()==history,"Mapped reload broke atomic retention");
+    check(std::any_of(renderer_->shaderReloadDiagnostics().begin(),renderer_->shaderReloadDiagnostics().end(),[](const auto& d){return d.file.filename()=="second.glsl" && d.line==3;}),"Automatic reload lost structured location");
+    draw();check(before==pixels(),"Mapped reload changed retained pixels");
+    write(second,validSecond);check(renderer_->reloadShaderResources(true),"Mapped reload recovery failed");draw();check(before==pixels(),"Mapped reload recovery drifted");
+    write(second,"// nested source\nvec3 nestedColor() {\n return nonexistentDiagnosticSymbol;\n}\n");
+    check(!recompileWorkspaceShaderScene(),"Final diagnostic missing");
+    selectedWorkspaceAsset_=manifest;focusAssetsTab_=true;
+    std::cout<<"GPU nested include line 3 / parent line 4 / generated adapter line 5 / atomic reload / retention+recovery PASS\n";
 }
 
 void Application::runShaderSceneAcceptance(const std::filesystem::path& directory) {

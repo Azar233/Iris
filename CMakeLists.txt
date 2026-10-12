@@ -16,6 +16,14 @@ set(CMAKE_POLICY_VERSION_MINIMUM 3.10)
 # Shared, content-based module/host identity; unchanged configure inputs reuse it.
 include(cmake/IrisBuildIdentity.cmake)
 
+add_library(IrisShaderSourceMaps src/render/ShaderSourceMap.cpp)
+target_include_directories(IrisShaderSourceMaps PUBLIC src)
+if(MSVC)
+    target_compile_options(IrisShaderSourceMaps PRIVATE /W4 /permissive- /utf-8)
+else()
+    target_compile_options(IrisShaderSourceMaps PRIVATE -Wall -Wextra -Wpedantic)
+endif()
+
 include(FetchContent)
 
 set(GLFW_BUILD_DOCS OFF CACHE BOOL "" FORCE)
@@ -710,6 +718,10 @@ if(BUILD_TESTING)
         target_link_libraries(IrisWorkspaceFileActionsTests PRIVATE shell32)
     endif()
     iris_add_test(NAME workspace-file-actions COMMAND IrisWorkspaceFileActionsTests)
+
+    add_executable(IrisShaderSourceMapTests tests/ShaderSourceMapTests.cpp)
+    target_link_libraries(IrisShaderSourceMapTests PRIVATE IrisShaderSourceMaps)
+    iris_add_test(NAME shader-scene-source-map COMMAND IrisShaderSourceMapTests)
 
     add_executable(MyRendererAssetThumbnailTests
         tests/AssetThumbnailTests.cpp
@@ -1836,4 +1848,14 @@ add_custom_target(render-plugin-parameter-gpu-acceptance
 endif()
 
 # Labels and executable branding apply after every project target/test exists.
+get_property(iris_shader_consumers DIRECTORY PROPERTY BUILDSYSTEM_TARGETS)
+foreach(iris_shader_consumer IN LISTS iris_shader_consumers)
+    get_target_property(iris_shader_sources ${iris_shader_consumer} SOURCES)
+    foreach(iris_shader_source IN LISTS iris_shader_sources)
+        if(iris_shader_source MATCHES "(^|/)Shader.cpp$")
+            target_link_libraries(${iris_shader_consumer} PRIVATE IrisShaderSourceMaps)
+            break()
+        endif()
+    endforeach()
+endforeach()
 include(cmake/IrisVerification.cmake)

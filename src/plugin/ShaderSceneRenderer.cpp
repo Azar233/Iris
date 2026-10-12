@@ -157,6 +157,7 @@ void ShaderSceneRenderer::prepareResources(const RendererSettings& settings, int
         auto pass = std::make_unique<Pass>();
         Shader::SourcePolicy policy; policy.fragmentRoot = candidate->package.root;
         policy.mainImageEntry = candidate->package.mainImageEntry;
+        policy.passLabel=description.id;
         policy.uniforms = {{"irisTime", GL_FLOAT}, {"irisTimeDelta", GL_FLOAT}, {"irisFrame", GL_INT},
             {"irisHistoryValid", GL_BOOL}, {"irisResolution", GL_FLOAT_VEC2}, {"irisViewportResolution", GL_FLOAT_VEC2},
             {"irisCameraPosition", GL_FLOAT_VEC3}, {"irisView", GL_FLOAT_MAT4}, {"irisProjection", GL_FLOAT_MAT4},
@@ -174,6 +175,7 @@ void ShaderSceneRenderer::prepareResources(const RendererSettings& settings, int
             if (candidate->package.version == 3) policy.uniforms.emplace_back("irisChannelExtent" + std::to_string(slot), GL_FLOAT_VEC3);
         }
         try { pass->shader = std::make_unique<Shader>(vertex_, description.fragment, std::move(policy)); }
+        catch (const ShaderSourceError&) { throw; }
         catch (const std::exception& exception) { throw std::runtime_error("ShaderScene Pass " + description.id + ": " + exception.what()); }
         pass->shaderRevision = pass->shader->revision();
         for (const auto& channel : description.channels) {

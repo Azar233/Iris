@@ -1044,6 +1044,7 @@ int Application::run(const std::filesystem::path& initialModel) {
         : (!shaderTransactionSources_.empty() ? 12 : (lightUiInteraction ? 16 : 5));
     if (std::getenv("IRIS_SHADER_BROWSER_INTERACTION")) smokeTestFrames = 14;
     if (std::getenv("IRIS_SHADER_WORKSPACE_UI_TEST")) smokeTestFrames = 16;
+    if (std::getenv("IRIS_SHADER_DIAGNOSTIC_UI_TEST")) smokeTestFrames = 20;
     const auto cpuPreviewSmokeDeadline = std::chrono::steady_clock::now()
         + std::chrono::seconds(30);
     const auto thumbnailDeadline = std::chrono::steady_clock::now() + std::chrono::seconds(30);
@@ -1084,6 +1085,7 @@ int Application::run(const std::filesystem::path& initialModel) {
         runShaderSceneAcceptance(std::filesystem::u8path(directory));
     if (const char* directory = std::getenv("MYRENDERER_ENSCAPE_SHADER_SCENE_ACCEPTANCE_DIRECTORY"))
         runEnscapeShaderSceneAcceptance(std::filesystem::u8path(directory));
+    if(const char* directory=std::getenv("IRIS_SHADER_SOURCE_MAP_ACCEPTANCE_DIRECTORY"))runShaderSourceMapAcceptance(std::filesystem::u8path(directory));
     if (std::getenv("IRIS_SHADER_WORKSPACE_UI_BAD") && std::getenv("MYRENDERER_SMOKE_TEST")
         && std::getenv("IRIS_SHADER_WORKSPACE_ACCEPTANCE") && std::getenv("MYRENDERER_SHADER_SCENE_ACCEPTANCE_DIRECTORY")) {
         const auto inspection=inspectWorkspaceShaderPackage(std::filesystem::u8path(iris::shaderSceneResourceFor(rendererSettings_)));
@@ -1414,9 +1416,12 @@ int Application::run(const std::filesystem::path& initialModel) {
     const bool workspaceUiPassed=!std::getenv("IRIS_SHADER_WORKSPACE_UI_TEST") || (shaderWorkspaceUiPhase_==2
         && shaderWorkspaceCompileAttempts_==1 && shaderWorkspaceLastCompileAccepted_==!std::getenv("IRIS_SHADER_WORKSPACE_UI_BAD"));
     if(std::getenv("IRIS_SHADER_WORKSPACE_UI_TEST")) std::cout<<"Workspace compile button real interaction: "<<(workspaceUiPassed?"PASS":"FAIL")<<'\n';
+    const bool diagnosticUiPassed=!std::getenv("IRIS_SHADER_DIAGNOSTIC_UI_TEST") || (shaderDiagnosticUiPhase_==2
+        && inspectedShaderLine_==3 && inspectedShaderFile_.filename()=="second.glsl" && !shaderDiagnosticContext_.empty());
+    if(std::getenv("IRIS_SHADER_DIAGNOSTIC_UI_TEST"))std::cout<<"Original include diagnostic real selection: "<<(diagnosticUiPassed?"PASS":"FAIL")<<'\n';
     shutdown();
     if (lightUiInteraction && !lightUiInteractionComplete_) std::cerr << "Light UI incomplete: phase=" << lightUiInteractionPhase_ << ", lights=" << scene_.lightEntityCount() << "\n";
-    return workspaceUiPassed && shaderBrowserPassed && recoveryPassed && appendPassed && interactionsPassed && pluginsPassed && pluginParametersPassed
+    return diagnosticUiPassed && workspaceUiPassed && shaderBrowserPassed && recoveryPassed && appendPassed && interactionsPassed && pluginsPassed && pluginParametersPassed
         && (shaderTransactionSources_.empty() || (shaderTransactionDone && shaderTransactionPassed))
         && (!std::getenv("MYRENDERER_SHADER_TRANSACTION_UI_RETRY") || shaderRetryInteractionComplete_)
         && (!std::getenv("MYRENDERER_PLUGIN_RESOURCE_UI_TEST") || shaderRetryInteractionComplete_)

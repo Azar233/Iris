@@ -5,6 +5,7 @@
 #include <cstddef>
 #include <string>
 #include <vector>
+#include "render/ShaderSourceMap.h"
 
 #include <glm/mat4x4.hpp>
 #include <glm/vec3.hpp>
@@ -16,6 +17,7 @@ public:
         std::filesystem::path fragmentRoot;
         std::vector<std::pair<std::string, unsigned int>> uniforms;
         bool mainImageEntry{false};
+        std::string passLabel;
     };
     struct ReloadReport {
         std::size_t reloaded{0U};
@@ -23,6 +25,7 @@ public:
         std::string message;
         std::size_t retained{0U};
         std::size_t pending{0U};
+        std::vector<ShaderSourceDiagnostic> diagnostics;
     };
 
     Shader(const std::filesystem::path& vertexPath, const std::filesystem::path& fragmentPath);
@@ -58,11 +61,13 @@ public:
     void setFloatByName(const char* name, float value) const;
     // One context-thread transaction for every changed/pending registered program.
     static ReloadReport reloadChangedShaders(bool retryPending = false);
+    static std::vector<ShaderSourceMap> sourceMapsForRoot(const std::filesystem::path& root);
 
 private:
     struct SourceSnapshot {
         std::array<std::vector<std::filesystem::path>, 3> paths;
         std::array<std::vector<std::filesystem::file_time_type>, 3> times;
+        std::array<ShaderSourceMap,3> maps;
     };
     explicit Shader(std::array<std::filesystem::path, 3> paths, SourcePolicy policy);
     static unsigned int buildProgram(const std::array<std::filesystem::path, 3>& paths, SourceSnapshot& snapshot, const SourcePolicy& policy);
@@ -76,9 +81,9 @@ private:
         int depth,
         std::vector<std::filesystem::path>& dependencies,
         std::vector<std::filesystem::file_time_type>& times,
-        const std::filesystem::path& root = {}
+        const std::filesystem::path& root = {}, ShaderSourceMap* map = nullptr
     );
-    static unsigned int compile(unsigned int type, const std::string& source, const std::filesystem::path& path);
+    static unsigned int compile(unsigned int type, const std::string& source, const std::filesystem::path& path, const ShaderSourceMap* map=nullptr);
     int uniformLocation(const char* name) const;
 
     unsigned int program_{0};

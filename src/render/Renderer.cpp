@@ -1917,15 +1917,18 @@ bool Renderer::reloadShaderResources(bool retryPending) {
     if (report.failed) {
         shaderReloadFailed_ = true;
         shaderReloadStatus_ = report.message;
+        shaderReloadDiagnostics_=report.diagnostics;
         return false;
     }
     if (report.reloaded) {
         stateCache_.invalidate();
         invalidateTemporalHistory();
         shaderReloadFailed_ = false;
+        shaderReloadDiagnostics_.clear();
         shaderReloadStatus_ = "Committed " + std::to_string(report.reloaded) + " shader program(s)";
     } else if (shaderReloadFailed_ && report.pending == 0) {
         shaderReloadFailed_ = false;
+        shaderReloadDiagnostics_.clear();
         shaderReloadStatus_ = "Pending Shader reload canceled; prior programs retained";
     }
     return true;

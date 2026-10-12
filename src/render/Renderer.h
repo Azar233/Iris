@@ -1,4 +1,5 @@
 #pragma once
+#include "render/ShaderSourceMap.h"
 
 #include <array>
 #include <cstddef>
@@ -326,6 +327,7 @@ public:
     double environmentBuildMilliseconds() const;
     TextureCache& textureCache();
     const std::string& shaderReloadStatus() const { return shaderReloadStatus_; }
+    const std::vector<ShaderSourceDiagnostic>& shaderReloadDiagnostics() const { return shaderReloadDiagnostics_; }
     bool shaderReloadFailed() const { return shaderReloadFailed_; }
     bool reloadShaderResources(bool retryPending = false);
     bool rebuildPluginResources(const std::string& id, const RendererSettings& settings);
@@ -460,6 +462,7 @@ private:
     bool lastTemporalAaEnabled_{false};
     std::size_t shaderReloadPollFrame_{0U};
     std::string shaderReloadStatus_{"Watching shader files"};
+    std::vector<ShaderSourceDiagnostic> shaderReloadDiagnostics_;
     bool shaderReloadFailed_{false};
     std::string pluginResourceStatus_;
     std::size_t historyInvalidationRevision_{0};

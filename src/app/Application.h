@@ -20,6 +20,7 @@
 #include "app/EditorSession.h"
 #include "app/WorkspaceAssets.h"
 #include "app/WorkspaceShaderPackage.h"
+#include "render/ShaderSourceMap.h"
 #include "app/AssetThumbnail.h"
 #include "module/ModuleRegistry.h"
 #include "module/ModuleRuntime.h"
@@ -96,6 +97,7 @@ private:
     void drawBufferPreviewPanel();
     bool runLightEntityAcceptance(const std::filesystem::path& directory);
     void runShaderSceneAcceptance(const std::filesystem::path& directory);
+    void runShaderSourceMapAcceptance(const std::filesystem::path& directory);
     void runEnscapeShaderSceneAcceptance(const std::filesystem::path& directory);
     void updateViewportCameraNavigation();
     void drawModulePanel();
@@ -212,6 +214,11 @@ private:
     WorkspaceShaderPackage workspaceShaderPackage_;
     std::string shaderWorkspaceMessage_{"No workspace compile requested"};
     std::string shaderWorkspaceFileMessage_;
+    std::vector<ShaderSourceDiagnostic> shaderWorkspaceDiagnostics_;
+    std::vector<ShaderSourceMap> shaderWorkspaceSourceMaps_;
+    int inspectedShaderLine_{0};
+    std::vector<std::string> shaderDiagnosticContext_;
+    int shaderDiagnosticUiPhase_{0};
     int shaderWorkspaceUiPhase_{0};
     int shaderWorkspaceCompileAttempts_{0};
     bool shaderWorkspaceLastCompileAccepted_{false};
