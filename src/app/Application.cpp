@@ -1,5 +1,6 @@
 #include "app/Application.h" // Raster capture metadata is published with each frame.
 #include "plugin/ShaderScene.h"
+#include "runtime/ShaderSceneSequence.h"
 #include "app/StatePaths.h"
 #include "runtime/RasterFrameReport.h"
 #include "optics/CloudLightingLut.h"
@@ -29,6 +30,7 @@
 #include <windows.h>
 #include <tlhelp32.h>
 #endif
+#include "app/RasterSequenceProcess.h"
 
 #include <glad/gl.h>
 #include <GLFW/glfw3.h>
@@ -148,7 +150,7 @@ std::filesystem::path renderQueueStatePath() {
 
 } // namespace
 
-Application::Application()
+Application::Application(bool offlineCapture)
     : sourceRoot_(findRuntimeRoot()) {
     std::filesystem::path sampleJob = sourceRoot_ / "assets" / "renderjobs"
         / "01_cpu_reference.renderjob";
@@ -157,8 +159,10 @@ Application::Application()
     if (std::filesystem::is_regular_file(sourceSample)) sampleJob = sourceSample;
     const std::string sampleJobText = sampleJob.string();
     std::snprintf(renderJobPathBuffer_.data(), renderJobPathBuffer_.size(), "%s", sampleJobText.c_str());
-    renderQueue_ = std::make_unique<RenderQueue>(renderQueueStatePath());
+    renderQueue_ = std::make_unique<RenderQueue>(offlineCapture ? std::filesystem::path{} : renderQueueStatePath());
     renderQueue_->setModuleRegistry(&moduleRegistry_);
+    renderQueue_->setRasterRunner(runRasterSequenceProcess);
+    if (offlineCapture) return; // The worker must never restore/write the GUI Queue state.
     std::string restoreError;
     if (!renderQueue_->restore(restoreError)) {
         renderQueueMessage_ = "Render Queue restore failed: " + restoreError;
@@ -174,27 +178,58 @@ Application::~Application() {
     shutdown();
 }
 
-int Application::runRasterSequence(const RenderJob& job) {
+int Application::runRasterSequence(const RenderJob& job, const std::string& cancelEvent) {
+    std::string validationError;
+    if (!validateRenderJob(job, validationError)) { std::cerr << validationError << '\n'; return 65; }
+#ifdef _WIN32
+    struct EventHandle { HANDLE value{nullptr}; ~EventHandle() { if (value) CloseHandle(value); } } cancellation;
+    if (!cancelEvent.empty()) {
+        const std::wstring name(cancelEvent.begin(), cancelEvent.end());
+        cancellation.value = OpenEventW(SYNCHRONIZE, FALSE, name.c_str());
+        if (!cancellation.value) { std::cerr << "Invalid Raster cancellation event\n"; return 65; }
+    }
+    const auto cancelled = [&] { return cancellation.value && WaitForSingleObject(cancellation.value, 0) == WAIT_OBJECT_0; };
+#else
+    if (!cancelEvent.empty()) { std::cerr << "Cancellation events require Windows\n"; return 65; }
+    const auto cancelled = [] { return false; };
+#endif
+    if (cancelled()) return 130;
     if (job.renderer != "raster") {
         std::cerr << "raster-sequence requires a Render Job with renderer 'raster'\n";
         return 65;
     }
+    capture::InputManifest inputManifest;
     SceneDocument authoredScene;
     std::string sceneError;
     if (!loadSceneDocument(job.scenePath, authoredScene, sceneError)) {
         std::cerr << "Raster Scene invalid: " << sceneError << '\n';
         return 66;
     }
-    if (!authoredScene.renderer.shaderSceneResource.empty()) {
+    if (!authoredScene.renderer.shaderSceneResource.empty() && !job.shaderSceneSequence) {
         std::cerr << "ShaderScene Render Jobs are not supported in this single Image preview/capture slice\n";
         return 66;
+    }
+    ShaderSceneSequencePlan sequence;
+    if (job.shaderSceneSequence) {
+        if (iris::shaderSceneResourceFor(authoredScene.renderer).empty() || !authoredScene.moduleId.empty()
+            || !makeShaderSceneSequencePlan(job, authoredScene.renderer.shaderSceneHistory, sequence, sceneError)) {
+            std::cerr << "ShaderScene sequence requires a ShaderScene without a module: " << sceneError << '\n';
+            return 66;
+        }
+        // Reject all collisions before any directory or GL/output resource is created.
+        for (int frame = job.startFrame; frame <= job.endFrame; ++frame) {
+            if (std::filesystem::exists(renderJobFramePath(job, frame, ".png")) || std::filesystem::exists(renderJobFramePath(job, frame, "-report.json"))
+                || std::filesystem::exists(renderJobFramePath(job, frame, ".png.partial.png")) || std::filesystem::exists(renderJobFramePath(job, frame, "-report.json.partial"))) {
+                std::cerr << "Raster frame output already exists\n"; return 73;
+            }
+        }
     }
     if (authoredScene.renderer.enscapeCubeShaderEnabled && authoredScene.renderer.enscapeShaderSceneResource.empty()
         && !iris::builtinRenderPlugins().contains(iris::enscapePluginId)) {
         std::cerr << "Raster Scene requires unavailable render plugin: " << iris::enscapePluginId << '\n';
         return 66;
     }
-    if (!authoredScene.renderer.enscapeCubeShaderEnabled
+    if (iris::shaderSceneResourceFor(authoredScene.renderer).empty() && !authoredScene.renderer.enscapeCubeShaderEnabled
         && !iris::builtinRenderPlugins().contains(iris::postProcessPluginId)) {
         std::cerr << "Raster Scene requires unavailable render plugin: " << iris::postProcessPluginId << '\n';
         return 66;
@@ -203,7 +238,6 @@ int Application::runRasterSequence(const RenderJob& job) {
         std::cerr << "Scene has a module; Raster requires explicit Render Job module configuration (id, seed, parameters)\n";
         return 65;
     }
-    capture::InputManifest inputManifest;
     if(!iris::validatePluginConfiguration(iris::builtinRenderPlugins(),authoredScene.renderer.renderPlugins,
         !iris::shaderSceneResourceFor(authoredScene.renderer).empty()?"":authoredScene.renderer.enscapeCubeShaderEnabled?iris::enscapePluginId:iris::postProcessPluginId,sceneError)){
         std::cerr<<"Raster Scene plugin configuration invalid: "<<sceneError<<'\n';return 66;
@@ -249,9 +283,10 @@ int Application::runRasterSequence(const RenderJob& job) {
             return 70;
         }
     }
-    for (int frame = job.startFrame; frame <= job.endFrame; ++frame) {
+    if (job.shaderSceneSequence) renderer_->invalidateTemporalHistory();
+    for (int frame = job.shaderSceneSequence ? sequence.firstFrame : job.startFrame; frame <= job.endFrame; ++frame) {
         glfwPollEvents();
-        if (glfwWindowShouldClose(window_)) return 130;
+        if (glfwWindowShouldClose(window_) || cancelled()) return 130;
         if (runtime.active() && !runtime.runToFrame(frame, error)) {
             std::cerr << "Raster module frame " << frame << " failed: " << error << '\n';
             return 70;
@@ -262,9 +297,10 @@ int Application::runRasterSequence(const RenderJob& job) {
             runtime.applyPresentation(camera_.orbitState(), rendererSettings_,
                 frameCamera, frameSettings);
         } else {
-            frameSettings.water.timeSeconds = static_cast<float>(frame - job.startFrame)
-                / static_cast<float>(job.framesPerSecond);
+            frameSettings.water.timeSeconds = job.shaderSceneSequence ? sequence.timeSeconds(frame)
+                : static_cast<float>(frame - job.startFrame) / static_cast<float>(job.framesPerSecond);
         }
+        if (job.shaderSceneSequence) frameSettings.shaderSceneSeed = static_cast<int>(job.renderSettings.seed);
         frameSettings.atmosphere.cloudDeterministic = job.rasterDeterminism;
         frameSettings.atmosphere.cloudTemporalEnabled = job.rasterTemporalAccumulation;
         frameSettings.temporalAaEnabled = job.rasterTemporalAccumulation;
@@ -277,7 +313,7 @@ int Application::runRasterSequence(const RenderJob& job) {
             inputManifest.record(cloud::canonicalLightingPath());
         }
         inputManifest.validate();
-        renderer_->invalidateTemporalHistory();
+        if (!job.shaderSceneSequence) renderer_->invalidateTemporalHistory();
         const auto lights = frameScene.buildLocalLights();
         frameSettings.localLights.insert(frameSettings.localLights.end(), lights.begin(), lights.end());
         const auto frameItems = frameScene.buildRenderItems();
@@ -286,28 +322,47 @@ int Application::runRasterSequence(const RenderJob& job) {
                 static_cast<int>(job.renderSettings.width),
                 static_cast<int>(job.renderSettings.height));
         }
-        const std::filesystem::path output = renderJobFrameStem(job, frame).string() + ".png";
-        const std::filesystem::path report = renderJobFrameStem(job, frame).string() + "-report.json";
+        if (job.shaderSceneSequence) {
+            const auto status = renderer_->shaderSceneRuntimeStatus();
+            if (!status.rendered || status.frame != sequence.sampleIndex(frame)) {
+                std::cerr << "ShaderScene sequence history unexpectedly reset\n"; return 70;
+            }
+            if (frame < job.startFrame) continue;
+        }
+        if (cancelled()) return 130;
+        const auto output = renderJobFramePath(job, frame, ".png");
+        const auto report = renderJobFramePath(job, frame, "-report.json");
         if (std::filesystem::exists(output) || std::filesystem::exists(report)) {
             std::cerr << "Raster frame output already exists: " << output << '\n';
             return 73;
         }
         std::filesystem::create_directories(output.parent_path());
-        const std::filesystem::path partial = output.string() + ".partial.png";
+        const auto partial = renderJobFramePath(job, frame, ".png.partial.png");
+        const auto partialReport = renderJobFramePath(job, frame, "-report.json.partial");
+        struct StagingGuard {
+            std::filesystem::path png, report, publishedPng;
+            bool complete{false};
+            ~StagingGuard() { if (!complete) { std::error_code ec;
+                std::filesystem::remove(png, ec); std::filesystem::remove(report, ec);
+                if(!publishedPng.empty()) std::filesystem::remove(publishedPng, ec);
+            } }
+        } staging{partial, partialReport, {}, false};
         if (!renderer_->saveScreenshot(partial, error)) {
             std::cerr << "Raster frame " << frame << " failed: " << error << '\n';
             return 74;
         }
-        const std::filesystem::path partialReport = report.string() + ".partial";
-        if (!writeRasterFrameReport(partialReport, job, frame, frameSettings, gpuDescription_, error, &inputManifest)) {
-            std::filesystem::remove(partial);
-            std::filesystem::remove(partialReport);
+        if (!writeRasterFrameReport(partialReport, job, frame, frameSettings, gpuDescription_, error, &inputManifest,
+                renderer_->activeShaderScenePackage())) {
             std::cerr << "Raster report failed: " << error << '\n';
             return 74;
         }
+        if (cancelled()) return 130;
+        inputManifest.validate();
         std::filesystem::rename(partial, output); // Both staging writes succeeded.
+        staging.publishedPng = output;
         std::filesystem::rename(partialReport, report);
-        std::cout << "Raster frame " << frame << ": " << output << '\n';
+        staging.complete = true;
+        std::cout << "Raster frame " << frame << ": " << output.u8string() << '\n';
     }
     shutdown();
     return 0;
@@ -1093,6 +1148,7 @@ int Application::run(const std::filesystem::path& initialModel) {
     if(const char* directory=std::getenv("IRIS_EXTERNAL_SHADER_PACKAGE_ACCEPTANCE_DIRECTORY"))runExternalShaderPackageAcceptance(std::filesystem::u8path(directory));
     if(const char* directory=std::getenv("IRIS_SHADER_PACKAGE_RELOAD_ACCEPTANCE_DIRECTORY"))runShaderPackageReloadAcceptance(std::filesystem::u8path(directory));
     if(const char* directory=std::getenv("IRIS_SHADER_HISTORY_ACCEPTANCE_DIRECTORY"))runShaderHistoryAcceptance(std::filesystem::u8path(directory));
+    if(const char* directory=std::getenv("IRIS_SHADER_SEQUENCE_ACCEPTANCE_DIRECTORY"))runShaderSequenceAcceptance(std::filesystem::u8path(directory));
     if (std::getenv("IRIS_SHADER_WORKSPACE_UI_BAD") && std::getenv("MYRENDERER_SMOKE_TEST")
         && std::getenv("IRIS_SHADER_WORKSPACE_ACCEPTANCE") && std::getenv("MYRENDERER_SHADER_SCENE_ACCEPTANCE_DIRECTORY")) {
         const auto inspection=inspectWorkspaceShaderPackage(std::filesystem::u8path(iris::shaderSceneResourceFor(rendererSettings_)));

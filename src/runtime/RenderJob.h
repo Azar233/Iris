@@ -23,9 +23,10 @@ struct RenderJobModule {
 };
 
 struct RenderJob {
-    // Schema 2 adds modules; schema 3 adds explicit raster capture controls. Old jobs
+    // Schema 2 adds modules; schema 3 adds raster capture; schema 4 opts into
+    // sequential ShaderScene feedback. Old jobs
     // keep loading with zero warmup, fixed sampling and temporal accumulation disabled.
-    static constexpr int currentSchemaVersion = 3;
+    static constexpr int currentSchemaVersion = 4;
     static constexpr int minimumSchemaVersion = 1;
 
     int schemaVersion{currentSchemaVersion};
@@ -50,6 +51,9 @@ struct RenderJob {
     bool rasterDeterminism{true};
     int rasterWarmupFrames{0};
     bool rasterTemporalAccumulation{false};
+    // Explicit schema 4 opt-in: sequential fixed-time feedback, cleared once.
+    bool shaderSceneSequence{false};
+    int shaderSceneWarmupFrames{0};
     RenderJobFailurePolicy failurePolicy{RenderJobFailurePolicy::Stop};
 };
 
@@ -59,6 +63,9 @@ bool validateQueueRenderJob(const RenderJob& job, std::string& error);
 bool applyRenderJobOutputOverride(RenderJob& job, const std::filesystem::path& outputStemPattern,
                                   std::string& error);
 std::filesystem::path renderJobFrameStem(const RenderJob& job, int frame);
+inline std::filesystem::path renderJobFramePath(const RenderJob& job, int frame, const char* suffix) {
+    auto path = renderJobFrameStem(job, frame); path += suffix; return path;
+}
 const char* renderOutputName(pathtracer::RenderOutput output);
 const char* renderFileFormatName(pathtracer::RenderFileFormat format);
 const char* renderFileFormatExtension(pathtracer::RenderFileFormat format);

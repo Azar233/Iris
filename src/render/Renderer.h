@@ -257,6 +257,7 @@ struct RendererSettings {
     int skinningDebugView{0};
     bool shaderHotReloadEnabled{true};
     iris::ShaderSceneHistoryPolicy shaderSceneHistory;
+    int shaderSceneSeed{0}; // Offline sequence input; optional irisSeed uniform.
 };
 
 class Renderer {

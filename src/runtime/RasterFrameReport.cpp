@@ -1,4 +1,7 @@
 #include "runtime/RasterFrameReport.h"
+#include "runtime/ShaderSceneSequence.h"
+#include "plugin/ShaderScene.h"
+#include "plugin/RenderPlugin.h"
 #include "optics/CloudNoiseVolume.h"
 #include "optics/CloudLightingLut.h"
 #include <fstream>
@@ -28,7 +31,8 @@ std::string fileFingerprint(const std::filesystem::path& path) {
 }
 }
 bool writeRasterFrameReport(const std::filesystem::path& path,const RenderJob& job,
-    int frame,const RendererSettings& settings,const std::string& gpu,std::string& error,const capture::InputManifest* manifest) {
+    int frame,const RendererSettings& settings,const std::string& gpu,std::string& error,const capture::InputManifest* manifest,
+    const iris::ShaderScenePackage* package) {
     try {
         if(manifest) manifest->validate();
         json::StringBuffer buffer;json::PrettyWriter<json::StringBuffer> w(buffer);
@@ -37,7 +41,43 @@ bool writeRasterFrameReport(const std::filesystem::path& path,const RenderJob& j
         w.Key("schemaVersion");w.Int(1);
         w.Key("jobSchemaVersion");w.Int(job.schemaVersion);
         w.Key("frame");w.Int(frame);
-        w.Key("timeSeconds");w.Double(static_cast<double>(frame-job.startFrame)/job.framesPerSecond);
+        w.Key("timeSeconds");w.Double(static_cast<double>(job.shaderSceneSequence ? frame : frame-job.startFrame)/job.framesPerSecond);
+        w.Key("fps");w.Int(job.framesPerSecond);
+        if(job.shaderSceneSequence) {
+            if(!package) throw std::runtime_error("ShaderScene report requires the committed package");
+            w.Key("shaderScene");w.StartObject();
+            w.Key("version");w.Int(1);w.Key("packageId");w.String(package->id.c_str());
+            w.Key("packageVersion");w.Int(package->version);
+            w.Key("manifest");w.String(package->manifest.generic_u8string().c_str());
+            w.Key("entry");w.String(package->mainImageEntry?"mainImage":"main");
+            w.Key("renderPluginApiVersion");w.Int(iris::renderPluginApiVersion);
+            w.Key("buildId");w.String(MYRENDERER_BUILD_ID);
+            w.Key("history");w.String("reset-at-start");
+            w.Key("firstSampleFrame");w.Int(job.startFrame-job.shaderSceneWarmupFrames);
+            w.Key("sampleIndex");w.Int(frame-job.startFrame+job.shaderSceneWarmupFrames);
+            w.Key("warmupFrames");w.Int(job.shaderSceneWarmupFrames);
+            w.Key("seed");w.Int(settings.shaderSceneSeed);
+            w.Key("seedUniform");w.String("irisSeed");
+            w.Key("effectiveTimeSeconds");w.Double(settings.water.timeSeconds);
+            w.Key("historyPolicy");w.StartObject();
+            w.Key("resetOnParameters");w.Bool(settings.shaderSceneHistory.resetOnParameters);
+            w.Key("resetOnCamera");w.Bool(settings.shaderSceneHistory.resetOnCamera);
+            w.Key("maximumTimeStep");w.Double(settings.shaderSceneHistory.maximumTimeStep);w.EndObject();
+            w.Key("parameters");w.StartObject();
+            const auto values=iris::shaderSceneParameterValues(*package,settings);
+            const auto& descriptors=package->parameters.descriptors();
+            for(std::size_t i=0;i<values.size();++i){w.Key(descriptors[i].id.c_str());
+                if(values[i].type==ModuleParameterType::Bool)w.Bool(values[i].boolean);
+                else if(values[i].type==ModuleParameterType::Int)w.Int(values[i].integer);
+                else w.Double(values[i].number);}
+            w.EndObject();
+            w.Key("passes");w.StartArray();for(const auto index:package->executionOrder){const auto& pass=package->passes[index];
+                w.StartObject();w.Key("id");w.String(pass.id.c_str());w.Key("fragment");w.String(pass.fragment.generic_u8string().c_str());w.EndObject();}w.EndArray();
+            w.Key("textures");w.StartArray();for(const auto& texture:package->textures){
+                w.StartObject();w.Key("id");w.String(texture.id.c_str());w.Key("fingerprint");w.String(texture.fingerprint.c_str());
+                w.Key("seed");w.Uint(texture.seed);w.Key("generated");w.Bool(texture.encoding==iris::ShaderSceneTextureEncoding::HashV1);w.EndObject();}w.EndArray();
+            w.EndObject();
+        }
         w.Key("resolution");w.StartArray();w.Uint(job.renderSettings.width);w.Uint(job.renderSettings.height);w.EndArray();
         w.Key("gpu");w.String(gpu.c_str());
         w.Key("sceneFingerprint");w.String(fileFingerprint(job.scenePath).c_str());
@@ -49,7 +89,7 @@ bool writeRasterFrameReport(const std::filesystem::path& path,const RenderJob& j
         w.Key("fingerprintAlgorithm");w.String("fnv1a64");
         w.Key("files");w.StartArray();
         if(manifest)for(const auto& pair:manifest->files){const auto& input=pair.second;
-            w.StartObject();w.Key("path");w.String(input.path.generic_string().c_str());
+            w.StartObject();w.Key("path");w.String(input.path.generic_u8string().c_str());
             w.Key("exists");w.Bool(input.exists);w.Key("bytes");w.Uint64(input.bytes);
             w.Key("fingerprint");w.String(input.fingerprint.c_str());w.EndObject();}
         w.EndArray();w.EndObject();
@@ -61,7 +101,7 @@ bool writeRasterFrameReport(const std::filesystem::path& path,const RenderJob& j
         w.Key("warmupFrames");w.Int(job.rasterWarmupFrames);
         w.Key("renderedFramesAtFixedTime");w.Int(job.rasterWarmupFrames+1);
         w.Key("temporalAccumulation");w.Bool(job.rasterTemporalAccumulation);
-        w.Key("historyResetPerOutput");w.Bool(true);
+        w.Key("historyResetPerOutput");w.Bool(!job.shaderSceneSequence);
         w.Key("effectiveTaa");w.Bool(settings.enscapeCubeShaderEnabled || (!job.rasterDeterminism && settings.temporalAaEnabled));
         w.Key("effectiveCloudHistory");w.Bool(!settings.enscapeCubeShaderEnabled && !job.rasterDeterminism && settings.atmosphere.enabled
             && settings.atmosphere.cloudsEnabled && settings.atmosphere.cloudTemporalEnabled);

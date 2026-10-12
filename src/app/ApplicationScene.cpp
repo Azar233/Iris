@@ -2491,7 +2491,7 @@ void Application::drawAssetsPanel() {
             ? ImGuiTabItemFlags_SetSelected
             : ImGuiTabItemFlags_None;
         if (ImGui::BeginTabItem("Render Queue", nullptr, renderQueueTabFlags)) {
-            ImGui::TextWrapped("Queue: CPU jobs, PNG / HDR / EXR, Beauty + AOVs, verified Resume and module Cache. Raster: CLI raster-sequence, Beauty PNG only; no Queue / Resume / Cache.");
+            ImGui::TextWrapped("Queue: CPU jobs support PNG / HDR / EXR, AOVs, Resume and module Cache. ShaderScene sequences support Beauty PNG, fixed FPS and cancellation. Native Raster uses CLI raster-sequence. Raster Resume / Cache are unavailable.");
             focusRenderQueueTab_ = false;
             ImGui::SetNextItemWidth(std::max(240.0f, ImGui::GetContentRegionAvail().x - 230.0f));
             ImGui::InputText("##RenderJobPath", renderJobPathBuffer_.data(), renderJobPathBuffer_.size());
@@ -3434,7 +3434,7 @@ void Application::drawShaderPackageInspector() {
 }
 
 void Application::rememberRecentScene(const std::filesystem::path& path) {
-    if (benchmarkMode_ || prismReelMode_ || std::getenv("MYRENDERER_SMOKE_TEST")) return;
+    if (rasterSequenceMode_ || benchmarkMode_ || prismReelMode_ || std::getenv("MYRENDERER_SMOKE_TEST")) return;
     std::ofstream stream(iris::stateFile("recent-scene", "MyRenderer.recent-scene"), std::ios::binary | std::ios::trunc);
     if (stream) stream << path.generic_u8string();
 }

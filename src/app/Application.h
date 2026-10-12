@@ -47,14 +47,14 @@ enum class VolumeGlassPreset {
 
 class Application {
 public:
-    Application();
+    explicit Application(bool offlineCapture = false);
     ~Application();
 
     Application(const Application&) = delete;
     Application& operator=(const Application&) = delete;
 
     int run(const std::filesystem::path& initialModel = {});
-    int runRasterSequence(const RenderJob& job);
+    int runRasterSequence(const RenderJob& job, const std::string& cancelEvent = {});
 
 private:
     void initializeWindow();
@@ -102,6 +102,7 @@ private:
     void runExternalShaderPackageAcceptance(const std::filesystem::path& directory);
     void runShaderPackageReloadAcceptance(const std::filesystem::path& directory);
     void runShaderHistoryAcceptance(const std::filesystem::path& directory);
+    void runShaderSequenceAcceptance(const std::filesystem::path& directory);
     void drawShaderRuntimeInspector();
     void runEnscapeShaderSceneAcceptance(const std::filesystem::path& directory);
     void updateViewportCameraNavigation();

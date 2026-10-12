@@ -132,6 +132,44 @@ int main() {
                     "unsupported Queue submission must preserve entries and name the Raster CLI");
         }
         RenderJob directJob;
+        {
+            RenderQueue rasterQueue;
+            bool invoked=false;
+            rasterQueue.setRasterRunner([&](const RenderJob& input,const CancellationToken*,const BatchSequenceProgressCallback& callback){
+                require(input.shaderSceneSequence && input.renderSettings.seed==7,"Queue lost ShaderScene configuration");
+                invoked=true;BatchSequenceResult result;result.status=BatchFrameStatus::Complete;
+                result.completedFrames=6;result.lastFrame=8;result.outputCount=12;
+                callback({8,6,6,BatchFrameStatus::Complete,"test executor"});return result;
+            });
+            std::uint64_t id=0;std::string error;
+            require(rasterQueue.enqueue(sourceRoot/"assets/renderjobs/08_shader_scene_sequence.renderjob",id,error),error);
+            const auto completed=waitForTerminal(rasterQueue,id);
+            require(invoked&&completed.status==RenderQueueStatus::Complete&&completed.outputCount==12,"Queue did not dispatch to the Raster executor");
+            RenderQueue noExecutor;
+            require(noExecutor.enqueue(sourceRoot/"assets/renderjobs/08_shader_scene_sequence.renderjob",id,error),error);
+            const auto failed=waitForTerminal(noExecutor,id);
+            require(failed.status==RenderQueueStatus::Failed&&failed.message.find("executor unavailable")!=std::string::npos,
+                "Missing Raster executor must fail explicitly");
+            const auto rasterState=root/"raster-shutdown.json";
+            {
+                RenderQueue stopped(rasterState);
+                stopped.setRasterRunner([](const RenderJob&,const CancellationToken* cancellation,const BatchSequenceProgressCallback&){
+                    while(!cancellation->isCancellationRequested())std::this_thread::sleep_for(std::chrono::milliseconds(1));
+                    BatchSequenceResult result;result.status=BatchFrameStatus::Cancelled;
+                    result.lastFrame=4;result.completedFrames=2;result.outputCount=4;return result;
+                });
+                require(stopped.enqueue(sourceRoot/"assets/renderjobs/08_shader_scene_sequence.renderjob",id,error),error);
+                stopped.update();stopped.shutdown();
+                require(stopped.entries().back().status==RenderQueueStatus::Cancelled&&stopped.entries().back().outputCount==4,
+                    "Raster shutdown must retain counters without automatic Resume");
+            }
+            RenderQueue restoredRaster(rasterState);require(restoredRaster.restore(error),error);
+            require(restoredRaster.entries().back().status==RenderQueueStatus::Cancelled,"Cancelled Raster must not restart after restore");
+            const auto interruptedState=root/"raster-interrupted.json";
+            writeActiveQueueState(interruptedState,sourceRoot/"assets/renderjobs/08_shader_scene_sequence.renderjob","Running");
+            RenderQueue interruptedRaster(interruptedState);require(interruptedRaster.restore(error),error);
+            require(interruptedRaster.entries().back().status==RenderQueueStatus::Cancelled,"Interrupted Raster must not automatically Resume");
+        }
         std::string error;
         require(loadRenderJob(jobPath, directJob, error), error);
         const BatchSequenceResult direct = runRenderJobSequence(directJob);

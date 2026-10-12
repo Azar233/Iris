@@ -1,0 +1,22 @@
+{
+  "version": 3,
+  "id": "sequenceContract",
+  "resourceRoot": ".",
+  "entry": "main",
+  "camera": "project",
+  "author": "Iris contributors",
+  "license": "MIT",
+  "parameters": [{"id":"gain","label":"Feedback gain","type":"float","default":0.03,"min":0,"max":1}],
+  "textures": [
+    {"id":"Noise","dimension":"2d","format":"linear-r8","extent":[8,8],"encoding":"hash-v1","seed":19,"mip":"none"}
+  ],
+  "passes": [
+    {"id":"Accum","fragment":"accum.frag","output":"linear-rgba16f","sizeDivisor":1,"channels":[
+      {"slot":0,"source":"Accum","frame":"previous","filter":"nearest","wrap":"clamp","mip":"none"}
+    ]},
+    {"id":"Image","fragment":"image.frag","output":"display-rgba8","sizeDivisor":1,"channels":[
+      {"slot":0,"source":"Accum","frame":"current","filter":"nearest","wrap":"clamp","mip":"none"},
+      {"slot":1,"source":"Noise","frame":"current","filter":"nearest","wrap":"repeat","mip":"none"}
+    ]}
+  ]
+}

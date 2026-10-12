@@ -23,6 +23,19 @@ int main(){try{
     const auto path=root/"job.renderjob";
     const auto scene=std::filesystem::path(MYRENDERER_SOURCE_DIR)/"assets/scenes/fixtures/27_cloud_lab_regression.myscene";
     std::string error;RenderJob job;
+    const std::string raster=",\"raster\":{\"determinism\":true,\"warmupFrames\":0,\"temporalAccumulation\":false}";
+    const std::string sequence=",\"shaderScene\":{\"version\":1,\"history\":\"reset-at-start\",\"warmupFrames\":3}";
+    writeJob(path,scene,4,raster+sequence);
+    require(loadRenderJob(path,job,error)&&job.shaderSceneSequence&&job.shaderSceneWarmupFrames==3,error.c_str());
+    for(const auto& invalid:{std::string(",\"shaderScene\":{\"version\":2,\"history\":\"reset-at-start\",\"warmupFrames\":3}"),
+        std::string(",\"shaderScene\":{\"version\":1,\"history\":\"keep\",\"warmupFrames\":3}"),
+        std::string(",\"shaderScene\":{\"version\":1,\"history\":\"reset-at-start\",\"warmupFrames\":3,\"warmupFrames\":4}"),
+        std::string(",\"shaderScene\":{\"version\":1,\"history\":\"reset-at-start\",\"warmupFrames\":3,\"extra\":0}")}) {
+        writeJob(path,scene,4,raster+invalid);
+        require(!loadRenderJob(path,job,error)&&job.shaderSceneWarmupFrames==3,"Invalid sequence mutated loaded Job");
+    }
+    writeJob(path,scene,3,raster+sequence);
+    require(!loadRenderJob(path,job,error),"Legacy schema must reject sequence opt-in");
     writeJob(path,scene,3,",\"raster\":{\"determinism\":false,\"warmupFrames\":7,\"temporalAccumulation\":true}");
     require(loadRenderJob(path,job,error),error.c_str());
     require(!job.rasterDeterminism&&job.rasterWarmupFrames==7&&job.rasterTemporalAccumulation,"capture fields must load");

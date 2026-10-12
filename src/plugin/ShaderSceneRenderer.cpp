@@ -138,6 +138,7 @@ struct ShaderSceneRenderer::State {
     glm::mat4 view{1}, projection{1};
     std::vector<ModuleParameterValue> parameterValues;
     ShaderSceneHistoryPolicy historyPolicy;
+    int seed{0};
     std::array<GLuint, 8> timingQueries{};
     std::array<bool, 4> timingPending{};
     std::size_t timingCursor{0};
@@ -170,7 +171,7 @@ void ShaderSceneRenderer::prepareResources(const RendererSettings& settings, int
         policy.mainImageEntry = candidate->package.mainImageEntry;
         policy.passLabel=description.id;
         policy.packageOwnedReload = true;
-        policy.uniforms = {{"irisTime", GL_FLOAT}, {"irisTimeDelta", GL_FLOAT}, {"irisFrame", GL_INT},
+        policy.uniforms = {{"irisSeed", GL_INT}, {"irisTime", GL_FLOAT}, {"irisTimeDelta", GL_FLOAT}, {"irisFrame", GL_INT},
             {"irisHistoryValid", GL_BOOL}, {"irisResolution", GL_FLOAT_VEC2}, {"irisViewportResolution", GL_FLOAT_VEC2},
             {"irisCameraPosition", GL_FLOAT_VEC3}, {"irisView", GL_FLOAT_MAT4}, {"irisProjection", GL_FLOAT_MAT4},
             {"irisCameraForward", GL_FLOAT_VEC3}, {"irisCameraRight", GL_FLOAT_VEC3}, {"irisCameraUp", GL_FLOAT_VEC3},
@@ -270,7 +271,7 @@ void ShaderSceneRenderer::renderFrame(const RenderPluginFrame& frame) {
     const auto view = frame.camera.viewMatrix();
     const auto projection = frame.camera.projectionMatrix(static_cast<float>(frame.width) / frame.height);
     const float delta = frame.timeSeconds - state.time;
-    const bool reset = state.invalidated || !state.rendered || policy != state.historyPolicy
+    const bool reset = state.invalidated || !state.rendered || policy != state.historyPolicy || frame.settings.shaderSceneSeed != state.seed
         || (policy.resetOnParameters && parameterChanged)
         || (policy.resetOnCamera && (!sameMatrix(view, state.view) || !sameMatrix(projection, state.projection)))
         || delta < 0 || delta > policy.maximumTimeStep || state.frameIndex == std::numeric_limits<int>::max();
@@ -324,6 +325,7 @@ void ShaderSceneRenderer::renderFrame(const RenderPluginFrame& frame) {
         pass.shader->use();
         pass.shader->setFloat("irisTime", frame.timeSeconds); pass.shader->setFloat("irisTimeDelta", state.timeDelta);
         pass.shader->setInt("irisFrame", state.frameIndex); pass.shader->setBool("irisHistoryValid", state.historyValid);
+        pass.shader->setInt("irisSeed", frame.settings.shaderSceneSeed);
         pass.shader->setVec2("irisResolution", glm::vec2(width, height));
         pass.shader->setVec2("irisViewportResolution", glm::vec2(frame.width, frame.height));
         pass.shader->setVec3("irisCameraPosition", frame.camera.position()); pass.shader->setMat4("irisView", view);
@@ -362,6 +364,7 @@ void ShaderSceneRenderer::renderFrame(const RenderPluginFrame& frame) {
     state.rendered = true; state.invalidated = false; state.time = frame.timeSeconds; state.view = view; state.projection = projection;
     state.parameterValues = parameters;
     state.historyPolicy = policy;
+    state.seed = frame.settings.shaderSceneSeed;
 }
 RenderPluginFrameInfo ShaderSceneRenderer::frameInfo() const {
     RenderPluginFrameInfo info;

@@ -140,8 +140,17 @@ File 菜单、快捷键与资源浏览器通过共享命令执行新建、保存
 | AOV | Beauty、Albedo、Normal、Depth、Direct、Indirect、Sample Count、Variance | Beauty |
 | Resume | 按已验证输出报告恢复完整帧 | 不支持，执行前拒绝 |
 | Simulation Cache | 显式配置 Module 的 Job；Hit/Missing/Stale 均有诊断 | 不支持，执行前拒绝 |
-| GUI Queue | 支持提交、取消、重试与恢复 | 入队及重试时拒绝，使用 CLI |
+| GUI Queue | 支持提交、取消、重试与恢复 | schema 4 ShaderScene 序列支持；原生 Raster 仍使用 CLI |
 | Module 参数 | `.renderjob.module` 明确定义并优先于 Scene 配置 | `.renderjob.module` 明确定义 |
+
+通用 ShaderScene 序列通过 schema 4 的 `shaderScene` 配置显式启用，见 [最小反馈示例 Job](assets/renderjobs/08_shader_scene_sequence.renderjob)。`history: "reset-at-start"` 在开始时清空反馈，随后按帧顺序执行；`warmupFrames` 是起始帧之前的固定时间步，不是旧 Raster 的同一时刻重复渲染。时间采用共享 Timeline 的绝对 `frame / fps`，从第 0 帧开始且有预热时会产生负的预热时间。`sampling.seed` 传入可选 GLSL `int irisSeed`，声明纹理的 Seed 保持原值。更改 Seed 始终清空反馈。每帧生成 PNG 和输入身份报告，包含完整源码/include、纹理和运行二进制指纹、有效参数、API/Build ID、时间和历史策略。CLI 与 GUI Queue 使用同一个 Raster 执行入口；Queue 在独立上下文进程中执行，取消在输出边界生效。当前 Queue 进程执行器限 Windows。
+
+ShaderScene 序列仅支持 Beauty PNG，禁用热重载，拒绝 Resume、Cache、Module、AOV/HDR 和继续失败策略；限制 10000 帧及 240 帧预热，FPS/范围还须满足 Scene 的历史时间步策略。所有输出碰撞在执行前拒绝。旧 schema 1～3 的原生/Enscape Raster 时间与逐输出重置保持兼容，通用 ShaderScene 仍须显式启用 schema 4。GUI 自由播放/任意跳帧不会自动重放此前的反馈；要复现输出，应使用相同初始状态、Seed、预热和顺序。
+
+```powershell
+.\build-ci-msvc\Release\Iris.exe raster-sequence assets/renderjobs/08_shader_scene_sequence.renderjob
+.\tools\ShaderSceneSequenceAcceptance.ps1
+```
 
 `.myscene.module` 用于编辑器保存和恢复。CPU Batch 不自动继承这份模块配置：带 Module 的 Scene 必须搭配显式配置 Module 的 Job，避免保存配置被静默忽略。Scene 保存的是参数与 Seed，执行范围和 FPS 由 Timeline / Job 明确定义；示例采用 0～23 帧、24 FPS。
 

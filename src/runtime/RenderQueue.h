@@ -68,6 +68,10 @@ class RenderQueue final {
     // The GUI owns the module registry; the queue only forwards it, so a queued job
     // resolves modules through exactly the same registry as the preview.
     void setModuleRegistry(const ModuleRegistry* modules) { modules_ = modules; }
+    using RasterRunner = std::function<BatchSequenceResult(const RenderJob&,
+        const CancellationToken*, const BatchSequenceProgressCallback&)>;
+    // Inject an executor that owns its own GL context (the GUI uses a child process).
+    void setRasterRunner(RasterRunner runner) { rasterRunner_ = std::move(runner); }
     bool hasActiveJob() const { return activeId_ != 0U; }
     std::uint64_t activeId() const { return activeId_; }
     std::vector<RenderQueueEntrySnapshot> entries() const;
@@ -87,6 +91,7 @@ class RenderQueue final {
 
     std::filesystem::path persistencePath_;
     const ModuleRegistry* modules_{nullptr};
+    RasterRunner rasterRunner_;
     std::vector<std::unique_ptr<Entry>> entries_;
     std::uint64_t nextId_{1U};
     std::uint64_t activeId_{0U};

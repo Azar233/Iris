@@ -153,8 +153,28 @@ bool loadRenderJob(const std::filesystem::path& path, RenderJob& job, std::strin
         loaded.loadedSourceFingerprint = capture::fingerprintBytes(json);
         loaded.schemaVersion = integer(root, "schemaVersion");
         loaded.sourcePath = std::filesystem::absolute(path).lexically_normal();
-        loaded.scenePath = resolved(required(root, "scene", job_json::kStringType).GetString(), loaded.sourcePath);
+        loaded.scenePath = resolved(std::filesystem::u8path(required(root, "scene", job_json::kStringType).GetString()), loaded.sourcePath);
         loaded.renderer = required(root, "renderer", job_json::kStringType).GetString();
+        if (root.HasMember("shaderScene")) {
+            int blocks = 0;
+            for (auto it = root.MemberBegin(); it != root.MemberEnd(); ++it)
+                if (std::string(it->name.GetString()) == "shaderScene") ++blocks;
+            if (blocks != 1) throw std::runtime_error("Duplicate shaderScene configuration");
+            if (loaded.schemaVersion != 4 || loaded.renderer != "raster")
+                throw std::runtime_error("shaderScene requires a schema 4 raster job");
+            const auto& sequence = required(root, "shaderScene", job_json::kObjectType);
+            std::set<std::string> members;
+            for (auto it = sequence.MemberBegin(); it != sequence.MemberEnd(); ++it) {
+                const std::string name = it->name.GetString();
+                if (!members.insert(name).second || (name != "version" && name != "history" && name != "warmupFrames"))
+                    throw std::runtime_error("Unknown or duplicate shaderScene field: " + name);
+            }
+            if (integer(sequence, "version") != 1
+                || std::string(required(sequence, "history", job_json::kStringType).GetString()) != "reset-at-start")
+                throw std::runtime_error("shaderScene requires version 1 and history reset-at-start");
+            loaded.shaderSceneSequence = true;
+            loaded.shaderSceneWarmupFrames = integer(sequence, "warmupFrames");
+        }
         if (root.HasMember("raster")) {
             if (loaded.schemaVersion < 3 || loaded.renderer != "raster")
                 throw std::runtime_error("'raster' capture settings require a schema 3 raster job");
@@ -186,6 +206,8 @@ bool loadRenderJob(const std::filesystem::path& path, RenderJob& job, std::strin
         const int spp = integer(sampling, "spp");
         const int depth = integer(sampling, "maxDepth");
         const int seed = integer(sampling, "seed");
+        if (loaded.shaderSceneSequence && (seed < 0 || spp < 1 || depth < 1))
+            throw std::runtime_error("ShaderScene sampling requires positive spp/depth and nonnegative seed");
         if (spp > 0) loaded.renderSettings.samplesPerPixel = static_cast<std::uint32_t>(spp);
         if (depth > 0) loaded.renderSettings.maxDepth = static_cast<std::uint32_t>(depth);
         if (seed >= 0) loaded.renderSettings.seed = static_cast<std::uint32_t>(seed);
@@ -198,7 +220,7 @@ bool loadRenderJob(const std::filesystem::path& path, RenderJob& job, std::strin
         }
 
         const auto& output = required(root, "output", job_json::kObjectType);
-        loaded.outputStemPattern = resolved(required(output, "path", job_json::kStringType).GetString(), loaded.sourcePath);
+        loaded.outputStemPattern = resolved(std::filesystem::u8path(required(output, "path", job_json::kStringType).GetString()), loaded.sourcePath);
         if (output.HasMember("resume")) {
             if (!output["resume"].IsBool()) throw std::runtime_error("'output.resume' must be boolean");
             loaded.resume = output["resume"].GetBool();
@@ -255,7 +277,7 @@ bool loadRenderJob(const std::filesystem::path& path, RenderJob& job, std::strin
 
 bool validateQueueRenderJob(const RenderJob& job, std::string& error) {
     if (!validateRenderJob(job, error)) return false;
-    if (job.renderer != "cpu-path-traced") {
+    if (job.renderer != "cpu-path-traced" && !job.shaderSceneSequence) {
         error = "Render Queue supports CPU jobs only; run Raster jobs with Iris raster-sequence <job.renderjob>";
         return false;
     }
@@ -263,6 +285,15 @@ bool validateQueueRenderJob(const RenderJob& job, std::string& error) {
 }
 
 bool validateRenderJob(const RenderJob& job, std::string& error) {
+    if (job.shaderSceneSequence && (job.schemaVersion != 4 || job.renderer != "raster"
+        || !job.rasterDeterminism || job.rasterTemporalAccumulation || job.rasterWarmupFrames != 0
+        || !job.module.id.empty() || job.failurePolicy != RenderJobFailurePolicy::Stop
+        || job.shaderSceneWarmupFrames < 0 || job.shaderSceneWarmupFrames > 240
+        || job.endFrame > 1000000 || static_cast<long long>(job.endFrame) - job.startFrame >= 10000
+        || job.renderSettings.seed > 2147483647U)) {
+        error = "ShaderScene sequence requires schema 4 deterministic Raster, no module or fixed-time warmup, stop on failure, warmup 0..240, at most 10000 frames (end <= 1000000) and signed integer seed";
+        return false;
+    }
     if (job.schemaVersion < RenderJob::minimumSchemaVersion
         || job.schemaVersion > RenderJob::currentSchemaVersion) {
         error = "Unsupported Render Job schemaVersion " + std::to_string(job.schemaVersion);
@@ -310,7 +341,7 @@ bool validateRenderJob(const RenderJob& job, std::string& error) {
     } else if (job.outputStemPattern.empty()) {
         error = "Render Job output.path must not be empty";
     } else if (job.startFrame != job.endFrame
-               && job.outputStemPattern.string().find("{frame") == std::string::npos) {
+               && job.outputStemPattern.u8string().find("{frame") == std::string::npos) {
         error = "Render sequence output.path must contain {frame} or {frame:NN}";
     } else {
         error.clear();
@@ -331,7 +362,7 @@ bool applyRenderJobOutputOverride(RenderJob& job,
 }
 
 std::filesystem::path renderJobFrameStem(const RenderJob& job, int frame) {
-    std::string value = job.outputStemPattern.string();
+    std::string value = job.outputStemPattern.u8string();
     const std::size_t begin = value.find("{frame");
     if (begin == std::string::npos) return job.outputStemPattern;
     const std::size_t end = value.find('}', begin);
@@ -351,5 +382,5 @@ std::filesystem::path renderJobFrameStem(const RenderJob& job, int frame) {
     if (width > 0) formatted << std::setw(width) << std::setfill('0');
     formatted << frame;
     value.replace(begin, end - begin + 1U, formatted.str());
-    return std::filesystem::path(value);
+    return std::filesystem::u8path(value);
 }

@@ -2,6 +2,7 @@
 #include "module/ModuleRegistry.h"
 #include "runtime/BatchRuntime.h"
 #include "runtime/RenderJob.h"
+#include "runtime/ShaderSceneSequence.h"
 
 #include <array>
 #include <chrono>
@@ -60,6 +61,25 @@ int main() {
                     && error.find("raster-sequence") != std::string::npos,
                 "Queue support validation must reject Raster with an actionable diagnostic");
         RenderJob unsupportedFormat = rasterJob;
+        {
+        RenderJob sequenceJob = rasterJob;
+        sequenceJob.schemaVersion = 4; sequenceJob.module = {};
+        sequenceJob.rasterWarmupFrames = 0; sequenceJob.shaderSceneSequence = true;
+        sequenceJob.startFrame = 3; sequenceJob.endFrame = 7; sequenceJob.shaderSceneWarmupFrames = 5;
+        sequenceJob.framesPerSecond = 24;
+        require(validateQueueRenderJob(sequenceJob, error), error.c_str());
+        ShaderSceneSequencePlan plan;
+        require(makeShaderSceneSequencePlan(sequenceJob, {}, plan, error), error.c_str());
+        require(plan.firstFrame == -2 && plan.sampleIndex(3) == 5
+            && plan.timeSeconds(3) == static_cast<float>(Timeline{}.timeSeconds(3)), "Sequence time must use absolute Timeline frames and preceding warmup");
+        const auto unchanged = plan.firstFrame;
+        require(!makeShaderSceneSequencePlan(sequenceJob, {true,true,.001f}, plan, error)
+            && plan.firstFrame == unchanged, "Incompatible history must reject transactionally");
+        sequenceJob.shaderSceneWarmupFrames = 241;
+        require(!validateRenderJob(sequenceJob, error), "Unbounded sequence warmup accepted");
+        sequenceJob.shaderSceneWarmupFrames = 0; sequenceJob.endFrame = 1000001;
+        require(!validateRenderJob(sequenceJob, error), "Unbounded sequence accepted");
+        }
         unsupportedFormat.outputFormats = {pathtracer::RenderFileFormat::OpenExr};
         require(!validateRenderJob(unsupportedFormat, error), "Raster EXR must be rejected");
         RenderJob unsupportedCache = rasterJob;

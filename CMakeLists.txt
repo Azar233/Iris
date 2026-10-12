@@ -196,6 +196,7 @@ target_include_directories(MyRendererBatchRuntime PRIVATE
 )
 target_compile_definitions(MyRendererBatchRuntime PRIVATE
     MYRENDERER_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}"
+    MYRENDERER_BUILD_ID="${MYRENDERER_BUILD_ID}"
 )
 target_link_libraries(MyRendererBatchRuntime PUBLIC MyRendererPathTracing PRIVATE
     glm::glm assimp::assimp tinyobjloader glad_gl_core_33
@@ -312,6 +313,7 @@ add_executable(MyRenderer
     src/app/AssetThumbnail.cpp
     src/app/Application.cpp
     src/app/ApplicationScene.cpp
+    src/app/ApplicationShaderSequenceAcceptance.cpp
     src/app/RenderPluginPanel.cpp
     src/app/EditorSession.cpp
     src/app/WorkspaceAssets.cpp
