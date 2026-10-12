@@ -147,9 +147,12 @@ File 菜单、快捷键与资源浏览器通过共享命令执行新建、保存
 
 ShaderScene 序列仅支持 Beauty PNG，禁用热重载，拒绝 Resume、Cache、Module、AOV/HDR 和继续失败策略；限制 10000 帧及 240 帧预热，FPS/范围还须满足 Scene 的历史时间步策略。所有输出碰撞在执行前拒绝。旧 schema 1～3 的原生/Enscape Raster 时间与逐输出重置保持兼容，通用 ShaderScene 仍须显式启用 schema 4。GUI 自由播放/任意跳帧不会自动重放此前的反馈；要复现输出，应使用相同初始状态、Seed、预热和顺序。
 
+[Enscape 共享序列 Job](assets/renderjobs/09_enscape_shader_sequence.renderjob) 使用相同 schema 4，包及输入、许可随 Release ZIP 安装。自制包使用 MIT，Enscape 包保留 CC BY-NC-SA 3.0 及原作者说明。报告另记录 Pass/Channel 格式与采样、纹理尺寸/编码/Seed 和许可；Queue 失败显示执行器退出码与有界日志（最多 2 KiB 开头和 14 KiB 尾部，中间截断有标记），修复输入后可重新提交。GUI Queue 执行限 Windows；CLI 需要可用的 OpenGL 3.3 上下文。跨驱动像素一致性未作保证。
+
 ```powershell
 .\build-ci-msvc\Release\Iris.exe raster-sequence assets/renderjobs/08_shader_scene_sequence.renderjob
 .\tools\ShaderSceneSequenceAcceptance.ps1
+.\tools\ShaderSceneDeliveryAcceptance.ps1
 ```
 
 `.myscene.module` 用于编辑器保存和恢复。CPU Batch 不自动继承这份模块配置：带 Module 的 Scene 必须搭配显式配置 Module 的 Job，避免保存配置被静默忽略。Scene 保存的是参数与 Seed，执行范围和 FPS 由 Timeline / Job 明确定义；示例采用 0～23 帧、24 FPS。

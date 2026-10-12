@@ -48,6 +48,9 @@ bool writeRasterFrameReport(const std::filesystem::path& path,const RenderJob& j
             w.Key("shaderScene");w.StartObject();
             w.Key("version");w.Int(1);w.Key("packageId");w.String(package->id.c_str());
             w.Key("packageVersion");w.Int(package->version);
+            w.Key("author");w.String(package->author.c_str());
+            w.Key("license");w.String(package->license.c_str());
+            w.Key("parameterSource");w.String(package->parameterSource.c_str());
             w.Key("manifest");w.String(package->manifest.generic_u8string().c_str());
             w.Key("entry");w.String(package->mainImageEntry?"mainImage":"main");
             w.Key("renderPluginApiVersion");w.Int(iris::renderPluginApiVersion);
@@ -72,10 +75,24 @@ bool writeRasterFrameReport(const std::filesystem::path& path,const RenderJob& j
                 else w.Double(values[i].number);}
             w.EndObject();
             w.Key("passes");w.StartArray();for(const auto index:package->executionOrder){const auto& pass=package->passes[index];
-                w.StartObject();w.Key("id");w.String(pass.id.c_str());w.Key("fragment");w.String(pass.fragment.generic_u8string().c_str());w.EndObject();}w.EndArray();
+                w.StartObject();w.Key("id");w.String(pass.id.c_str());w.Key("fragment");w.String(pass.fragment.generic_u8string().c_str());
+                w.Key("format");w.String(pass.format==iris::ShaderSceneFormat::LinearRgba16f?"linear-rgba16f":"display-rgba8");
+                w.Key("sizeDivisor");w.Int(pass.sizeDivisor);
+                w.Key("channels");w.StartArray();for(const auto& channel:pass.channels){
+                    w.StartObject();w.Key("slot");w.Int(channel.slot);w.Key("source");w.String(channel.source.c_str());
+                    w.Key("previousFrame");w.Bool(channel.previousFrame);w.Key("externalTexture");w.Bool(channel.externalTexture);
+                    w.Key("linearFilter");w.Bool(channel.linearFilter);w.Key("repeatWrap");w.Bool(channel.repeatWrap);
+                    w.Key("mipmaps");w.Bool(channel.mipmaps);w.EndObject();}w.EndArray();w.EndObject();}w.EndArray();
             w.Key("textures");w.StartArray();for(const auto& texture:package->textures){
                 w.StartObject();w.Key("id");w.String(texture.id.c_str());w.Key("fingerprint");w.String(texture.fingerprint.c_str());
-                w.Key("seed");w.Uint(texture.seed);w.Key("generated");w.Bool(texture.encoding==iris::ShaderSceneTextureEncoding::HashV1);w.EndObject();}w.EndArray();
+                w.Key("seed");w.Uint(texture.seed);w.Key("generated");w.Bool(texture.encoding==iris::ShaderSceneTextureEncoding::HashV1);
+                w.Key("encoding");w.String(texture.encoding==iris::ShaderSceneTextureEncoding::HashV1?"hash-v1":
+                    texture.encoding==iris::ShaderSceneTextureEncoding::Png?"png":"raw");
+                w.Key("format");w.String(texture.format==iris::ShaderSceneTextureFormat::LinearR8?"linear-r8":
+                    texture.format==iris::ShaderSceneTextureFormat::SrgbRgba8?"srgb-rgba8":"linear-rgba8");
+                w.Key("extent");w.StartArray();w.Int(texture.width);w.Int(texture.height);w.Int(texture.depth);w.EndArray();
+                w.Key("volume");w.Bool(texture.volume);w.Key("mipmaps");w.Bool(texture.mipmaps);
+                w.Key("path");w.String(texture.path.generic_u8string().c_str());w.EndObject();}w.EndArray();
             w.EndObject();
         }
         w.Key("resolution");w.StartArray();w.Uint(job.renderSettings.width);w.Uint(job.renderSettings.height);w.EndArray();

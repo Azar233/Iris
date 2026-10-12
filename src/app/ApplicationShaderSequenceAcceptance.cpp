@@ -7,13 +7,17 @@
 #include <thread>
 #include <chrono>
 #include <stdexcept>
+#include <cstdlib>
 
 void Application::runShaderSequenceAcceptance(const std::filesystem::path& directory) {
     const auto check=[](bool ok,const char* message){if(!ok)throw std::runtime_error(message);};
     const auto bytes=[](const std::filesystem::path& path){std::ifstream in(path,std::ios::binary);
         return std::string(std::istreambuf_iterator<char>(in),{});};
     std::filesystem::create_directories(directory);
-    if(!openScene(sourceRoot_/"assets/shader-scenes/sequence/sequence.shaderscene")) throw std::runtime_error(statusMessage_);
+    const auto packagePath=std::getenv("IRIS_SHADER_SEQUENCE_ACCEPTANCE_PACKAGE")
+        ? std::filesystem::u8path(std::getenv("IRIS_SHADER_SEQUENCE_ACCEPTANCE_PACKAGE"))
+        : sourceRoot_/"assets/shader-scenes/sequence/sequence.shaderscene";
+    if(!openScene(packagePath)) throw std::runtime_error(statusMessage_);
     processEditorCommands();
     rendererSettings_.shaderHotReloadEnabled=false;
     check(saveSceneTo(directory/"saved.myscene"),"Sequence Scene save failed");
@@ -89,6 +93,47 @@ void Application::runShaderSequenceAcceptance(const std::filesystem::path& direc
     check(requested&&terminal==RenderQueueStatus::Cancelled,"Raster Queue did not acknowledge cancellation");
     for(const auto& file:std::filesystem::directory_iterator(directory/"cancelled"))
         check(file.path().filename().string().find("partial")==std::string::npos,"Cancellation leaked staging output");
+    if(std::getenv("IRIS_SHADER_SEQUENCE_FAILURE_ACCEPTANCE")) {
+        const auto badDirectory=directory/"bad-package";
+        std::filesystem::copy(packagePath.parent_path(),badDirectory,std::filesystem::copy_options::recursive);
+        iris::ShaderScenePackage badPackage;
+        check(iris::loadShaderScenePackage(badDirectory/packagePath.filename(),badPackage,error),error.c_str());
+        const auto fragment=badPackage.passes.front().fragment;
+        const auto original=bytes(fragment);
+        // Enough independent errors to exercise bounded pipe draining on real drivers.
+        { std::ofstream bad(fragment,std::ios::binary);bad<<"#version 330 core\nvoid main(){\n";
+          for(int i=0;i<3000;++i)bad<<"missingSymbol"<<i<<"();\n";
+          bad<<"}\n"; }
+        auto badText=bytes(jobPath);
+        const auto scenePosition=badText.find("saved.myscene");
+        badText.replace(scenePosition,13,("bad-package/"+packagePath.filename().u8string()));
+        badText.replace(badText.find("queued/frame"),12,"failed/frame");
+        const auto badJob=directory/"failed.renderjob";std::ofstream(badJob,std::ios::binary)<<badText;
+        command.text=badJob.u8string();editorSession_.request(command);processEditorCommands();
+        const auto failedId=renderQueue_->entries().back().id;
+        std::string diagnostic;
+        const auto failureDeadline=std::chrono::steady_clock::now()+std::chrono::seconds(60);
+        do {renderQueue_->update();
+            for(const auto& entry:renderQueue_->entries())if(entry.id==failedId){terminal=entry.status;diagnostic=entry.message;}
+            if(terminal==RenderQueueStatus::Failed)break;
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        }while(std::chrono::steady_clock::now()<failureDeadline);
+        check(terminal==RenderQueueStatus::Failed&&diagnostic.find("exit 66")!=std::string::npos
+            &&diagnostic.find("missingSymbol")!=std::string::npos,"Queue lost child Shader diagnostic");
+        check(diagnostic.size()<17000&&!std::filesystem::exists(directory/"failed"),"Failure leaked outputs or unbounded diagnostics");
+        std::ofstream(directory/"queue-error.txt",std::ios::binary)<<diagnostic;
+        std::ofstream(fragment,std::ios::binary)<<original;
+        command.text=badJob.u8string();editorSession_.request(command);processEditorCommands();
+        const auto retryId=renderQueue_->entries().back().id;
+        const auto retryDeadline=std::chrono::steady_clock::now()+std::chrono::seconds(60);
+        do {renderQueue_->update();
+            for(const auto& entry:renderQueue_->entries())if(entry.id==retryId)terminal=entry.status;
+            if(terminal==RenderQueueStatus::Complete||terminal==RenderQueueStatus::Failed)break;
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        }while(std::chrono::steady_clock::now()<retryDeadline);
+        check(terminal==RenderQueueStatus::Complete,"Repaired Shader package failed fresh Queue submission");
+        std::cout<<"Queue bounded Shader failure diagnostics / repaired package resubmission: PASS\n";
+    }
     // Leave the captured workspace displaying the same final frame as the Job.
     renderer_->invalidateTemporalHistory();
     for(int frame=plan.firstFrame;frame<=plan.lastFrame;++frame){

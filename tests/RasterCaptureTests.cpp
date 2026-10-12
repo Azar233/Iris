@@ -4,6 +4,7 @@
 #include <stdexcept>
 #include "runtime/RenderJob.h"
 #include "runtime/RasterFrameReport.h"
+#include "plugin/ShaderScene.h"
 namespace {
 void require(bool value,const char* message){if(!value)throw std::runtime_error(message);}
 std::string read(const std::filesystem::path& path){std::ifstream f(path);return std::string(std::istreambuf_iterator<char>(f),{});}
@@ -86,5 +87,20 @@ int main(){try{
         require(!std::filesystem::exists(root/"rejected.json"),"Invalid input must not publish a report");
     }
     require(!writeRasterFrameReport(root/"absent"/"report.json",job,0,settings,"test GPU",error),"report write failure must propagate");
+    {
+        iris::ShaderScenePackage package;
+        require(iris::loadShaderScenePackage(std::filesystem::path(MYRENDERER_SOURCE_DIR)
+            /"assets/shader-scenes/enscape/enscape.shaderscene",package,error),error.c_str());
+        job.shaderSceneSequence=true;job.shaderSceneWarmupFrames=3;
+        require(writeRasterFrameReport(root/"package.json",job,0,settings,"test GPU",error,nullptr,&package),error.c_str());
+        const auto identity=read(root/"package.json");
+        require(identity.find("\"parameterSource\": \"iris.enscape-study\"")!=std::string::npos
+            &&identity.find("CC BY-NC-SA 3.0")!=std::string::npos
+            &&identity.find("\"encoding\": \"hash-v1\"")!=std::string::npos
+            &&identity.find("\"encoding\": \"raw\"")!=std::string::npos
+            &&identity.find("\"previousFrame\": true")!=std::string::npos
+            &&identity.find("\"sizeDivisor\": 1")!=std::string::npos
+            &&identity.find("\"extent\"")!=std::string::npos,"Package report lost graph/texture/generator/license identity");
+    }
     std::cout<<"Raster capture schema and metadata: PASS\n";return 0;
 }catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}}
