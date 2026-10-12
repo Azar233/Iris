@@ -100,6 +100,7 @@ private:
     void runShaderSourceMapAcceptance(const std::filesystem::path& directory);
     void runShaderParameterAcceptance(const std::filesystem::path& directory);
     void runExternalShaderPackageAcceptance(const std::filesystem::path& directory);
+    void runShaderPackageReloadAcceptance(const std::filesystem::path& directory);
     void drawShaderRuntimeInspector();
     void runEnscapeShaderSceneAcceptance(const std::filesystem::path& directory);
     void updateViewportCameraNavigation();
@@ -230,6 +231,7 @@ private:
     int shaderWorkspaceCompileAttempts_{0};
     bool shaderWorkspaceLastCompileAccepted_{false};
     std::uint64_t workspaceShaderGeneration_{0};
+    std::uint64_t workspaceShaderRuntimeRevision_{0};
     std::filesystem::path inspectedShaderFile_;
     int shaderBrowserInteractionPhase_{0};
     int shaderBrowserUiFrames_{0};

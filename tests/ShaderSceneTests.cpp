@@ -1,5 +1,6 @@
 #include "plugin/ShaderScene.h"
 #include "render/Renderer.h"
+#include "asset/InputWatch.h"
 #include <filesystem>
 #include <fstream>
 #include <iostream>
@@ -14,6 +15,25 @@ int main(int argc, char** argv) {
         std::ofstream(root / "image.frag") << "#version 330 core\nvoid main(){}\n";
         const std::string valid = R"({"version":1,"id":"test","resourceRoot":".","fragment":"image.frag","entry":"main","output":"display-rgba8","camera":"project","author":"test","license":"MIT","parameters":[{"id":"gain","label":"Gain","type":"float","default":0.5,"min":0,"max":1}]})";
         const auto path = root / "test.shaderscene";
+        const auto missing = root / "watch-missing.raw";
+        std::filesystem::remove(missing);
+        {
+            capture::InputWatch outer;
+            {
+                capture::InputWatch inner;
+                capture::watchInput(missing); capture::watchInput(missing);
+                check(inner.paths.size() == 1 && outer.paths.size() == 1, "Nested dependency watch/dedupe failed");
+            }
+            check(capture::activeInputWatch == &outer && !outer.stamps[0].changed(), "Dependency watch scope not restored");
+            std::ofstream(missing) << "created";
+            check(outer.stamps[0].changed(), "Missing input creation not detected");
+            const auto created = capture::InputStamp::read(missing);
+            std::ofstream(missing) << "different size";
+            check(created.changed(), "Input byte count change not detected");
+            std::filesystem::remove(missing);
+            check(created.changed(), "Input deletion not detected");
+        }
+        check(capture::activeInputWatch == nullptr, "Dependency watch escaped scope");
         const auto write = [&](const std::string& input) { std::ofstream(path, std::ios::trunc) << input; };
         iris::ShaderScenePackage package; std::string error;
         write(valid); check(iris::loadShaderScenePackage(path, package, error), error.c_str());

@@ -1,5 +1,6 @@
 #include "plugin/ShaderScene.h"
 #include "asset/InputManifest.h"
+#include "asset/InputWatch.h"
 #include "plugin/RenderPluginParameters.h"
 #include "render/Renderer.h"
 #include <cmath>
@@ -46,6 +47,7 @@ std::filesystem::path inside(const std::filesystem::path& base, const std::strin
     const auto relative = std::filesystem::u8path(name);
     if (relative.is_absolute() || relative.has_root_name() || name.find(':') != std::string::npos)
         throw std::runtime_error("Package paths must be relative: " + name);
+    if (!std::filesystem::is_directory(base / relative)) capture::watchInput(base / relative);
     const auto resolved = std::filesystem::canonical(base / relative);
     const auto within = resolved.lexically_relative(base);
     if (within.empty() || *within.begin() == "..") throw std::runtime_error("Package path escapes resource root: " + name);
@@ -105,6 +107,7 @@ void resolveGraph(ShaderScenePackage& package) {
 bool loadShaderScenePackage(const std::filesystem::path& path, ShaderScenePackage& package, std::string& error) {
     try {
         ShaderScenePackage loaded;
+        capture::watchInput(path);
         loaded.manifest = std::filesystem::canonical(path);
         if (loaded.manifest.extension() != ".shaderscene") throw std::runtime_error("Expected .shaderscene manifest");
         if (std::filesystem::file_size(loaded.manifest) > 65536) throw std::runtime_error("Manifest exceeds 64 KiB");

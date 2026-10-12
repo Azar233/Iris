@@ -18,9 +18,9 @@ A3 首个单 Image 切片提供版本化 `.shaderscene` 包、严格路径/float
 
 A3 / S1-A2a 增加 `.shaderscene` v2：最多 4 Pass、每 Pass 4 个二维 Pass 通道、全/半尺寸线性缓冲与显式上一帧反馈。重复时间不会累计，Camera/尺寸/时间跳转/成功重载和显式失效清历史；失败保留旧完整运行状态。运行 `build-ci-msvc/Release/Iris.exe assets/shader-scenes/feedback/feedback.shaderscene` 查看三 Pass 自制示例，约定见 [Feedback 包说明](assets/shader-scenes/feedback/README.md)。S1-A2b1 为 v2 增加 `entry: "mainImage"`，宿主包装每个 Pass 的 `mainImage(out vec4, in vec2)`，使用相同 iris Uniform、编译检查和原子重载，示例见 [mainImage 包说明](assets/shader-scenes/main-image/README.md)。通用参数 UI、Job 与模型材质 Shader 仍属后续工作，A3 尚未收口。
 
-S1-A2b2 的 `.shaderscene` v3 新增最多 8 个有界纹理资源：二维 PNG、二维/三维 raw、固定 uint32 Seed 的 hash-v1 噪声，支持 linear R8/RGBA8、二维 sRGB、Mip 与每通道的过滤/Wrap。总纹理预算含 Mip 为 64 MiB；资源变化核对内容身份，失败保留旧完整运行状态，重新打开成功后清历史。运行 `build-ci-msvc/Release/Iris.exe assets/shader-scenes/textures/textures.shaderscene` 查看自制颜色/体积切片/噪声示例，完整格式与边界见 [纹理包说明](assets/shader-scenes/textures/README.md)。v1/v2 保持兼容，纹理文件通过重新打开包更新，Job 仍明确拒绝。
+S1-A2b2 的 `.shaderscene` v3 新增最多 8 个有界纹理资源：二维 PNG、二维/三维 raw、固定 uint32 Seed 的 hash-v1 噪声，支持 linear R8/RGBA8、二维 sRGB、Mip 与每通道的过滤/Wrap。总纹理预算含 Mip 为 64 MiB；资源变化核对内容身份，失败保留旧完整运行状态，重新打开成功后清历史。运行 `build-ci-msvc/Release/Iris.exe assets/shader-scenes/textures/textures.shaderscene` 查看自制颜色/体积切片/噪声示例，完整格式与边界见 [纹理包说明](assets/shader-scenes/textures/README.md)。v1/v2 保持兼容，纹理文件支持完整包热重载或重新打开更新，通用 ShaderScene Job 仍明确拒绝。
 
-S1-A2b3 将 01/03 的 Enscape 四 Pass 迁入 [Enscape ShaderScene 包](assets/shader-scenes/enscape/README.md)，继续使用共享 Camera 和已有 13 个参数（含 `noiseReduction`）、保存重开、模式切换及 07 Raster Job。v3 的可选 CPU `parameterSource` 和 bool 参数连接兼容值；无新引用的旧 Scene 仍使用原插件。新旧同输入图像/24 帧和成本通过固定门槛；只对 previous 引用分配双缓冲，私有纹理预算不增加。独立 ShaderScene Job 仍拒绝；S1-B1 已完成分类与依赖展示，源码操作和编译诊断继续按 S1-B 推进。
+S1-A2b3 将 01/03 的 Enscape 四 Pass 迁入 [Enscape ShaderScene 包](assets/shader-scenes/enscape/README.md)，继续使用共享 Camera 和已有 13 个参数（含 `noiseReduction`）、保存重开、模式切换及 07 Raster Job。v3 的可选 CPU `parameterSource` 和 bool 参数连接兼容值；无新引用的旧 Scene 仍使用原插件。新旧同输入图像/24 帧和成本通过固定门槛；只对 previous 引用分配双缓冲，私有纹理预算不增加。独立 ShaderScene Job 仍拒绝；S1-B 已接通分类、声明依赖、源码操作、原始诊断、公开参数和完整包自动事务重载；可保存的历史策略与任务闭环继续推进。
 
 <p align="center">A C++17 real-time and offline rendering playground.</p>
 
@@ -126,7 +126,7 @@ GLSL 海面来自 Thomas / @Thomas_ensc 的 Enscape Cube，海面过程署名 Al
 ctest --preset msvc
 ```
 
-Content Browser 提供 ShaderScenes/Shaders 分类。选中包可在 Inspector 浏览声明的源码、include、纹理与许可文件，查看 Pass/Channel 归属和缺失状态；Refresh 更新依赖快照。可打开包、外部文本编辑器和所在目录，并对活跃包执行完整事务式重新编译：失败保留运行实例，成功重置历史。编译诊断标明 Pass 与原始文件/行，可选择错误查看源码上下文；生成的 mainImage 包装器使用独立来源标记，未知日志保留原文。Inspector 根据运行包生成 float/bool 控件，支持默认值恢复与 Scene 覆盖值保存；展示 Pass/Channel、实际帧号和历史状态，并可清空反馈历史。Pass/Channel 拓扑通过外部描述文件编辑后重新编译。成功打开的独立包会把声明的源码/include/纹理注册到当前会话的资源浏览器；Refresh 更新缺失/恢复状态，同名包按路径区分。
+Content Browser 提供 ShaderScenes/Shaders 分类。选中包可在 Inspector 浏览声明的源码、include、纹理与许可文件，查看 Pass/Channel 归属和缺失状态；Refresh 更新依赖快照。可打开包、外部文本编辑器和所在目录，并对活跃包执行完整事务式重新编译：失败保留运行实例，成功重置历史。编译诊断标明 Pass 与原始文件/行，可选择错误查看源码上下文；生成的 mainImage 包装器使用独立来源标记，未知日志保留原文。Inspector 根据运行包生成 float/bool 控件，支持默认值恢复与 Scene 覆盖值保存；展示 Pass/Channel、实际帧号和历史状态，并可清空反馈历史。启用 Shader hot reload 时，Manifest、GLSL/include 和 PNG/raw 纹理变化自动准备并发布完整包；失败保留配置、像素与反馈，缺失依赖修复后自动恢复，也可显式重试。停用期间推迟更新。监听采用 mtime/大小；保留两者的内容修改需手动 Recompile。成功打开的独立包会把声明的源码/include/纹理注册到当前会话的资源浏览器；Refresh 更新缺失/恢复状态，同名包按路径区分。
 
 目录、Iris 状态迁移和按领域的最小验证入口见 [项目工作区说明](WORKSPACE.md)。普通开发 CI 构建与 CPU 检查，发布打包单独触发。
 

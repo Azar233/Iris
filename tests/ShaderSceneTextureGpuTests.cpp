@@ -86,6 +86,11 @@ void testShaderSceneTexturesGpu(const std::filesystem::path& shaders, const std:
     const std::string pngShader = "uniform sampler2D irisChannel0;void mainImage(out vec4 c,in vec2 p){c=texture(irisChannel0,vec2(0.0625));}";
     const auto linear = sample(png("linear-rgba8"), pngShader, "nearest", "repeat");
     check(linear[0] == 128 && linear[1] == 64 && linear[2] == 192 && linear[3] == 255, "PNG RGBA upload wrong");
+    writeBytes(root / "palette.png", {1,2,3});
+    const auto rejectedPng = runtime.reloadResources(settings);
+    check(rejectedPng.failed == 1 && linear == draw(), "Automatic invalid PNG reload lost live texture");
+    std::filesystem::copy_file(fixture / "palette.png", root / "palette.png", std::filesystem::copy_options::overwrite_existing);
+    check(runtime.reloadResources(settings).reloaded == 1 && linear == draw(), "Automatic PNG restoration failed");
     const auto srgb = sample(png("srgb-rgba8"), pngShader, "nearest", "repeat");
     check(srgb[0] >= 54 && srgb[0] <= 56 && srgb[1] >= 12 && srgb[1] <= 14 && srgb[2] >= 133 && srgb[2] <= 135,
         "PNG sRGB decode not linear");

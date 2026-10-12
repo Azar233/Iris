@@ -1046,6 +1046,7 @@ int Application::run(const std::filesystem::path& initialModel) {
     if (std::getenv("IRIS_SHADER_WORKSPACE_UI_TEST")) smokeTestFrames = 16;
     if (std::getenv("IRIS_SHADER_DIAGNOSTIC_UI_TEST")) smokeTestFrames = 20;
     if (std::getenv("IRIS_SHADER_PARAMETER_UI_TEST")) smokeTestFrames = 24;
+    if (std::getenv("IRIS_SHADER_PACKAGE_RELOAD_ACCEPTANCE_DIRECTORY")) smokeTestFrames = 18;
     const auto cpuPreviewSmokeDeadline = std::chrono::steady_clock::now()
         + std::chrono::seconds(30);
     const auto thumbnailDeadline = std::chrono::steady_clock::now() + std::chrono::seconds(30);
@@ -1089,6 +1090,7 @@ int Application::run(const std::filesystem::path& initialModel) {
     if(const char* directory=std::getenv("IRIS_SHADER_SOURCE_MAP_ACCEPTANCE_DIRECTORY"))runShaderSourceMapAcceptance(std::filesystem::u8path(directory));
     if(const char* directory=std::getenv("IRIS_SHADER_PARAMETER_ACCEPTANCE_DIRECTORY"))runShaderParameterAcceptance(std::filesystem::u8path(directory));
     if(const char* directory=std::getenv("IRIS_EXTERNAL_SHADER_PACKAGE_ACCEPTANCE_DIRECTORY"))runExternalShaderPackageAcceptance(std::filesystem::u8path(directory));
+    if(const char* directory=std::getenv("IRIS_SHADER_PACKAGE_RELOAD_ACCEPTANCE_DIRECTORY"))runShaderPackageReloadAcceptance(std::filesystem::u8path(directory));
     if (std::getenv("IRIS_SHADER_WORKSPACE_UI_BAD") && std::getenv("MYRENDERER_SMOKE_TEST")
         && std::getenv("IRIS_SHADER_WORKSPACE_ACCEPTANCE") && std::getenv("MYRENDERER_SHADER_SCENE_ACCEPTANCE_DIRECTORY")) {
         const auto inspection=inspectWorkspaceShaderPackage(std::filesystem::u8path(iris::shaderSceneResourceFor(rendererSettings_)));
@@ -1435,6 +1437,7 @@ int Application::run(const std::filesystem::path& initialModel) {
     return shaderParameterUiPassed && diagnosticUiPassed && workspaceUiPassed && shaderBrowserPassed && recoveryPassed && appendPassed && interactionsPassed && pluginsPassed && pluginParametersPassed
         && (shaderTransactionSources_.empty() || (shaderTransactionDone && shaderTransactionPassed))
         && (!std::getenv("MYRENDERER_SHADER_TRANSACTION_UI_RETRY") || shaderRetryInteractionComplete_)
+        && (!std::getenv("IRIS_SHADER_PACKAGE_RELOAD_UI_RETRY") || shaderRetryInteractionComplete_)
         && (!std::getenv("MYRENDERER_PLUGIN_RESOURCE_UI_TEST") || shaderRetryInteractionComplete_)
         && (!renderdocCaptureRequested || renderdocCaptureTriggered)
         && referenceComparisonPassed && cpuPreviewSmokePassed && thumbnailAcceptancePassed

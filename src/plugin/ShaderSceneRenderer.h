@@ -2,6 +2,8 @@
 #include "plugin/RenderPlugin.h"
 #include "plugin/ShaderScene.h"
 #include "render/RenderPassSequence.h"
+#include "render/Shader.h"
+#include "asset/InputWatch.h"
 #include <memory>
 class Shader;
 namespace iris {
@@ -17,9 +19,12 @@ public:
     std::vector<RenderPassContext> passContexts() const;
     const ShaderScenePackage* package() const;
     ShaderSceneRuntimeStatus runtimeStatus() const;
+    Shader::ReloadReport reloadResources(const RendererSettings& settings, bool retryPending = false);
 private:
     struct State;
     std::filesystem::path vertex_;
     std::unique_ptr<State> state_;
+    std::vector<capture::InputStamp> watchedInputs_;
+    bool reloadPending_{false};
 };
 }

@@ -18,6 +18,7 @@ public:
         std::vector<std::pair<std::string, unsigned int>> uniforms;
         bool mainImageEntry{false};
         std::string passLabel;
+        bool packageOwnedReload{false};
     };
     struct ReloadReport {
         std::size_t reloaded{0U};

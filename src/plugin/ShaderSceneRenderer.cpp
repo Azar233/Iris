@@ -43,7 +43,6 @@ struct Buffer {
 struct Pass {
     std::unique_ptr<Shader> shader;
     std::array<GLuint, 4> samplers{};
-    std::size_t shaderRevision{0};
     ~Pass() { glDeleteSamplers(4, samplers.data()); }
 };
 struct Texture {
@@ -154,6 +153,9 @@ ShaderSceneRuntimeStatus ShaderSceneRenderer::runtimeStatus() const {
         state_->rendered, state_->historyValid, state_->invalidated};
 }
 void ShaderSceneRenderer::prepareResources(const RendererSettings& settings, int width, int height) {
+    capture::InputWatch inputs;
+    capture::watchInput(std::filesystem::u8path(shaderSceneResourceFor(settings)));
+    try {
     auto candidate = std::make_unique<State>(); std::string error;
     const auto resource = shaderSceneResourceFor(settings);
     const auto input = capture::snapshot(std::filesystem::u8path(resource));
@@ -164,6 +166,7 @@ void ShaderSceneRenderer::prepareResources(const RendererSettings& settings, int
         Shader::SourcePolicy policy; policy.fragmentRoot = candidate->package.root;
         policy.mainImageEntry = candidate->package.mainImageEntry;
         policy.passLabel=description.id;
+        policy.packageOwnedReload = true;
         policy.uniforms = {{"irisTime", GL_FLOAT}, {"irisTimeDelta", GL_FLOAT}, {"irisFrame", GL_INT},
             {"irisHistoryValid", GL_BOOL}, {"irisResolution", GL_FLOAT_VEC2}, {"irisViewportResolution", GL_FLOAT_VEC2},
             {"irisCameraPosition", GL_FLOAT_VEC3}, {"irisView", GL_FLOAT_MAT4}, {"irisProjection", GL_FLOAT_MAT4},
@@ -183,7 +186,6 @@ void ShaderSceneRenderer::prepareResources(const RendererSettings& settings, int
         try { pass->shader = std::make_unique<Shader>(vertex_, description.fragment, std::move(policy)); }
         catch (const ShaderSourceError&) { throw; }
         catch (const std::exception& exception) { throw std::runtime_error("ShaderScene Pass " + description.id + ": " + exception.what()); }
-        pass->shaderRevision = pass->shader->revision();
         for (const auto& channel : description.channels) {
             auto& sampler = pass->samplers[static_cast<std::size_t>(channel.slot)]; glGenSamplers(1, &sampler);
             glSamplerParameteri(sampler, GL_TEXTURE_MIN_FILTER, channel.mipmaps
@@ -204,7 +206,37 @@ void ShaderSceneRenderer::prepareResources(const RendererSettings& settings, int
     for (auto& texture : candidate->package.textures) std::vector<unsigned char>().swap(texture.texels);
     candidate->parameterValues = shaderSceneParameterValues(candidate->package, settings);
     glGenQueries(static_cast<GLsizei>(candidate->timingQueries.size()), candidate->timingQueries.data());
+    for (const auto& input : inputs.stamps) if (input.changed()) throw std::runtime_error("ShaderScene dependency changed during preparation: " + input.path.u8string());
     state_.swap(candidate);
+    watchedInputs_.swap(inputs.stamps);
+    reloadPending_ = false;
+    } catch (...) {
+        // Keep both committed and attempted dependencies so missing/new inputs can recover.
+        for (const auto& input : watchedInputs_) inputs.record(input.path);
+        watchedInputs_.swap(inputs.stamps); reloadPending_ = true;
+        throw;
+    }
+}
+Shader::ReloadReport ShaderSceneRenderer::reloadResources(const RendererSettings& settings, bool retryPending) {
+    Shader::ReloadReport report;
+    if (!state_) return report;
+    report.pending = reloadPending_ ? 1 : 0;
+    const bool changed = std::any_of(watchedInputs_.begin(), watchedInputs_.end(), [](const auto& input) { return input.changed(); });
+    if (!changed && !(retryPending && reloadPending_)) return report;
+    try {
+        prepareResources(settings, state_->width, state_->height);
+        report.reloaded = state_->passes.size(); report.pending = 0;
+        report.message = "ShaderScene package committed; history reset";
+    } catch (const ShaderSourceError& error) {
+        report.failed = 1; report.diagnostics = error.diagnostics; report.message = error.what();
+    } catch (const std::exception& error) {
+        report.failed = 1; report.message = error.what();
+    }
+    if (report.failed) {
+        report.pending = 1; report.retained = state_->passes.size();
+        report.message = "ShaderScene package rejected; prior instance/configuration/history retained:\n" + report.message;
+    }
+    return report;
 }
 void ShaderSceneRenderer::invalidateHistory() { if (state_) state_->invalidated = true; }
 void ShaderSceneRenderer::renderFrame(const RenderPluginFrame& frame) {
@@ -228,9 +260,6 @@ void ShaderSceneRenderer::renderFrame(const RenderPluginFrame& frame) {
     if (frame.width != state.width || frame.height != state.height) {
         auto buffers = allocateBuffers(state.package, frame.width, frame.height);
         state.buffers.swap(buffers); state.width = frame.width; state.height = frame.height; state.invalidated = true;
-    }
-    for (auto& pass : state.passes) if (pass->shaderRevision != pass->shader->revision()) {
-        state.invalidated = true; pass->shaderRevision = pass->shader->revision();
     }
     const auto view = frame.camera.viewMatrix();
     const auto projection = frame.camera.projectionMatrix(static_cast<float>(frame.width) / frame.height);

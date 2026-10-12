@@ -1,4 +1,5 @@
 #include "asset/InputManifest.h"
+#include "asset/InputWatch.h"
 #include "render/Shader.h"
 
 #include <algorithm>
@@ -42,6 +43,7 @@ std::filesystem::file_time_type shaderWriteTime(const std::filesystem::path& pat
 
 void watchSource(const std::filesystem::path& path, std::vector<std::filesystem::path>& paths,
     std::vector<std::filesystem::file_time_type>& times) {
+    capture::watchInput(path);
     if (std::find(paths.begin(), paths.end(), path) == paths.end()) {
         paths.push_back(path);
         times.push_back(shaderWriteTime(path));
@@ -234,6 +236,7 @@ Shader::ReloadReport Shader::reloadChangedShaders(bool retryPending) {
     static std::size_t failedRegistryRevision = 0;
     bool changed = false, pending = false;
     for (const auto* shader : shaders) {
+        if (shader->sourcePolicy_.packageOwnedReload) continue;
         changed = changed || snapshotChanged(shader->watchedSources_);
         pending = pending || shader->reloadPending_;
         if (shader->reloadPending_) ++report.pending;
@@ -248,6 +251,7 @@ Shader::ReloadReport Shader::reloadChangedShaders(bool retryPending) {
     };
     std::vector<std::unique_ptr<Candidate>> candidates;
     for (auto* shader : shaders) {
+        if (shader->sourcePolicy_.packageOwnedReload) continue;
         if (!shader->reloadPending_ && !snapshotChanged(shader->watchedSources_)) continue;
         auto candidate = std::make_unique<Candidate>(shader);
         try {

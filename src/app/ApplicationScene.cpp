@@ -827,9 +827,9 @@ void Application::processEditorCommands() {
             }
             case EditorCommandType::RetryShaderReload: {
                 const auto revision = renderer_->historyInvalidationRevision();
-                const bool accepted = renderer_->reloadShaderResources(true);
+                const bool accepted = renderer_->reloadShaderResources(true, &rendererSettings_);
                 statusMessage_ = renderer_->shaderReloadStatus();
-                if (std::getenv("MYRENDERER_SHADER_TRANSACTION_UI_RETRY") && !accepted
+                if ((std::getenv("MYRENDERER_SHADER_TRANSACTION_UI_RETRY") || std::getenv("IRIS_SHADER_PACKAGE_RELOAD_UI_RETRY")) && !accepted
                     && renderer_->historyInvalidationRevision() == revision) {
                     shaderRetryInteractionComplete_ = true;
                     std::cout << "Shader transaction retry UI interaction: PASS\n";
@@ -3166,6 +3166,32 @@ void Application::drawShaderRuntimeInspector() {
     ImGui::TextWrapped("%s | %dx%d | Frame %d | %.3f s", EditorUi::chinese ? "实际运行包" : "Live package",
         runtime.width, runtime.height, runtime.frame, runtime.time);
     ImGui::TextWrapped("History: %s | dt %.4f s", runtime.resetPending ? "reset pending" : runtime.historyValid ? "valid" : "clear", runtime.timeDelta);
+    if (EditorUi::section("Package hot reload", true)) {
+        EditorUi::Checkbox(EditorUi::label("Shader hot reload"), &rendererSettings_.shaderHotReloadEnabled);
+        ImGui::TextWrapped("%s", renderer_->shaderReloadFailed()
+            ? (EditorUi::chinese ? "完整包重载失败；保留当前实例、配置和历史。" : "Package reload rejected; current instance, configuration and history retained.")
+            : renderer_->shaderReloadStatus().c_str());
+        if (std::getenv("IRIS_SHADER_PACKAGE_RELOAD_ACCEPTANCE_DIRECTORY") && !renderer_->shaderReloadFailed()) ImGui::SetScrollHereY(.5f);
+        if (renderer_->shaderReloadFailed()) {
+            const auto& diagnostics=renderer_->shaderReloadDiagnostics();
+            if (!diagnostics.empty() && diagnostics.front().mapped) {
+                const auto& diagnostic=diagnostics.front();
+                ImGui::TextWrapped("%s:%d | %s", diagnostic.file.lexically_relative(package->root).generic_u8string().c_str(), diagnostic.line, diagnostic.pass.c_str());
+            }
+            if (EditorUi::section("Package reload details",false)) ImGui::TextWrapped("%s",renderer_->shaderReloadStatus().c_str());
+            if (ImGui::Button(EditorUi::chinese ? "重试完整包重载" : "Retry package reload"))
+                editorSession_.request(EditorCommand{EditorCommandType::RetryShaderReload});
+            if (std::getenv("IRIS_SHADER_PACKAGE_RELOAD_UI_RETRY") && shaderRetryInteractionPhase_ < 2) ImGui::SetScrollHereY(.65f);
+            if (std::getenv("IRIS_SHADER_PACKAGE_RELOAD_UI_RETRY") && shaderRetryInteractionPhase_ < 4) {
+                auto& io=ImGui::GetIO();
+                if (shaderRetryInteractionPhase_ < 2 || ImGui::IsWindowAppearing()) ++shaderRetryInteractionPhase_;
+                else if (shaderRetryInteractionPhase_ == 2) {
+                    const auto a=ImGui::GetItemRectMin(),b=ImGui::GetItemRectMax();
+                    io.AddFocusEvent(true);io.AddMousePosEvent((a.x+b.x)*.5f,(a.y+b.y)*.5f);io.AddMouseButtonEvent(0,true);++shaderRetryInteractionPhase_;
+                } else {io.AddMouseButtonEvent(0,false);++shaderRetryInteractionPhase_;}
+            }
+        }
+    }
     if (EditorUi::section("Public parameters", true)) {
         const auto values = iris::shaderSceneParameterValues(*package, rendererSettings_);
         if (values.empty()) ImGui::TextWrapped("%s", EditorUi::chinese ? "此包没有公开参数。" : "No public parameters.");
@@ -3204,7 +3230,7 @@ void Application::drawShaderRuntimeInspector() {
         }
     }
     if (EditorUi::section("Pass / Channel configuration", std::getenv("IRIS_SHADER_PARAMETER_UI_TEST") != nullptr || std::getenv("IRIS_SHADER_HISTORY_VIEW") != nullptr)) {
-        ImGui::TextWrapped("%s", EditorUi::chinese ? "已提交的运行配置；外部修改描述文件后重新编译。" : "Committed configuration; edit the Manifest externally and recompile.");
+        ImGui::TextWrapped("%s", EditorUi::chinese ? "已提交的运行配置；热重载监听描述文件、源码和纹理，完整包成功后一次更新。" : "Committed configuration; hot reload watches Manifest, source and textures and publishes a complete package.");
         ImGui::TextWrapped("Entry: %s | Camera: project", package->mainImageEntry ? "mainImage" : "main");
         for (const auto index : package->executionOrder) {
             const auto& pass = package->passes[index];
@@ -3226,6 +3252,10 @@ void Application::drawShaderRuntimeInspector() {
     }
 }
 void Application::drawShaderPackageInspector() {
+    if (renderer_ && workspaceShaderRuntimeRevision_ != renderer_->shaderSceneRevision()) {
+        workspaceShaderRuntimeRevision_ = renderer_->shaderSceneRevision();
+        discoverModels(); // Refresh declared dependencies once per successful package publication.
+    }
     if (workspaceShaderPackage_.manifest != selectedWorkspaceAsset_
         || workspaceShaderGeneration_ != workspaceAssets_.generation()) {
         workspaceShaderPackage_ = inspectWorkspaceShaderPackage(selectedWorkspaceAsset_);
@@ -3264,7 +3294,7 @@ void Application::drawShaderPackageInspector() {
     const auto& compilerDiagnostics=shaderWorkspaceDiagnostics_.empty()?(active?renderer_->shaderReloadDiagnostics():noDiagnostics):shaderWorkspaceDiagnostics_;
     if(compilerDiagnostics.empty())ImGui::TextWrapped("%s",active?shaderWorkspaceMessage_.c_str():"Compiler diagnostics are available for the active package");
     else ImGui::TextWrapped("%s",EditorUi::chinese?"编译被拒绝，保留上一个完整运行实例。":"Compilation rejected; previous complete instance retained.");
-    if(!compilerDiagnostics.empty() && EditorUi::section("Compiler locations",true)) {
+    if(!compilerDiagnostics.empty() && EditorUi::section("Compiler locations",!shaderWorkspaceDiagnostics_.empty() || std::getenv("IRIS_SHADER_DIAGNOSTIC_UI_TEST"))) {
         for(std::size_t index=0;index<compilerDiagnostics.size();++index) {
             const auto& diagnostic=compilerDiagnostics[index];
             const auto label="Pass "+diagnostic.pass+" | "+(diagnostic.generated?"Generated: ":"")
@@ -3488,6 +3518,46 @@ SceneEntityId Application::pickEntity(const std::vector<RenderItem>& items,
     return hit > 0 && hit <= items.size() ? items[hit - 1].entityId : invalidSceneEntityId;
 }
 
+void Application::runShaderPackageReloadAcceptance(const std::filesystem::path& directory) {
+    const auto check=[](bool ok,const char* message){if(!ok)throw std::runtime_error(message);};
+    std::filesystem::create_directories(directory);
+    const auto write=[](const std::filesystem::path& path,const std::string& text){
+        std::ofstream(path,std::ios::binary|std::ios::trunc).write(text.data(),static_cast<std::streamsize>(text.size()));
+        static int revision=600;std::filesystem::last_write_time(path,std::filesystem::file_time_type::clock::now()+std::chrono::seconds(++revision));
+    };
+    const auto manifest=directory/"reload.shaderscene",raw=directory/"data.raw",include=directory/"value.glsl";
+    const std::string description=R"({"version":3,"id":"reload","resourceRoot":".","entry":"main","camera":"project","author":"Iris contributors","license":"MIT","parameters":[{"id":"gain","label":"Gain","type":"float","default":0.125,"min":0,"max":1}],"textures":[{"id":"Tex","dimension":"2d","format":"linear-r8","extent":[1,1],"encoding":"raw","path":"data.raw","mip":"none"}],"passes":[{"id":"Accum","fragment":"accum.frag","output":"linear-rgba16f","sizeDivisor":1,"channels":[{"slot":0,"source":"Accum","frame":"previous","filter":"nearest","wrap":"clamp","mip":"none"}]},{"id":"Image","fragment":"image.frag","output":"display-rgba8","sizeDivisor":1,"channels":[{"slot":0,"source":"Accum","frame":"current","filter":"nearest","wrap":"clamp","mip":"none"},{"slot":1,"source":"Tex","frame":"current","filter":"nearest","wrap":"clamp","mip":"none"}]}]})";
+    write(manifest,description);write(raw,std::string(1,64));write(include,"float value(){return .25;}\n");
+    write(directory/"accum.frag","#version 330 core\nuniform sampler2D irisChannel0;uniform float gain;uniform vec2 irisResolution;out vec4 color;void main(){color=texture(irisChannel0,gl_FragCoord.xy/irisResolution)+vec4(gain,0,0,0);}\n");
+    write(directory/"image.frag","#version 330 core\n#include \"value.glsl\"\nuniform sampler2D irisChannel0,irisChannel1;uniform vec2 irisResolution;out vec4 color;void main(){color=vec4(texture(irisChannel0,gl_FragCoord.xy/irisResolution).r,texture(irisChannel1,vec2(.5)).r,value(),1);}\n");
+    check(openScene(manifest),"Reload fixture open failed");processEditorCommands();
+    rendererSettings_.shaderHotReloadEnabled=true;rendererSettings_.water.timeSeconds=.25f;
+    animationTimeFixed_=true;animationTimeSeconds_=.25f;
+    const auto draw=[&](int count=1){for(int frame=0;frame<count;++frame)renderer_->render(scene_.buildRenderItems(),camera_,rendererSettings_,320,180);glFinish();check(glGetError()==GL_NO_ERROR,"Automatic package reload GL error");};
+    const auto pixels=[&](){std::vector<unsigned char> bytes(320U*180U*4U);glBindTexture(GL_TEXTURE_2D,renderer_->colorTexture());glGetTexImage(GL_TEXTURE_2D,0,GL_RGBA,GL_UNSIGNED_BYTE,bytes.data());return bytes;};
+    draw();rendererSettings_.water.timeSeconds=.3f;draw();rendererSettings_.water.timeSeconds=.35f;draw();
+    auto baseline=pixels();check(baseline[0]==96,"Feedback history fixture did not accumulate");
+    const auto camera=camera_.viewMatrix();const auto scenePath=currentScenePath_;std::string error;
+    check(renderer_->saveScreenshot(directory/"before.png",error),"Reload before capture failed");
+    const auto rejected=[&](){
+        const auto revision=renderer_->historyInvalidationRevision();const auto package=renderer_->activeShaderScenePackage();
+        draw(16);check(renderer_->shaderReloadFailed() && renderer_->historyInvalidationRevision()==revision && renderer_->activeShaderScenePackage()==package,"Automatic failure published instance/history");
+        check(baseline==pixels(),"Automatic failure lost paused feedback pixels");
+        check(renderer_->saveScreenshot(directory/"retained.png",error),"Reload retained capture failed");
+    };
+    const auto accepted=[&](){const auto revision=renderer_->historyInvalidationRevision();draw(16);check(!renderer_->shaderReloadFailed() && renderer_->historyInvalidationRevision()==revision+1,"Automatic recovery did not publish/reset exactly once");baseline=pixels();check(baseline[0]==32,"Automatic recovery kept stale feedback");check(camera==camera_.viewMatrix() && scenePath==currentScenePath_,"Reload changed camera/Scene identity");};
+    write(raw,"broken raw");rejected();write(raw,std::string(1,static_cast<char>(192)));accepted();check(baseline[1]==192,"Automatic raw change not visible");
+    write(include,"invalid included source\n");rejected();write(include,"float value(){return .75;}\n");accepted();check(baseline[2]==191,"Automatic include repair not visible");
+    write(manifest,"{invalid Manifest");rejected();write(manifest,description);accepted();
+    std::filesystem::remove(raw);rejected();write(raw,std::string(1,64));accepted();
+    rendererSettings_.shaderHotReloadEnabled=false;write(include,"float value(){return .5;}\n");draw(16);check(baseline==pixels(),"Disabled reload still published");
+    rendererSettings_.shaderHotReloadEnabled=true;accepted();check(baseline[2]>=127 && baseline[2]<=128,"Reenabled reload ignored deferred change");
+    check(renderer_->saveScreenshot(directory/"recovered.png",error),"Reload recovered capture failed");
+    if(std::getenv("IRIS_SHADER_PACKAGE_RELOAD_FAILURE")){write(include,"invalid included source\n");rejected();}
+    selectedWorkspaceAsset_=manifest;scrollWorkspaceSelection_=true;focusAssetsTab_=true;contentCategory_=static_cast<int>(WorkspaceAssetCategory::ShaderScenes);
+    rendererSettings_.water.timeSeconds=.35f;animationTimeSeconds_=.35f;
+    std::cout<<"ShaderScene automatic Manifest/include/raw reload / retained feedback+camera+Scene / reset exactly once / disable+reenable PASS\n";
+}
 void Application::runExternalShaderPackageAcceptance(const std::filesystem::path& directory) {
     const auto check=[](bool ok,const char* message){if(!ok)throw std::runtime_error(message);};
     const auto write=[](const std::filesystem::path& path,const std::string& text){std::filesystem::create_directories(path.parent_path());std::ofstream stream(path,std::ios::binary|std::ios::trunc);stream<<text;if(!stream)throw std::runtime_error("External fixture write failed");};

@@ -65,7 +65,7 @@ void testShaderSceneEntry(const std::filesystem::path& shaders, const std::files
     adapted.invalidateHistory(); const auto baseline = draw(adapted, adaptedTarget, adaptedSettings, 0.25f);
     const auto reject = [&](const std::string& bad, const char* diagnostic = "mainImage-image.frag") {
         write(root / "mainImage-image.frag", bad);
-        const auto report = Shader::reloadChangedShaders(true);
+        const auto report = adapted.reloadResources(adaptedSettings, true);
         check(report.failed > 0 && report.retained > 0 && report.message.find(diagnostic) != std::string::npos,
             "mainImage failure missing retention/path diagnostic");
         check(baseline == draw(adapted, adaptedTarget, adaptedSettings, 0.25f), "mainImage failure replaced live image");
@@ -77,12 +77,12 @@ void testShaderSceneEntry(const std::filesystem::path& shaders, const std::files
     reject("#version 330 core\n#include \"../outside-entry.glsl\"\nvoid mainImage(out vec4 color,in vec2 coord){color=outsideColor();}\n", "outside-entry.glsl");
     reject("#version 330 core\nuniform vec3 irisTime;void mainImage(out vec4 color,in vec2 coord){color=vec4(irisTime,1);}\n");
     write(root / "mainImage-image.frag", wrappedImage);
-    auto report = Shader::reloadChangedShaders(true);
+    auto report = adapted.reloadResources(adaptedSettings, true);
     check(report.failed == 0 && report.reloaded > 0, "mainImage retry failed");
     check(baseline == draw(adapted, adaptedTarget, adaptedSettings, 0.25f), "mainImage recovery changed output");
     draw(adapted, adaptedTarget, adaptedSettings, 0.3f);
     write(root / "color.glsl", "vec4 tint(){return vec4(0.5,1.0,1.0,1.0);}\n");
-    report = Shader::reloadChangedShaders();
+    report = adapted.reloadResources(adaptedSettings);
     check(report.failed == 0 && report.reloaded == 2, "Included mainImage source not watched");
     const auto changed = draw(adapted, adaptedTarget, adaptedSettings, 0.3f);
     check(changed[0] >= 15 && changed[0] <= 16 && changed[1] == 0, "mainImage reload failed to reset history/use changed include");

@@ -331,7 +331,8 @@ public:
     const std::string& shaderReloadStatus() const { return shaderReloadStatus_; }
     const std::vector<ShaderSourceDiagnostic>& shaderReloadDiagnostics() const { return shaderReloadDiagnostics_; }
     bool shaderReloadFailed() const { return shaderReloadFailed_; }
-    bool reloadShaderResources(bool retryPending = false);
+    std::uint64_t shaderSceneRevision() const { return shaderSceneRevision_; }
+    bool reloadShaderResources(bool retryPending = false, const RendererSettings* settings = nullptr);
     const iris::ShaderScenePackage* activeShaderScenePackage() const;
     iris::ShaderSceneRuntimeStatus shaderSceneRuntimeStatus() const;
     bool rebuildPluginResources(const std::string& id, const RendererSettings& settings);
@@ -468,6 +469,8 @@ private:
     std::string shaderReloadStatus_{"Watching shader files"};
     std::vector<ShaderSourceDiagnostic> shaderReloadDiagnostics_;
     bool shaderReloadFailed_{false};
+    RendererSettings shaderSceneReloadSettings_;
+    std::uint64_t shaderSceneRevision_{0};
     std::string pluginResourceStatus_;
     std::size_t historyInvalidationRevision_{0};
     OpenGlStateCache stateCache_;

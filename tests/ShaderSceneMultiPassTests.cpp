@@ -46,17 +46,17 @@ void testShaderSceneMultiPass(const std::filesystem::path& shaders, const std::f
     check(second == draw(0.05f), "Repeated time changed history");
     write(accum, "#version 330 core\nout vec4 color;void main(){color=vec4(0.25,0,0,1);}\n");
     write(copy, "#version 330 core\ninvalid multi Pass\n");
-    const auto failed = Shader::reloadChangedShaders();
+    const auto failed = runtime.reloadResources(settings);
     check(failed.failed > 0 && failed.retained >= 2 && second == draw(0.05f), "Partial multi Pass compile replaced live graph/history");
     bool rejected = false;
     try { runtime.prepareResources(settings, 64, 32); } catch (const std::exception&) { rejected = true; }
     check(rejected && second == draw(0.05f), "Failed whole-package rebuild lost live graph");
     write(copy, copying);
-    const auto recovered = Shader::reloadChangedShaders(true);
+    const auto recovered = runtime.reloadResources(settings, true);
     check(recovered.failed == 0 && recovered.reloaded >= 2, "Multi Pass retry failed");
     const auto resetAfterReload = draw(0.05f);
     check(resetAfterReload[0] == 64 && resetAfterReload[1] == 0, "Successful reload retained stale feedback");
-    write(accum, accumulation); check(Shader::reloadChangedShaders(true).failed == 0, "Original feedback restore failed");
+    write(accum, accumulation); check(runtime.reloadResources(settings, true).failed == 0, "Original feedback restore failed");
     runtime.invalidateHistory(); check(first == draw(0.1f), "Explicit reset did not clear both sides");
     draw(0.15f); check(first == draw(0.1f), "Backward seek retained stale feedback");
     draw(0.15f); check(first == draw(1.0f), "Large time step retained feedback");

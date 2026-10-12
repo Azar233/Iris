@@ -218,8 +218,9 @@ void Renderer::render(
     }
     width = std::max(width, 1);
     height = std::max(height, 1);
+    if (!settings.shaderSceneResource.empty()) shaderSceneReloadSettings_ = settings;
     if (settings.shaderHotReloadEnabled && shaderReloadPollFrame_++ % 15U == 0U) {
-        reloadShaderResources();
+        reloadShaderResources(false, &settings);
     }
     renderTarget_->resize(width, height,
         (settings.enscapeCubeShaderEnabled || !settings.shaderSceneResource.empty()) ? 1 : settings.msaaSamples);
@@ -1898,6 +1899,9 @@ iris::ShaderSceneRuntimeStatus Renderer::shaderSceneRuntimeStatus() const {
 void Renderer::publishShaderScene(std::unique_ptr<iris::RenderPlugin> candidate, const std::string& resource) {
     auto preparedResource = resource;
     shaderSceneRenderer_.swap(candidate); shaderSceneResource_.swap(preparedResource);
+    ++shaderSceneRevision_;
+    shaderReloadFailed_ = false; shaderReloadDiagnostics_.clear();
+    shaderReloadStatus_ = "ShaderScene package committed; history reset";
     stateCache_.invalidate(); invalidateTemporalHistory();
 }
 bool Renderer::rebuildPluginResources(const std::string& id, const RendererSettings& settings) {
@@ -1920,8 +1924,12 @@ bool Renderer::rebuildPluginResources(const std::string& id, const RendererSetti
     }
 }
 
-bool Renderer::reloadShaderResources(bool retryPending) {
-    const auto report = Shader::reloadChangedShaders(retryPending);
+bool Renderer::reloadShaderResources(bool retryPending, const RendererSettings* settings) {
+    auto* package = dynamic_cast<iris::ShaderSceneRenderer*>(shaderSceneRenderer_.get());
+    if (package && settings && iris::shaderSceneResourceFor(*settings) != shaderSceneResource_) return true;
+    const auto report = package
+        ? package->reloadResources(settings ? *settings : shaderSceneReloadSettings_, retryPending)
+        : Shader::reloadChangedShaders(retryPending);
     if (report.failed) {
         shaderReloadFailed_ = true;
         shaderReloadStatus_ = report.message;
@@ -1929,11 +1937,12 @@ bool Renderer::reloadShaderResources(bool retryPending) {
         return false;
     }
     if (report.reloaded) {
+        if (package) ++shaderSceneRevision_;
         stateCache_.invalidate();
         invalidateTemporalHistory();
         shaderReloadFailed_ = false;
         shaderReloadDiagnostics_.clear();
-        shaderReloadStatus_ = "Committed " + std::to_string(report.reloaded) + " shader program(s)";
+        shaderReloadStatus_ = package ? report.message : "Committed " + std::to_string(report.reloaded) + " shader program(s)";
     } else if (shaderReloadFailed_ && report.pending == 0) {
         shaderReloadFailed_ = false;
         shaderReloadDiagnostics_.clear();

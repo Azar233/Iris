@@ -28,6 +28,7 @@ std::vector<unsigned char> pixels(const RenderTarget& target) {
 void testShaderSceneMultiPass(const std::filesystem::path&, const std::filesystem::path&, unsigned int);
 void testShaderSceneEntry(const std::filesystem::path&, const std::filesystem::path&, unsigned int);
 void testShaderSceneTexturesGpu(const std::filesystem::path&, const std::filesystem::path&, unsigned int);
+void testShaderSceneReload(const std::filesystem::path&, const std::filesystem::path&, unsigned int);
 int main(int argc, char** argv) {
     if (!glfwInit()) return 1;
     glfwWindowHint(GLFW_VISIBLE, GLFW_FALSE); glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
@@ -68,16 +69,16 @@ int main(int argc, char** argv) {
             SceneDocument reopened; check(loadSceneDocument(directory / "saved.myscene", reopened, error), error.c_str());
             check(reopened.renderer.shaderSceneResource == settings.shaderSceneResource, "Relative reference round trip failed");
             write(fragment, "#version 330 core\ninvalid shader\n");
-            auto report = Shader::reloadChangedShaders();
+            auto report = runtime.reloadResources(settings);
             check(report.failed > 0 && report.retained > 0 && first == draw(0.25f), "Compile rejection lost old image");
             write(fragment, "#version 330 core\nout vec4 color;uniform vec3 gain;void main(){color=vec4(gain,1);}\n");
-            report = Shader::reloadChangedShaders(true);
+            report = runtime.reloadResources(settings, true);
             check(report.failed > 0 && first == draw(0.25f), "Uniform mismatch lost old image");
             write(directory / "outside.glsl", "// Outside the declared package root\n");
             write(fragment, "#version 330 core\n#include \"../outside.glsl\"\nout vec4 color;void main(){color=vec4(1);}\n");
-            report = Shader::reloadChangedShaders(true);
+            report = runtime.reloadResources(settings, true);
             check(report.failed > 0 && first == draw(0.25f), "Outside include accepted");
-            write(fragment, source); report = Shader::reloadChangedShaders(true);
+            write(fragment, source); report = runtime.reloadResources(settings, true);
             check(report.failed == 0 && report.reloaded > 0 && first == draw(0.25f), "Shader recovery failed");
             target.resize(31, 47, 1); const auto resized = draw(0.25f);
             check(resized.size() == 31 * 47 * 4 && resized == draw(0.25f), "Resize output differs");
@@ -95,6 +96,7 @@ int main(int argc, char** argv) {
         testShaderSceneMultiPass(std::filesystem::u8path(argv[1]), directory, vao);
         testShaderSceneEntry(std::filesystem::u8path(argv[1]), directory, vao);
         testShaderSceneTexturesGpu(std::filesystem::u8path(argv[1]), directory, vao);
+        testShaderSceneReload(std::filesystem::u8path(argv[1]), directory, vao);
         glDeleteVertexArrays(1, &vao);
         check(glGetError() == GL_NO_ERROR, "Exit GL error");
         std::cout << "ShaderScene real GL: parameters/time/camera, fixed repeat, Scene reference, compile/type/include failure retention, recovery, resize, discard clear and destruction PASS\n";
