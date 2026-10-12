@@ -2451,18 +2451,6 @@ void Application::drawInspectorPanel() {
             }
             if (!shaderTransactionSources_.empty()) ImGui::SetNextItemOpen(false, ImGuiCond_Always);
             if (EditorUi::section("Lighting & environment", true)) {
-            const bool enscapeAvailable = !rendererSettings_.enscapeShaderSceneResource.empty()
-                || (iris::builtinRenderPlugins().contains(iris::enscapePluginId)
-                &&iris::pluginEnabled(rendererSettings_.renderPlugins,iris::enscapePluginId));
-            ImGui::BeginDisabled(!enscapeAvailable || !rendererSettings_.shaderSceneResource.empty());
-            bool glslSelected=rendererSettings_.enscapeCubeShaderEnabled;
-            if (EditorUi::Checkbox((EditorUi::chinese ? "GLSL 云海" : "GLSL ocean and clouds"), &glslSelected)) {
-                EditorCommand change{EditorCommandType::SetRenderPipelineMode};change.flag=glslSelected;editorSession_.request(change);
-            }
-            ImGui::EndDisabled();
-            if (!enscapeAvailable) {
-                ImGui::TextWrapped("Render plugin unavailable: %s", iris::enscapePluginId);
-            }
             if (rendererSettings_.enscapeCubeShaderEnabled) {
                 // Tab activation and dock layout settle over the first few frames.
                 if (pendingGlslControlsScrollFrames_ > 0) {
