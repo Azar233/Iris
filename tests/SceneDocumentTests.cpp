@@ -476,12 +476,35 @@ int main() {
         SceneDocument parameterScene; parameterScene.renderer.shaderSceneResource=shaderManifest.generic_u8string();
         ModuleParameterOverride gain;gain.id="gain";gain.value.type=ModuleParameterType::Float;gain.value.number=.8f;
         parameterScene.renderer.shaderSceneParameters={gain};
+        parameterScene.renderer.shaderSceneHistory={false,false,.5f};
         const auto parameterPath=directory/"parameters.myscene";
         std::string parameterError;
         require(saveSceneDocument(parameterPath,parameterScene,parameterError),parameterError.c_str());
         SceneDocument reopened;
         require(loadSceneDocument(parameterPath,reopened,parameterError),parameterError.c_str());
         require(reopened.renderer.shaderSceneParameters.size()==1 && reopened.renderer.shaderSceneParameters[0].value.number==.8f,"ShaderScene override roundtrip failed");
+        require(reopened.renderer.shaderSceneHistory == parameterScene.renderer.shaderSceneHistory,"History policy roundtrip failed");
+        const auto rejectHistory = [&](const std::string& history) {
+            std::ofstream(directory/"invalid-history.myscene") << R"({"format":"MyRendererScene","version":2,"renderer":{"shaderSceneHistory":)" << history << R"(},"entities":[]})";
+            require(!loadSceneDocument(directory/"invalid-history.myscene",reopened,parameterError),"Invalid history policy accepted");
+            require(reopened.renderer.shaderSceneHistory == parameterScene.renderer.shaderSceneHistory,"Rejected history policy replaced document");
+        };
+        rejectHistory(R"({"version":2,"resetOnParameters":false,"resetOnCamera":false,"maximumTimeStep":0.5})");
+        rejectHistory(R"({"version":1,"resetOnParameters":0,"resetOnCamera":false,"maximumTimeStep":0.5})");
+        rejectHistory(R"({"version":1,"resetOnParameters":false,"resetOnCamera":"false","maximumTimeStep":0.5})");
+        rejectHistory(R"({"version":1,"resetOnParameters":false,"resetOnCamera":false,"maximumTimeStep":0})");
+        rejectHistory(R"({"version":1,"resetOnParameters":false,"resetOnCamera":false,"maximumTimeStep":11})");
+        rejectHistory(R"({"version":1,"resetOnParameters":false,"resetOnCamera":false,"maximumTimeStep":"0.5"})");
+        rejectHistory(R"({"version":1,"resetOnParameters":false,"resetOnCamera":false})");
+        rejectHistory(R"({"version":1,"resetOnParameters":false,"resetOnCamera":false,"maximumTimeStep":0.5,"typo":true})");
+        rejectHistory(R"({"version":1,"resetOnParameters":false,"resetOnCamera":false,"maximumTimeStep":0.5,"resetOnCamera":true})");
+        rejectHistory(R"({"version":1,"resetOnParameters":false,"resetOnCamera":false,"maximumTimeStep":0.5},"shaderSceneHistory":{"version":1,"resetOnParameters":true,"resetOnCamera":true,"maximumTimeStep":0.25})");
+        std::ofstream(directory/"legacy-history.myscene") << R"({"format":"MyRendererScene","version":1,"renderer":{},"entities":[]})";
+        SceneDocument legacyHistory;
+        require(loadSceneDocument(directory/"legacy-history.myscene",legacyHistory,parameterError),parameterError.c_str());
+        require(legacyHistory.renderer.shaderSceneHistory == iris::ShaderSceneHistoryPolicy{},"Old Scene history defaults changed");
+        auto invalidHistoryScene=parameterScene;invalidHistoryScene.renderer.shaderSceneHistory.maximumTimeStep=0;
+        require(!saveSceneDocument(directory/"rejected-history-save.myscene",invalidHistoryScene,parameterError),"Invalid history policy saved");
         const auto invalidPath=directory/"invalid-parameters.myscene";
         const auto rejectParameters=[&](const std::string& values){
             std::ofstream(invalidPath) << R"({"format":"MyRendererScene","version":2,"renderer":{"shaderSceneResource":"parameters.shaderscene","shaderSceneParameters":{"version":1,"values":)" << values << "}},\"entities\":[]}";
@@ -493,6 +516,7 @@ int main() {
         rejectParameters(R"([{"id":"missing","type":2,"value":0.4}])");
         rejectParameters(R"([{"id":"gain","type":2,"value":0.4},{"id":"gain","type":2,"value":0.5}])");
         require(loadSceneDocument(shaderManifest,reopened,parameterError) && reopened.renderer.shaderSceneParameters.empty(),"New package inherited previous overrides");
+        require(reopened.renderer.shaderSceneHistory == iris::ShaderSceneHistoryPolicy{},"New package inherited old history policy");
         std::cout << "ShaderScene override relative roundtrip / invalid transaction / new-package defaults PASS\n";
         std::cout << "Scene document repeat-load acceptance test passed\n";
         return 0;

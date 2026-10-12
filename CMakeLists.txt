@@ -403,7 +403,7 @@ if(BUILD_TESTING)
     add_executable(IrisShaderSceneTests tests/ShaderSceneTests.cpp tests/ShaderSceneTextureCpuTests.cpp)
     target_link_libraries(IrisShaderSceneTests PRIVATE IrisParameters glad_gl_core_33)
     iris_add_test(NAME shader-scene-package COMMAND IrisShaderSceneTests ${CMAKE_CURRENT_SOURCE_DIR}/assets/shader-scenes/textures)
-    add_executable(IrisShaderSceneGpuTests tests/ShaderSceneGpuTests.cpp tests/ShaderSceneMultiPassTests.cpp tests/ShaderSceneEntryTests.cpp tests/ShaderSceneTextureGpuTests.cpp tests/ShaderSceneReloadTests.cpp
+    add_executable(IrisShaderSceneGpuTests tests/ShaderSceneGpuTests.cpp tests/ShaderSceneMultiPassTests.cpp tests/ShaderSceneEntryTests.cpp tests/ShaderSceneTextureGpuTests.cpp tests/ShaderSceneReloadTests.cpp tests/ShaderSceneHistoryGpuTests.cpp
         src/render/Shader.cpp src/render/Camera.cpp src/render/RenderTarget.cpp src/render/OpenGlStateCache.cpp
         src/scene/Scene.cpp src/scene/SceneDocument.cpp)
     target_include_directories(IrisShaderSceneGpuTests PRIVATE src ${assimp_SOURCE_DIR}/contrib/rapidjson/include

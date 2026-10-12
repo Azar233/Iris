@@ -137,6 +137,7 @@ struct ShaderSceneRenderer::State {
     float time{0}, timeDelta{0};
     glm::mat4 view{1}, projection{1};
     std::vector<ModuleParameterValue> parameterValues;
+    ShaderSceneHistoryPolicy historyPolicy;
     std::array<GLuint, 8> timingQueries{};
     std::array<bool, 4> timingPending{};
     std::size_t timingCursor{0};
@@ -157,6 +158,8 @@ void ShaderSceneRenderer::prepareResources(const RendererSettings& settings, int
     capture::watchInput(std::filesystem::u8path(shaderSceneResourceFor(settings)));
     try {
     auto candidate = std::make_unique<State>(); std::string error;
+    if (!validateShaderSceneHistoryPolicy(settings.shaderSceneHistory, error)) throw std::runtime_error(error);
+    candidate->historyPolicy = settings.shaderSceneHistory;
     const auto resource = shaderSceneResourceFor(settings);
     const auto input = capture::snapshot(std::filesystem::u8path(resource));
     candidate->manifestInput = input;
@@ -244,6 +247,9 @@ void ShaderSceneRenderer::renderFrame(const RenderPluginFrame& frame) {
     if (!std::isfinite(frame.timeSeconds) || frame.width < 1 || frame.height < 1
         || frame.target.width() != frame.width || frame.target.height() != frame.height) throw std::runtime_error("Invalid ShaderScene frame");
     auto& state = *state_;
+    std::string policyError;
+    if (!validateShaderSceneHistoryPolicy(frame.settings.shaderSceneHistory, policyError)) throw std::runtime_error(policyError);
+    const auto& policy = frame.settings.shaderSceneHistory;
     const auto parameters = shaderSceneParameterValues(state.package, frame.settings);
     bool parameterChanged = parameters.size() != state.parameterValues.size();
     if (!parameterChanged) for (std::size_t i = 0; i < parameters.size(); ++i)
@@ -264,8 +270,10 @@ void ShaderSceneRenderer::renderFrame(const RenderPluginFrame& frame) {
     const auto view = frame.camera.viewMatrix();
     const auto projection = frame.camera.projectionMatrix(static_cast<float>(frame.width) / frame.height);
     const float delta = frame.timeSeconds - state.time;
-    const bool reset = state.invalidated || parameterChanged || !state.rendered || !sameMatrix(view, state.view) || !sameMatrix(projection, state.projection)
-        || delta < 0 || delta > shaderSceneMaximumTimeStep || state.frameIndex == std::numeric_limits<int>::max();
+    const bool reset = state.invalidated || !state.rendered || policy != state.historyPolicy
+        || (policy.resetOnParameters && parameterChanged)
+        || (policy.resetOnCamera && (!sameMatrix(view, state.view) || !sameMatrix(projection, state.projection)))
+        || delta < 0 || delta > policy.maximumTimeStep || state.frameIndex == std::numeric_limits<int>::max();
     state.gpuTimeUpdated = false;
     std::size_t timingIndex = state.timingPending.size();
     for (std::size_t offset = 0; offset < state.timingPending.size(); ++offset) {
@@ -353,6 +361,7 @@ void ShaderSceneRenderer::renderFrame(const RenderPluginFrame& frame) {
     glActiveTexture(static_cast<GLenum>(active)); glBindVertexArray(0); glUseProgram(0); frame.target.unbind();
     state.rendered = true; state.invalidated = false; state.time = frame.timeSeconds; state.view = view; state.projection = projection;
     state.parameterValues = parameters;
+    state.historyPolicy = policy;
 }
 RenderPluginFrameInfo ShaderSceneRenderer::frameInfo() const {
     RenderPluginFrameInfo info;

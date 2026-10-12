@@ -4,12 +4,12 @@
 #include <vector>
 #include <cstdint>
 #include "module/ParameterRegistry.h"
+#include "plugin/ShaderSceneHistory.h"
 struct RendererSettings;
 
 namespace iris {
 inline constexpr std::size_t shaderSceneMaximumPasses = 4;
 inline constexpr std::size_t shaderSceneMaximumChannels = 4;
-inline constexpr float shaderSceneMaximumTimeStep = 0.25f;
 enum class ShaderSceneFormat { DisplayRgba8, LinearRgba16f };
 enum class ShaderSceneTextureFormat { LinearR8, LinearRgba8, SrgbRgba8 };
 enum class ShaderSceneTextureEncoding { Raw, Png, HashV1 };

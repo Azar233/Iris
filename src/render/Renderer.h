@@ -22,6 +22,7 @@ namespace iris { struct ShaderScenePackage; struct ShaderSceneRuntimeStatus; }
 #include "scene/Light.h"
 #include "render/WaterWaves.h"
 #include "plugin/RenderPluginConfiguration.h"
+#include "plugin/ShaderSceneHistory.h"
 
 class Camera;
 class CausticsMap;
@@ -255,6 +256,7 @@ struct RendererSettings {
     int temporalDebugView{0};
     int skinningDebugView{0};
     bool shaderHotReloadEnabled{true};
+    iris::ShaderSceneHistoryPolicy shaderSceneHistory;
 };
 
 class Renderer {

@@ -5,12 +5,22 @@
 #include <fstream>
 #include <iostream>
 #include <stdexcept>
+#include <limits>
 
 void check(bool result, const char* message) { if (!result) throw std::runtime_error(message); }
 void testShaderSceneTexturesCpu(const std::filesystem::path&);
 int main(int argc, char** argv) {
     try {
         const auto root = std::filesystem::temp_directory_path() / "IrisShaderSceneCpuTests";
+        iris::ShaderSceneHistoryPolicy policy;bool policyChanged=false;std::string policyError;
+        check(iris::updateShaderSceneHistoryPolicy(policy,policy,policyChanged,policyError) && !policyChanged,"No-op history policy changed");
+        for(const float invalid:{0.f,-1.f,11.f,std::numeric_limits<float>::infinity(),std::numeric_limits<float>::quiet_NaN()}) {
+            auto requested=policy;requested.maximumTimeStep=invalid;
+            check(!iris::updateShaderSceneHistoryPolicy(policy,requested,policyChanged,policyError) && !policyChanged
+                && policy==iris::ShaderSceneHistoryPolicy{},"Invalid history policy mutated settings");
+        }
+        check(iris::updateShaderSceneHistoryPolicy(policy,{false,false,.001f},policyChanged,policyError) && policyChanged,"Minimum history step rejected");
+        check(iris::updateShaderSceneHistoryPolicy(policy,{true,true,10.f},policyChanged,policyError) && policyChanged,"Maximum history step rejected");
         std::filesystem::create_directories(root);
         std::ofstream(root / "image.frag") << "#version 330 core\nvoid main(){}\n";
         const std::string valid = R"({"version":1,"id":"test","resourceRoot":".","fragment":"image.frag","entry":"main","output":"display-rgba8","camera":"project","author":"test","license":"MIT","parameters":[{"id":"gain","label":"Gain","type":"float","default":0.5,"min":0,"max":1}]})";

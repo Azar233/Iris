@@ -29,6 +29,7 @@ void testShaderSceneMultiPass(const std::filesystem::path&, const std::filesyste
 void testShaderSceneEntry(const std::filesystem::path&, const std::filesystem::path&, unsigned int);
 void testShaderSceneTexturesGpu(const std::filesystem::path&, const std::filesystem::path&, unsigned int);
 void testShaderSceneReload(const std::filesystem::path&, const std::filesystem::path&, unsigned int);
+void testShaderSceneHistory(const std::filesystem::path&, const std::filesystem::path&, unsigned int);
 int main(int argc, char** argv) {
     if (!glfwInit()) return 1;
     glfwWindowHint(GLFW_VISIBLE, GLFW_FALSE); glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
@@ -97,6 +98,7 @@ int main(int argc, char** argv) {
         testShaderSceneEntry(std::filesystem::u8path(argv[1]), directory, vao);
         testShaderSceneTexturesGpu(std::filesystem::u8path(argv[1]), directory, vao);
         testShaderSceneReload(std::filesystem::u8path(argv[1]), directory, vao);
+        testShaderSceneHistory(std::filesystem::u8path(argv[1]), directory, vao);
         glDeleteVertexArrays(1, &vao);
         check(glGetError() == GL_NO_ERROR, "Exit GL error");
         std::cout << "ShaderScene real GL: parameters/time/camera, fixed repeat, Scene reference, compile/type/include failure retention, recovery, resize, discard clear and destruction PASS\n";

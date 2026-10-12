@@ -7,6 +7,7 @@
 #include <vector>
 
 #include "runtime/Timeline.h"
+#include "plugin/ShaderSceneHistory.h"
 
 enum class EditorRenderBackend {
     Raster = 0,
@@ -58,6 +59,7 @@ enum class EditorCommandType {
     RecompileShaderScene,
     SetShaderSceneParameter,
     ResetShaderSceneHistory,
+    SetShaderSceneHistoryPolicy,
     OpenWorkspaceSource,
     OpenWorkspaceDirectory,
     SetRenderPipelineMode,
@@ -405,6 +407,7 @@ struct EditorCommand {
     EditorInstanceSettingsPayload instance;
     EditorAtmosphereSettingsPayload atmosphere;
     EditorModuleParameterPayload moduleParameter;
+    iris::ShaderSceneHistoryPolicy shaderSceneHistory;
 };
 
 class EditorSession {

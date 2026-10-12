@@ -71,6 +71,11 @@ void writeRendererSettings(Writer& writer, const RendererSettings& settings,
         writer.EndArray(); writer.EndObject();
     }
     std::string pluginError;
+    if (!iris::validateShaderSceneHistoryPolicy(settings.shaderSceneHistory, pluginError)) throw std::runtime_error(pluginError);
+    writer.Key("shaderSceneHistory"); writer.StartObject(); writer.Key("version"); writer.Int(1);
+    writer.Key("resetOnParameters"); writer.Bool(settings.shaderSceneHistory.resetOnParameters);
+    writer.Key("resetOnCamera"); writer.Bool(settings.shaderSceneHistory.resetOnCamera);
+    writer.Key("maximumTimeStep"); writer.Double(settings.shaderSceneHistory.maximumTimeStep); writer.EndObject();
     if(!iris::validPluginConfigurationShape(settings.renderPlugins,pluginError))throw std::runtime_error(pluginError);
     writer.Key("renderPlugins");writer.StartObject();writer.Key("version");writer.Int(1);
     writer.Key("entries");writer.StartArray();
@@ -919,6 +924,20 @@ bool loadSceneDocument(
                 if (!iris::loadShaderScenePackage(std::filesystem::u8path(iris::shaderSceneResourceFor(loaded.renderer)), package, error))
                     throw std::runtime_error(error);
                 iris::shaderSceneParameterValues(package, loaded.renderer);
+            }
+            if (const auto* history = optionalMember(*renderer, "shaderSceneHistory")) {
+                if (!history->IsObject() || history->MemberCount() != 4 || !history->HasMember("version")
+                    || !(*history)["version"].IsInt() || (*history)["version"].GetInt() != 1
+                    || !history->HasMember("resetOnParameters") || !history->HasMember("resetOnCamera")
+                    || !history->HasMember("maximumTimeStep")) throw std::runtime_error("Invalid shaderSceneHistory version/fields");
+                std::size_t occurrences = 0;
+                for (auto member = renderer->MemberBegin(); member != renderer->MemberEnd(); ++member)
+                    if (std::string(member->name.GetString(), member->name.GetStringLength()) == "shaderSceneHistory") ++occurrences;
+                if (occurrences != 1) throw std::runtime_error("Duplicate shaderSceneHistory");
+                loaded.renderer.shaderSceneHistory.resetOnParameters = readBool(*history, "resetOnParameters", true);
+                loaded.renderer.shaderSceneHistory.resetOnCamera = readBool(*history, "resetOnCamera", true);
+                loaded.renderer.shaderSceneHistory.maximumTimeStep = readFloat(*history, "maximumTimeStep", iris::shaderSceneMaximumTimeStep);
+                if (!iris::validateShaderSceneHistoryPolicy(loaded.renderer.shaderSceneHistory, error)) throw std::runtime_error(error);
             }
             if (const auto* parameters = optionalMember(*renderer, "renderPluginParameters")) {
                 if (!parameters->IsObject() || !parameters->HasMember("version")

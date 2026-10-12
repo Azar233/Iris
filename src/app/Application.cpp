@@ -1047,6 +1047,7 @@ int Application::run(const std::filesystem::path& initialModel) {
     if (std::getenv("IRIS_SHADER_DIAGNOSTIC_UI_TEST")) smokeTestFrames = 20;
     if (std::getenv("IRIS_SHADER_PARAMETER_UI_TEST")) smokeTestFrames = 24;
     if (std::getenv("IRIS_SHADER_PACKAGE_RELOAD_ACCEPTANCE_DIRECTORY")) smokeTestFrames = 18;
+    if (std::getenv("IRIS_SHADER_HISTORY_UI_TEST")) smokeTestFrames = 24;
     const auto cpuPreviewSmokeDeadline = std::chrono::steady_clock::now()
         + std::chrono::seconds(30);
     const auto thumbnailDeadline = std::chrono::steady_clock::now() + std::chrono::seconds(30);
@@ -1091,6 +1092,7 @@ int Application::run(const std::filesystem::path& initialModel) {
     if(const char* directory=std::getenv("IRIS_SHADER_PARAMETER_ACCEPTANCE_DIRECTORY"))runShaderParameterAcceptance(std::filesystem::u8path(directory));
     if(const char* directory=std::getenv("IRIS_EXTERNAL_SHADER_PACKAGE_ACCEPTANCE_DIRECTORY"))runExternalShaderPackageAcceptance(std::filesystem::u8path(directory));
     if(const char* directory=std::getenv("IRIS_SHADER_PACKAGE_RELOAD_ACCEPTANCE_DIRECTORY"))runShaderPackageReloadAcceptance(std::filesystem::u8path(directory));
+    if(const char* directory=std::getenv("IRIS_SHADER_HISTORY_ACCEPTANCE_DIRECTORY"))runShaderHistoryAcceptance(std::filesystem::u8path(directory));
     if (std::getenv("IRIS_SHADER_WORKSPACE_UI_BAD") && std::getenv("MYRENDERER_SMOKE_TEST")
         && std::getenv("IRIS_SHADER_WORKSPACE_ACCEPTANCE") && std::getenv("MYRENDERER_SHADER_SCENE_ACCEPTANCE_DIRECTORY")) {
         const auto inspection=inspectWorkspaceShaderPackage(std::filesystem::u8path(iris::shaderSceneResourceFor(rendererSettings_)));
@@ -1431,6 +1433,13 @@ int Application::run(const std::filesystem::path& initialModel) {
         shaderParameterUiPassed = shaderParameterUiPhase_ == 4 && shaderParameterUiFloatChanged_ && shaderParameterUiBoolChanged_
             && values.size() == 2 && values[0].number > .6f && !values[1].boolean;
     }
+    if (std::getenv("IRIS_SHADER_HISTORY_UI_TEST")) {
+        shaderHistoryUiPassed_ = shaderHistoryUiPhase_ == 4 && !rendererSettings_.shaderSceneHistory.resetOnParameters
+            && !rendererSettings_.shaderSceneHistory.resetOnCamera;
+        std::cout << "ShaderScene history real parameter+camera toggles: " << (shaderHistoryUiPassed_ ? "PASS" : "FAIL") << '\n';
+        const char* historyDirectory=std::getenv("IRIS_SHADER_HISTORY_ACCEPTANCE_DIRECTORY");
+        if (shaderHistoryUiPassed_) shaderHistoryUiPassed_ = historyDirectory && saveSceneTo(std::filesystem::u8path(historyDirectory)/"ui-saved.myscene");
+    }
     shutdown();
     if (lightUiInteraction && !lightUiInteractionComplete_) std::cerr << "Light UI incomplete: phase=" << lightUiInteractionPhase_ << ", lights=" << scene_.lightEntityCount() << "\n";
     if (std::getenv("IRIS_SHADER_PARAMETER_UI_TEST")) std::cout << "ShaderScene real Float+Bool controls: " << (shaderParameterUiPassed ? "PASS" : "FAIL") << '\n';
@@ -1438,6 +1447,7 @@ int Application::run(const std::filesystem::path& initialModel) {
         && (shaderTransactionSources_.empty() || (shaderTransactionDone && shaderTransactionPassed))
         && (!std::getenv("MYRENDERER_SHADER_TRANSACTION_UI_RETRY") || shaderRetryInteractionComplete_)
         && (!std::getenv("IRIS_SHADER_PACKAGE_RELOAD_UI_RETRY") || shaderRetryInteractionComplete_)
+        && (!std::getenv("IRIS_SHADER_HISTORY_UI_TEST") || shaderHistoryUiPassed_)
         && (!std::getenv("MYRENDERER_PLUGIN_RESOURCE_UI_TEST") || shaderRetryInteractionComplete_)
         && (!renderdocCaptureRequested || renderdocCaptureTriggered)
         && referenceComparisonPassed && cpuPreviewSmokePassed && thumbnailAcceptancePassed
