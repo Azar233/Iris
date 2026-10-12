@@ -4,6 +4,7 @@
 #include <filesystem>
 #include <string>
 #include <vector>
+#include <unordered_map>
 #include "app/WorkspaceShaderPackage.h"
 
 enum class WorkspaceAssetCategory {
@@ -64,6 +65,7 @@ class WorkspaceAssetCatalog final {
 
   private:
     std::vector<WorkspaceAssetRecord> records_;
+    std::unordered_map<std::string,std::size_t> canonicalIndex_;
     std::vector<WorkspaceShaderPackage> shaderPackages_;
     std::uint64_t generation_{0U};
 };

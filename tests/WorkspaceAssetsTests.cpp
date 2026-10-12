@@ -5,6 +5,12 @@
 #include <iostream>
 #include <stdexcept>
 #include <string>
+#ifdef _WIN32
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#endif
 
 namespace {
 
@@ -18,6 +24,14 @@ void writeFixture(const std::filesystem::path& path, const std::string& text = "
     output << text;
     require(static_cast<bool>(output), "failed to write Workspace asset fixture");
 }
+#ifdef _WIN32
+std::filesystem::path shortAlias(const std::filesystem::path& path) {
+    std::wstring buffer(32768,L'\0');
+    const auto length=GetShortPathNameW(path.c_str(),buffer.data(),static_cast<DWORD>(buffer.size()));
+    if (!length || length>=buffer.size()) return path; // Volume may not provide 8.3 aliases.
+    buffer.resize(length);return std::filesystem::path(buffer);
+}
+#endif
 
 } // namespace
 
@@ -72,6 +86,10 @@ int main() {
                 "stable preview cache key was not generated");
         require(catalog.find(modelSearch.front()->path) == modelSearch.front(),
                 "catalog path lookup failed");
+#ifdef _WIN32
+        require(catalog.find(shortAlias(modelSearch.front()->path))==modelSearch.front(),
+                "native asset short-path lookup lost original record");
+#endif
 
         const auto modelExtensions = catalog.extensions(WorkspaceAssetCategory::Models);
         require(modelExtensions.size() == 1U && modelExtensions.front() == ".gltf",
@@ -118,6 +136,12 @@ int main() {
         require(externalCatalog.registerShaderPackage(project,manifest,error),error.c_str());
         require(externalCatalog.registeredShaderPackageCount()==1 && externalCatalog.records().size()==4,"External declared input registration failed");
         require(externalCatalog.find(include) && externalCatalog.find(include)->displayName==u8"细节.glsl","Unicode source identity lost");
+#ifdef _WIN32
+        require(externalCatalog.find(shortAlias(include))==externalCatalog.find(include),"external include short-path identity lost");
+        require(externalCatalog.registerShaderPackage(project,shortAlias(manifest),error)
+            && externalCatalog.registeredShaderPackageCount()==1,"short-path registration duplicated package");
+        std::cout<<"Windows 8.3 path alias lookup and registration PASS (where aliases are available)\n";
+#endif
         require(!externalCatalog.find(external/"resources/unused.frag") && !externalCatalog.find(external/"unrelated.obj"),"Unreferenced external files were indexed");
         require(externalCatalog.registerShaderPackage(project,external/"resources/../scene.shaderscene",error)
             && externalCatalog.registeredShaderPackageCount()==1 && externalCatalog.records().size()==4,"Alias registration duplicated files");
@@ -125,6 +149,10 @@ int main() {
         require(!externalCatalog.registerShaderPackage(project,external/"missing.shaderscene",error)
             && externalCatalog.generation()==generation && externalCatalog.registeredShaderPackageCount()==1,"Rejected registration changed catalog");
         std::filesystem::remove(external/"resources/input.raw");
+#ifdef _WIN32
+        require(externalCatalog.find(shortAlias(external)/"resources/input.raw")==externalCatalog.find(external/"resources/input.raw"),
+                "missing leaf changed cached alias identity before refresh");
+#endif
         require(externalCatalog.refresh(project,error) && externalCatalog.find(external/"resources/input.raw")->missing,"Missing declared texture was discarded");
         writeFixture(manifest,"{");
         require(externalCatalog.refresh(project,error) && externalCatalog.find(include),"Malformed Manifest lost known dependencies");

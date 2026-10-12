@@ -7,6 +7,12 @@
 #include <initializer_list>
 #include <set>
 #include <system_error>
+#ifdef _WIN32
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#endif
 
 namespace {
 
@@ -22,6 +28,28 @@ std::string pathKey(const std::filesystem::path& path) {
 #else
     return path.generic_u8string();
 #endif
+}
+std::filesystem::path expandLongPath(const std::filesystem::path& path) {
+#ifdef _WIN32
+    // MinGW's weakly_canonical does not expand 8.3 names like MSVC does.
+    // Expand the existing prefix so missing declared leaves still have one identity.
+    auto prefix=path;std::filesystem::path suffix;
+    std::wstring buffer(32768,L'\0');
+    while (!prefix.empty()) {
+        const auto length=GetLongPathNameW(prefix.c_str(),buffer.data(),static_cast<DWORD>(buffer.size()));
+        if (length && length<buffer.size()) {
+            const std::filesystem::path expanded(buffer.substr(0,length));
+            return suffix.empty()?expanded:expanded/suffix;
+        }
+        const auto parent=prefix.parent_path();
+        if (parent==prefix) break;
+        suffix=suffix.empty()?prefix.filename():prefix.filename()/suffix;prefix=parent;
+    }
+#endif
+    return path;
+}
+std::string canonicalKey(const std::filesystem::path& path) {
+    return pathKey(expandLongPath(path));
 }
 
 bool endsWith(const std::string& value, const char* suffix) {
@@ -174,6 +202,7 @@ bool WorkspaceAssetCatalog::refresh(const std::filesystem::path& sourceRoot,
 
         std::vector<WorkspaceAssetRecord> candidate;
         std::set<std::string> identities;
+        std::unordered_map<std::string,std::string> canonicalKeys;
         // Package manifests and native shader roots are both project resources.
         for (const auto& scanRoot : {assetRoot, sourceRoot / "shaders"}) {
         if (!std::filesystem::is_directory(scanRoot)) continue;
@@ -189,7 +218,8 @@ bool WorkspaceAssetCatalog::refresh(const std::filesystem::path& sourceRoot,
             if (!classify(relative, category)) continue;
             const auto canonical=std::filesystem::weakly_canonical(entry.path());
             const bool shaderAsset=category==WorkspaceAssetCategory::ShaderScenes || category==WorkspaceAssetCategory::Shaders;
-            const bool inserted=identities.insert(pathKey(canonical)).second;
+            const auto identity=canonicalKey(canonical);
+            const bool inserted=identities.insert(identity).second;
             if (shaderAsset && !inserted) continue;
             std::error_code sizeError;
             const std::uintmax_t size = entry.file_size(sizeError);
@@ -206,6 +236,7 @@ bool WorkspaceAssetCatalog::refresh(const std::filesystem::path& sourceRoot,
                                 timeError ? std::filesystem::file_time_type{} : modified),
                 false
             });
+            canonicalKeys.emplace(pathKey(candidate.back().path),identity);
         }
         }
         auto packages=shaderPackages_;
@@ -220,7 +251,8 @@ bool WorkspaceAssetCatalog::refresh(const std::filesystem::path& sourceRoot,
                 else if (file.role=="Texture") category=WorkspaceAssetCategory::Textures;
                 else continue; // README/LICENSE remain visible in the package Inspector.
                 const auto canonical=std::filesystem::weakly_canonical(file.path);
-                if (!identities.insert(pathKey(canonical)).second) continue;
+                const auto identity=canonicalKey(canonical);
+                if (!identities.insert(identity).second) continue;
                 std::error_code fileError;
                 const bool missing=!std::filesystem::is_regular_file(canonical,fileError);
                 const auto size=missing?0U:std::filesystem::file_size(canonical,fileError);
@@ -229,6 +261,7 @@ bool WorkspaceAssetCatalog::refresh(const std::filesystem::path& sourceRoot,
                 candidate.push_back({category,canonical,canonical,canonical.filename().u8string(),
                     lowercase(canonical.extension().u8string()),bytes,
                     previewCacheKey(canonical,bytes,fileError?std::filesystem::file_time_type{}:modified),missing});
+                canonicalKeys.emplace(pathKey(candidate.back().path),identity);
             }
         }
         std::sort(candidate.begin(), candidate.end(), [](const auto& left, const auto& right) {
@@ -236,7 +269,11 @@ bool WorkspaceAssetCatalog::refresh(const std::filesystem::path& sourceRoot,
             return lowercase(left.relativePath.generic_u8string())
                 < lowercase(right.relativePath.generic_u8string());
         });
+        std::unordered_map<std::string,std::size_t> canonicalIndex;
+        for (std::size_t index=0;index<candidate.size();++index)
+            canonicalIndex.emplace(canonicalKeys.at(pathKey(candidate[index].path)),index);
         records_ = std::move(candidate);
+        canonicalIndex_=std::move(canonicalIndex);
         shaderPackages_=std::move(packages);
         ++generation_;
         error.clear();
@@ -249,7 +286,7 @@ bool WorkspaceAssetCatalog::refresh(const std::filesystem::path& sourceRoot,
 bool WorkspaceAssetCatalog::registerShaderPackage(const std::filesystem::path& sourceRoot,
     const std::filesystem::path& manifest,std::string& error) {
     try {
-        const auto canonical=std::filesystem::weakly_canonical(manifest);
+        const auto canonical=expandLongPath(std::filesystem::weakly_canonical(manifest));
         auto package=inspectWorkspaceShaderPackage(canonical);
         if (lowercase(canonical.extension().u8string())!=".shaderscene" || !package.manifestReadable
             || !std::filesystem::is_directory(package.root)) {
@@ -257,7 +294,7 @@ bool WorkspaceAssetCatalog::registerShaderPackage(const std::filesystem::path& s
         }
         auto candidate=*this;
         auto found=std::find_if(candidate.shaderPackages_.begin(),candidate.shaderPackages_.end(),
-            [&](const auto& entry){return pathKey(entry.manifest)==pathKey(canonical);});
+            [&](const auto& entry){return canonicalKey(entry.manifest)==canonicalKey(canonical);});
         if (found==candidate.shaderPackages_.end()) {
             if (find(canonical)) {error.clear();return true;} // Already owned by a project scan root.
             if (candidate.shaderPackages_.size()>=64) {error="Workspace supports at most 64 session ShaderScene packages";return false;}
@@ -274,11 +311,17 @@ std::size_t WorkspaceAssetCatalog::count(WorkspaceAssetCategory category) const 
 }
 
 const WorkspaceAssetRecord* WorkspaceAssetCatalog::find(const std::filesystem::path& path) const {
+    if (path.empty()) return nullptr;
     const auto normalized = pathKey(path.lexically_normal());
     const auto found = std::find_if(records_.begin(), records_.end(), [&](const auto& record) {
         return pathKey(record.path) == normalized;
     });
-    return found == records_.end() ? nullptr : &*found;
+    if (found!=records_.end()) return &*found;
+    std::error_code error;
+    const auto canonical=std::filesystem::weakly_canonical(path,error);
+    if (error) return nullptr;
+    const auto identity=canonicalIndex_.find(canonicalKey(canonical));
+    return identity==canonicalIndex_.end()?nullptr:&records_[identity->second];
 }
 
 std::vector<const WorkspaceAssetRecord*> WorkspaceAssetCatalog::filter(
