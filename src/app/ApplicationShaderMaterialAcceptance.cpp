@@ -2,6 +2,7 @@
 #include "render/GpuModel.h"
 #include "module/BuiltinModules.h"
 #include <glad/gl.h>
+#include <imgui.h>
 #include <fstream>
 #include <iostream>
 #include <stdexcept>
@@ -113,4 +114,56 @@ void Application::runShaderMaterialAcceptance(const std::filesystem::path& direc
     }
     rendererSettings_.shaderHotReloadEnabled=false;animationEnabled_=false;
     std::cout<<"ShaderMaterial real Forward / parameters / Scene roundtrip / duplication / clear / compile transaction / reload repair / unsupported model+CPU+Deferred PASS\n";
+}
+
+void Application::runShaderMaterialWorkspaceAcceptance(const std::filesystem::path& directory) {
+    runShaderMaterialAcceptance(directory);
+    const auto check=[](bool ok,const char* message){if(!ok)throw std::runtime_error(message);};
+    const auto shader=directory/"surface.frag";
+    std::ifstream in(shader);std::string source(std::istreambuf_iterator<char>(in),{});
+    source.insert(source.find('\n')+1,"#include \"workspace.glsl\"\n");
+    std::ofstream(shader)<<source;
+    std::ofstream(directory/"workspace.glsl")<<"// valid include\nfloat workspaceValue(){return .7;}\n";
+    auto settings=rendererSettings_;settings.shaderHotReloadEnabled=false;settings.water.timeSeconds=0;
+    renderer_->render(scene_.buildRenderItems(),camera_,settings,640,360);glFinish();
+    std::string error;check(renderer_->saveScreenshot(directory/"expected.png",error),"Cannot save expected material output");
+    EditorCommand clear{EditorCommandType::SetEntityShaderMaterial,selectedSceneEntity_};editorSession_.request(clear);processEditorCommands();
+    const auto before=renderer_->historyInvalidationRevision();
+    const auto count=scene_.entities().size();const auto scenePath=currentScenePath_;
+    EditorCommand inspect{EditorCommandType::OpenSceneAsset};inspect.text=(directory/"checker.shadermaterial").u8string();
+    editorSession_.request(inspect);processEditorCommands();
+    check(scene_.entities().size()==count && currentScenePath_==scenePath && !scene_.hasShaderMaterials()
+        && before==renderer_->historyInvalidationRevision(),"Inspecting a material package replaced Scene or history");
+    check(workspaceAssets_.find(directory/"workspace.glsl") && inspectWorkspaceShaderPackage(directory/"checker.shadermaterial").modelMaterial,
+        "Material dependencies were not registered");
+    shaderMaterialWorkspaceDirectory_=directory;shaderMaterialWorkspaceEntityCount_=count;
+    shaderWorkspaceCompileAttempts_=0;shaderWorkspaceLastCompileAccepted_=false;
+    if(std::getenv("IRIS_SHADER_MATERIAL_WORKSPACE_NO_TARGET")) {
+        selectEntity(invalidSceneEntityId);shaderMaterialWorkspacePhase_=13;
+    }
+    animationTimeSeconds_=0;animationTimeFixed_=true;animationPlaying_=false;animationEnabled_=false;
+    std::cout<<"Model package inspection preserved Scene/history and registered include inputs PASS\n";
+}
+void Application::interactShaderMaterialWorkspace(int phase,int frame) {
+    if(shaderMaterialWorkspaceDirectory_.empty() || shaderBrowserUiFrames_<frame) return;
+    auto& io=ImGui::GetIO();
+    if(shaderMaterialWorkspacePhase_==phase) {
+        if(!ImGui::IsItemVisible()){ImGui::SetScrollHereY(.5f);return;}
+        const auto a=ImGui::GetItemRectMin(),b=ImGui::GetItemRectMax();
+        io.AddFocusEvent(true);io.AddMousePosEvent((a.x+b.x)*.5f,(a.y+b.y)*.5f);io.AddMouseButtonEvent(0,true);++shaderMaterialWorkspacePhase_;
+    } else if(shaderMaterialWorkspacePhase_==phase+1){io.AddMouseButtonEvent(0,false);++shaderMaterialWorkspacePhase_;}
+}
+bool Application::finishShaderMaterialWorkspaceAcceptance() {
+    if(shaderMaterialWorkspaceDirectory_.empty())return true;
+    bool passed=shaderMaterialWorkspacePhase_==12 && shaderWorkspaceCompileAttempts_==3 && scene_.hasShaderMaterials()
+        && scene_.entities().size()==shaderMaterialWorkspaceEntityCount_ && shaderWorkspaceDiagnostics_.empty();
+    if(shaderMaterialWorkspacePhase_==13)passed=selectedSceneEntity_==invalidSceneEntityId && !scene_.hasShaderMaterials()
+        && shaderWorkspaceCompileAttempts_==0 && scene_.entities().size()==shaderMaterialWorkspaceEntityCount_;
+    if(passed) {
+        auto settings=rendererSettings_;settings.shaderHotReloadEnabled=false;settings.water.timeSeconds=0;
+        renderer_->render(scene_.buildRenderItems(),camera_,settings,640,360);glFinish();
+        std::string error;passed=glGetError()==GL_NO_ERROR && renderer_->saveScreenshot(shaderMaterialWorkspaceDirectory_/"result.png",error);
+    }
+    std::cout<<"Material workspace real bind/recompile/include navigation/repair: "<<(passed?"PASS":"FAIL")
+        <<" phase="<<shaderMaterialWorkspacePhase_<<" compiles="<<shaderWorkspaceCompileAttempts_<<'\n';return passed;
 }

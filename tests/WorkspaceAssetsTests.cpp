@@ -170,6 +170,11 @@ int main() {
         require(externalCatalog.filter(WorkspaceAssetCategory::ShaderScenes,"scene.shaderscene").size()==2
             && externalCatalog.registeredShaderPackageCount()==3,"Same-name packages merged identities");
         require(!externalCatalog.refresh(project/"missing",error) && externalCatalog.registeredShaderPackageCount()==3,"Failed refresh changed registrations");
+        const auto materialManifest=external/"surface.shadermaterial";
+        writeFixture(materialManifest,R"({"version":1,"id":"surface","author":"test","license":"MIT","resourceRoot":"resources","fragment":"image.frag"})");
+        require(externalCatalog.registerShaderPackage(project,materialManifest,error),error.c_str());
+        require(externalCatalog.find(materialManifest)->category==WorkspaceAssetCategory::ShaderScenes,
+            "Material manifest classified as ordinary source or Scene");
         std::cout<<"External packages / Unicode / declared-only / alias+shared identity / missing+malformed recovery / same-name / transactional refresh PASS\n";
         std::filesystem::remove_all(root, cleanupError);
         std::cout << "Workspace asset catalog classification, filtering, and refresh tests passed\n";

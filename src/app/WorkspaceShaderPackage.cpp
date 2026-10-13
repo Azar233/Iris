@@ -71,6 +71,7 @@ WorkspaceShaderPackage inspectWorkspaceShaderPackage(const std::filesystem::path
     Inspector index;
     index.result.manifest=std::filesystem::absolute(manifest).lexically_normal();
     index.result.root=index.result.manifest.parent_path();
+    index.result.modelMaterial=index.result.manifest.extension()==".shadermaterial";
     try {
         index.add(index.result.manifest,"Manifest","Package");
         rapidjson::Document json; const auto text=readText(index.result.manifest);
@@ -98,7 +99,7 @@ WorkspaceShaderPackage inspectWorkspaceShaderPackage(const std::filesystem::path
             }
         } else {
             std::set<std::filesystem::path> stack;
-            index.source(inside(index.result.root,index.result.root,field(json,"fragment")),"Pass Image",stack);
+            index.source(inside(index.result.root,index.result.root,field(json,"fragment")),index.result.modelMaterial ? "Material surface" : "Pass Image",stack);
         }
         if(json.HasMember("textures") && json["textures"].IsArray()) {
             if(json["textures"].Size()>8) throw std::runtime_error("Inspection supports at most 8 textures");

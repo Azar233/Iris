@@ -1107,6 +1107,7 @@ int Application::run(const std::filesystem::path& initialModel) {
     if (std::getenv("IRIS_SHADER_HISTORY_UI_TEST")) smokeTestFrames = 24;
     if (std::getenv("IRIS_SHADER_MOUSE_UI_TEST")) smokeTestFrames = 32;
     if (std::getenv("IRIS_SHADER_MATERIAL_UI_TEST")) smokeTestFrames = 32;
+    if (std::getenv("IRIS_SHADER_MATERIAL_WORKSPACE_DIRECTORY")) smokeTestFrames = 48;
     const auto cpuPreviewSmokeDeadline = std::chrono::steady_clock::now()
         + std::chrono::seconds(30);
     const auto thumbnailDeadline = std::chrono::steady_clock::now() + std::chrono::seconds(30);
@@ -1152,6 +1153,7 @@ int Application::run(const std::filesystem::path& initialModel) {
     if(const char* directory=std::getenv("IRIS_EXTERNAL_SHADER_PACKAGE_ACCEPTANCE_DIRECTORY"))runExternalShaderPackageAcceptance(std::filesystem::u8path(directory));
     if(const char* directory=std::getenv("IRIS_SHADER_PACKAGE_RELOAD_ACCEPTANCE_DIRECTORY"))runShaderPackageReloadAcceptance(std::filesystem::u8path(directory));
     if(const char* directory=std::getenv("IRIS_SHADER_HISTORY_ACCEPTANCE_DIRECTORY"))runShaderHistoryAcceptance(std::filesystem::u8path(directory));
+    if(const char* directory=std::getenv("IRIS_SHADER_MATERIAL_WORKSPACE_DIRECTORY"))runShaderMaterialWorkspaceAcceptance(std::filesystem::u8path(directory));
     if(const char* directory=std::getenv("IRIS_SHADER_MATERIAL_ACCEPTANCE_DIRECTORY"))runShaderMaterialAcceptance(std::filesystem::u8path(directory));
     if(const char* directory=std::getenv("IRIS_SHADER_SEQUENCE_ACCEPTANCE_DIRECTORY"))runShaderSequenceAcceptance(std::filesystem::u8path(directory));
     if (std::getenv("IRIS_SHADER_WORKSPACE_UI_BAD") && std::getenv("MYRENDERER_SMOKE_TEST")
@@ -1502,6 +1504,7 @@ int Application::run(const std::filesystem::path& initialModel) {
         const char* historyDirectory=std::getenv("IRIS_SHADER_HISTORY_ACCEPTANCE_DIRECTORY");
         if (shaderHistoryUiPassed_) shaderHistoryUiPassed_ = historyDirectory && saveSceneTo(std::filesystem::u8path(historyDirectory)/"ui-saved.myscene");
     }
+    const bool materialWorkspacePassed = finishShaderMaterialWorkspaceAcceptance();
     const bool materialUiPassed = !std::getenv("IRIS_SHADER_MATERIAL_UI_TEST")
         || (shaderMaterialUiPhase_ == 8 && shaderMaterialUiEdited_ && shaderMaterialUiCleared_
             && scene_.hasShaderMaterials() && renderer_->shaderMaterialError().empty());
@@ -1510,7 +1513,7 @@ int Application::run(const std::filesystem::path& initialModel) {
     if (std::getenv("IRIS_SHADER_PARAMETER_UI_TEST")) std::cout << "ShaderScene real Float+Bool controls: " << (shaderParameterUiPassed ? "PASS" : "FAIL") << '\n';
     if (std::getenv("IRIS_SHADER_MATERIAL_UI_TEST")) std::cout << "ShaderMaterial real slider/clear/bind/recompile: " << (materialUiPassed ? "PASS" : "FAIL") << " phase=" << shaderMaterialUiPhase_
         << " edited=" << shaderMaterialUiEdited_ << " cleared=" << shaderMaterialUiCleared_ << '\n';
-    return materialUiPassed && (!std::getenv("IRIS_SHADER_MOUSE_UI_TEST") || shaderMouseUiPhase_ == 8)
+    return materialWorkspacePassed && materialUiPassed && (!std::getenv("IRIS_SHADER_MOUSE_UI_TEST") || shaderMouseUiPhase_ == 8)
         && shaderParameterUiPassed && diagnosticUiPassed && workspaceUiPassed && shaderBrowserPassed && recoveryPassed && appendPassed && interactionsPassed && pluginsPassed && pluginParametersPassed
         && (shaderTransactionSources_.empty() || (shaderTransactionDone && shaderTransactionPassed))
         && (!std::getenv("MYRENDERER_SHADER_TRANSACTION_UI_RETRY") || shaderRetryInteractionComplete_)
@@ -1979,7 +1982,7 @@ void Application::drawInspectorPanel() {
 
     const auto* asset = workspaceAssets_.find(selectedWorkspaceAsset_);
     if ((asset && asset->category == WorkspaceAssetCategory::ShaderScenes)
-        || (!selectedWorkspaceAsset_.empty() && selectedWorkspaceAsset_.extension()==".shaderscene"
+        || (!selectedWorkspaceAsset_.empty() && (selectedWorkspaceAsset_.extension()==".shaderscene" || selectedWorkspaceAsset_.extension()==".shadermaterial")
             && std::filesystem::is_regular_file(selectedWorkspaceAsset_))) {
         if (pendingBufferExportDirectory_.empty()) renderer_->clearBufferPreviews();
         drawShaderPackageInspector();
@@ -4807,7 +4810,7 @@ void Application::queueDroppedFiles(int count, const char** paths) {
     for (int index = 0; index < count; ++index) {
         const std::filesystem::path candidate = std::filesystem::u8path(paths[index]);
         const auto extension = lowercase(candidate.extension().string());
-        if (extension == ".myscene" || extension == ".shaderscene" || extension == ".renderjob") {
+        if (extension == ".myscene" || extension == ".shaderscene" || extension == ".shadermaterial" || extension == ".renderjob") {
             EditorCommand command{extension != ".renderjob"
                 ? EditorCommandType::OpenSceneAsset : EditorCommandType::SelectRenderJobAsset};
             command.text = candidate.generic_u8string();

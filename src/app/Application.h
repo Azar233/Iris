@@ -106,6 +106,9 @@ private:
     void drawShaderRuntimeInspector();
     void drawShaderMaterialInspector(const SceneEntity& entity);
     void runShaderMaterialAcceptance(const std::filesystem::path& directory);
+    void runShaderMaterialWorkspaceAcceptance(const std::filesystem::path& directory);
+    bool finishShaderMaterialWorkspaceAcceptance();
+    void interactShaderMaterialWorkspace(int phase, int frame);
     void runEnscapeShaderSceneAcceptance(const std::filesystem::path& directory);
     void updateViewportCameraNavigation();
     void drawModulePanel();
@@ -300,6 +303,9 @@ private:
     std::array<char, 1024> modelPathBuffer_{};
     std::array<char, 4096> shaderMaterialPathBuffer_{};
     SceneEntityId shaderMaterialInspectorEntity_{invalidSceneEntityId};
+    int shaderMaterialWorkspacePhase_{0};
+    std::filesystem::path shaderMaterialWorkspaceDirectory_;
+    std::size_t shaderMaterialWorkspaceEntityCount_{0};
     int shaderMaterialUiFrames_{0};
     int shaderMaterialUiPhase_{0};
     bool shaderMaterialUiEdited_{false};

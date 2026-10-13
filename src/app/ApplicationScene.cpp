@@ -448,7 +448,16 @@ void Application::processEditorCommands() {
                 break;
             }
             case EditorCommandType::OpenSceneAsset:
-                openScene(std::filesystem::u8path(command.text));
+                if (std::filesystem::u8path(command.text).extension()==".shadermaterial") {
+                    selectedWorkspaceAsset_=std::filesystem::absolute(std::filesystem::u8path(command.text)).lexically_normal();
+                    shaderWorkspaceDiagnostics_.clear();shaderWorkspaceSourceMaps_.clear();
+                    shaderWorkspaceMessage_="ShaderMaterial inspected; Scene binding unchanged";
+                    std::string error;
+                    if (workspaceAssets_.registerShaderPackage(sourceRoot_,selectedWorkspaceAsset_,error)) updateWorkspaceAssetViews();
+                    else statusMessage_=error;
+                    focusAssetsTab_=true;scrollWorkspaceSelection_=true;
+                    contentCategory_=static_cast<int>(WorkspaceAssetCategory::ShaderScenes);
+                } else openScene(std::filesystem::u8path(command.text));
                 break;
             case EditorCommandType::ImportModelAsset:
                 loadModel(std::filesystem::u8path(command.text), true);
@@ -554,7 +563,27 @@ void Application::processEditorCommands() {
                     entity->shaderMaterial = command.shaderMaterial;
                     cpuPreviewRestartRequested_ = true;
                     statusMessage_ = "ShaderMaterial updated";
-                } catch (const std::exception& error) { statusMessage_ = "ShaderMaterial rejected; previous binding preserved: " + std::string(error.what()); }
+                    if(command.flag) {
+                        shaderWorkspaceLastCompileAccepted_=true;++shaderWorkspaceCompileAttempts_;
+                        shaderWorkspaceDiagnostics_.clear();
+                        const auto* package=renderer_->shaderMaterialPackage(command.shaderMaterial.resource);
+                        if(package) {
+                            shaderWorkspaceSourceMaps_=Shader::sourceMapsForRoot(package->root);
+                            std::string error;workspaceAssets_.registerShaderPackage(sourceRoot_,package->manifest,error);
+                            updateWorkspaceAssetViews();
+                        }
+                        shaderWorkspaceMessage_="ShaderMaterial complete package committed";
+                    }
+                } catch (const ShaderSourceError& error) {
+                    shaderWorkspaceDiagnostics_=error.diagnostics;shaderWorkspaceSourceMaps_={error.sources};
+                    shaderWorkspaceMessage_="ShaderMaterial compile rejected; previous binding preserved:\n"+std::string(error.what());
+                    statusMessage_=shaderWorkspaceMessage_;
+                    if(command.flag){shaderWorkspaceLastCompileAccepted_=false;++shaderWorkspaceCompileAttempts_;}
+                } catch (const std::exception& error) {
+                    shaderWorkspaceDiagnostics_.clear();shaderWorkspaceMessage_="ShaderMaterial rejected; previous binding preserved: "+std::string(error.what());
+                    statusMessage_=shaderWorkspaceMessage_;
+                    if(command.flag){shaderWorkspaceLastCompileAccepted_=false;++shaderWorkspaceCompileAttempts_;}
+                }
                 break;
             }
             case EditorCommandType::SetEntityTint: {
@@ -856,7 +885,14 @@ void Application::processEditorCommands() {
                 break;
             }
             case EditorCommandType::RecompileShaderScene:
-                if(command.text.empty() || std::filesystem::weakly_canonical(std::filesystem::u8path(command.text))
+                if(std::filesystem::u8path(command.text).extension()==".shadermaterial") {
+                    const auto* entity=scene_.find(selectedSceneEntity_);
+                    if(entity && !entity->shaderMaterial.resource.empty()
+                        && std::filesystem::weakly_canonical(std::filesystem::u8path(entity->shaderMaterial.resource))==std::filesystem::weakly_canonical(std::filesystem::u8path(command.text))) {
+                        EditorCommand retry{EditorCommandType::SetEntityShaderMaterial,entity->id};
+                        retry.shaderMaterial=entity->shaderMaterial;retry.flag=true;editorSession_.request(std::move(retry));
+                    } else shaderWorkspaceMessage_="Compile selection is no longer the selected model's package";
+                } else if(command.text.empty() || std::filesystem::weakly_canonical(std::filesystem::u8path(command.text))
                     ==std::filesystem::weakly_canonical(std::filesystem::u8path(iris::shaderSceneResourceFor(rendererSettings_)))) {
                     shaderWorkspaceLastCompileAccepted_=recompileWorkspaceShaderScene();++shaderWorkspaceCompileAttempts_;
                 } else shaderWorkspaceMessage_="Compile selection is no longer the active package";
@@ -2388,7 +2424,7 @@ void Application::drawAssetsPanel() {
                 ImGui::SameLine();
                 ImGui::BeginDisabled(!hasAssetAction(selectedAsset->category));
                 const char* actionLabel = selectedAsset->category == WorkspaceAssetCategory::ShaderScenes
-                    ? "Open ShaderScene" : selectedAsset->category == WorkspaceAssetCategory::Shaders
+                    ? (selectedAsset->extension==".shadermaterial"?"Inspect ShaderMaterial":"Open ShaderScene") : selectedAsset->category == WorkspaceAssetCategory::Shaders
                     ? "Open source" : selectedAsset->category == WorkspaceAssetCategory::Scenes
                     ? "Open Scene" : selectedAsset->category == WorkspaceAssetCategory::Models
                     ? "Import Model" : selectedAsset->category == WorkspaceAssetCategory::RenderJobs
@@ -3355,21 +3391,45 @@ void Application::drawShaderPackageInspector() {
         if(!shaderWorkspaceSourceMaps_.empty() && shaderWorkspaceSourceMaps_.front().root!=workspaceShaderPackage_.root)shaderWorkspaceDiagnostics_.clear();
         if(shaderWorkspaceDiagnostics_.empty())shaderWorkspaceSourceMaps_=Shader::sourceMapsForRoot(workspaceShaderPackage_.root);
     }
+    if (!shaderMaterialWorkspaceDirectory_.empty()) {
+        if (shaderMaterialWorkspacePhase_==2 && shaderWorkspaceLastCompileAccepted_) {
+            std::ofstream(shaderMaterialWorkspaceDirectory_/"workspace.glsl") << "// mapped include\nfloat workspaceValue(){return MISSING_WORKSPACE_VALUE;}\n";
+            shaderMaterialWorkspacePhase_=3;
+        } else if (shaderMaterialWorkspacePhase_==5 && !shaderWorkspaceLastCompileAccepted_ && !shaderWorkspaceDiagnostics_.empty()) {
+            shaderMaterialWorkspacePhase_=6;
+        } else if (shaderMaterialWorkspacePhase_==8 && inspectedShaderFile_.filename()=="workspace.glsl" && inspectedShaderLine_==2) {
+            std::string error;
+            renderer_->saveEditorScreenshot(shaderMaterialWorkspaceDirectory_/"diagnostic.png",static_cast<int>(ImGui::GetIO().DisplaySize.x),static_cast<int>(ImGui::GetIO().DisplaySize.y),error);
+            std::ofstream(shaderMaterialWorkspaceDirectory_/"workspace.glsl") << "// repaired include\nfloat workspaceValue(){return .7;}\n";
+            shaderMaterialWorkspacePhase_=9;
+        } else if(shaderMaterialWorkspacePhase_==11 && shaderWorkspaceLastCompileAccepted_ && shaderWorkspaceDiagnostics_.empty()) shaderMaterialWorkspacePhase_=12;
+    }
     const auto& package = workspaceShaderPackage_;
-    ImGui::TextWrapped("ShaderScene: %s", package.id.empty()?"(invalid Manifest)":package.id.c_str());
+    ImGui::TextWrapped("%s: %s", package.modelMaterial?"ShaderMaterial":"ShaderScene", package.id.empty()?"(invalid Manifest)":package.id.c_str());
     ImGui::TextWrapped("%s: %s", EditorUi::chinese?"作者":"Author", package.author.c_str());
     ImGui::TextWrapped("%s: %s", EditorUi::chinese?"许可":"License", package.license.c_str());
     ImGui::TextWrapped("%s: %s", EditorUi::chinese?"资源根":"Resource root",package.root.generic_u8string().c_str());
     if(ImGui::Button(EditorUi::chinese?"返回场景 Inspector":"Back to scene Inspector")) selectedWorkspaceAsset_.clear();
-    if(ImGui::Button(EditorUi::chinese?"打开 ShaderScene":"Open ShaderScene")) {
+    const auto* target=scene_.find(selectedSceneEntity_);
+    if(package.modelMaterial) {
+        ImGui::TextWrapped("%s: %s",EditorUi::chinese?"目标模型":"Target model",target && target->model?target->name.c_str():"None");
+        ImGui::BeginDisabled(!target || !target->model || viewportRenderMode_!=0 || modulePreviewEnabled());
+        if(ImGui::Button(EditorUi::chinese?"绑定到选中模型":"Bind to selected model")) {
+            EditorCommand command{EditorCommandType::SetEntityShaderMaterial,target->id};
+            command.shaderMaterial.resource=package.manifest.u8string();command.flag=true;editorSession_.request(std::move(command));
+        }
+        interactShaderMaterialWorkspace(0,5);
+        ImGui::EndDisabled();
+    } else if(ImGui::Button(EditorUi::chinese?"打开 ShaderScene":"Open ShaderScene")) {
         EditorCommand command{EditorCommandType::OpenSceneAsset};command.text=package.manifest.u8string();editorSession_.request(std::move(command));
     }
-    const auto resource=iris::shaderSceneResourceFor(rendererSettings_);
+    const auto resource=package.modelMaterial?(target?target->shaderMaterial.resource:std::string{}):iris::shaderSceneResourceFor(rendererSettings_);
     const bool active=!resource.empty() && std::filesystem::weakly_canonical(std::filesystem::u8path(resource))==std::filesystem::weakly_canonical(package.manifest);
     ImGui::BeginDisabled(!active);
     if(ImGui::Button(EditorUi::chinese?"重新编译完整包":"Recompile active package")) {
         EditorCommand command{EditorCommandType::RecompileShaderScene};command.text=package.manifest.u8string();editorSession_.request(std::move(command));
     }
+    if(active && package.modelMaterial) { interactShaderMaterialWorkspace(3,10); interactShaderMaterialWorkspace(9,24); }
     if(active && std::getenv("IRIS_SHADER_WORKSPACE_UI_TEST") && shaderBrowserUiFrames_>=5) {
         if(shaderWorkspaceUiPhase_==0) {
             const auto a=ImGui::GetItemRectMin(),b=ImGui::GetItemRectMax();
@@ -3378,11 +3438,13 @@ void Application::drawShaderPackageInspector() {
         } else if(shaderWorkspaceUiPhase_==1) {ImGui::GetIO().AddMouseButtonEvent(0,false);++shaderWorkspaceUiPhase_;}
     }
     ImGui::EndDisabled();
-    ImGui::TextWrapped("%s",active?"Active package":"Not the active package; open it before compiling");
+    ImGui::TextWrapped("%s",active?"Active package":package.modelMaterial?"Bind this package to the selected model before compiling":"Not the active package; open it before compiling");
     static const std::vector<ShaderSourceDiagnostic> noDiagnostics;
-    const auto& compilerDiagnostics=shaderWorkspaceDiagnostics_.empty()?(active?renderer_->shaderReloadDiagnostics():noDiagnostics):shaderWorkspaceDiagnostics_;
-    if(compilerDiagnostics.empty())ImGui::TextWrapped("%s",active?shaderWorkspaceMessage_.c_str():"Compiler diagnostics are available for the active package");
-    else ImGui::TextWrapped("%s",EditorUi::chinese?"编译被拒绝，保留上一个完整运行实例。":"Compilation rejected; previous complete instance retained.");
+    const auto& compilerDiagnostics=shaderWorkspaceDiagnostics_.empty()?(active && !package.modelMaterial?renderer_->shaderReloadDiagnostics():noDiagnostics):shaderWorkspaceDiagnostics_;
+    if(package.modelMaterial && !shaderWorkspaceMessage_.empty())ImGui::TextWrapped("%s",shaderWorkspaceMessage_.c_str());
+    if(compilerDiagnostics.empty()) {
+        if(!package.modelMaterial)ImGui::TextWrapped("%s",active?shaderWorkspaceMessage_.c_str():"Compiler diagnostics are available for the active package");
+    } else ImGui::TextWrapped("%s",EditorUi::chinese?"编译被拒绝，保留上一个完整运行实例。":"Compilation rejected; previous complete instance retained.");
     if(!compilerDiagnostics.empty() && EditorUi::section("Compiler locations",!shaderWorkspaceDiagnostics_.empty() || std::getenv("IRIS_SHADER_DIAGNOSTIC_UI_TEST"))) {
         for(std::size_t index=0;index<compilerDiagnostics.size();++index) {
             const auto& diagnostic=compilerDiagnostics[index];
@@ -3399,6 +3461,7 @@ void Application::drawShaderPackageInspector() {
                         if(number>=inspectedShaderLine_-1)shaderDiagnosticContext_.push_back((number==inspectedShaderLine_?"> ":"  ")+std::to_string(number)+": "+line);
                 }
             }
+            if(index==0 && diagnostic.mapped && !diagnostic.generated && package.modelMaterial) interactShaderMaterialWorkspace(6,16);
             if(index==0 && !diagnostic.generated && std::getenv("IRIS_SHADER_DIAGNOSTIC_UI_TEST") && shaderBrowserUiFrames_>=5) {
                 if(shaderDiagnosticUiPhase_==0) {
                     const auto a=ImGui::GetItemRectMin(),b=ImGui::GetItemRectMax();
@@ -3415,7 +3478,7 @@ void Application::drawShaderPackageInspector() {
     }
     if(!compilerDiagnostics.empty() && EditorUi::section("Raw compiler log",false))
         ImGui::TextWrapped("%s",shaderWorkspaceDiagnostics_.empty()?renderer_->shaderReloadStatus().c_str():shaderWorkspaceMessage_.c_str());
-    if (active) drawShaderRuntimeInspector();
+    if (active && !package.modelMaterial) drawShaderRuntimeInspector();
     ImGui::TextWrapped("%s",EditorUi::chinese?"文件快照；Refresh 更新。文档不是执行输入。":"File list snapshot; use Refresh. Documentation is not an execution input.");
     if(EditorUi::section("Package files",true)) {
         bool interactionHandled=false;

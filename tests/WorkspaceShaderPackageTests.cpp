@@ -41,6 +41,10 @@ int main(){
         const auto enscape=inspectWorkspaceShaderPackage(std::filesystem::path(IRIS_SOURCE_DIR)/"assets/shader-scenes/enscape/enscape.shaderscene");
         require(enscape.diagnostics.empty(),"actual Enscape inspection failed");
         for(const char* name:{"pass_a.frag","pass_b.frag","pass_c.frag","pass_image.frag","buffer_a.glsl","buffer_b.glsl","buffer_c.glsl","image.glsl","inputs.glsl","weather.raw","LICENSE.md","README.md"})require(find(enscape,name),"Enscape declared resource missing");
+        const auto material=inspectWorkspaceShaderPackage(std::filesystem::path(IRIS_SOURCE_DIR)/"assets/shader-materials/checker/checker.shadermaterial");
+        require(material.modelMaterial && material.manifestReadable && material.diagnostics.empty(),"Model material inspection failed");
+        require(find(material,"surface.frag") && find(material,"surface.frag")->owners.front()=="Material surface", "Material source ownership lost");
+        require(find(material,"LICENSE") && !find(material,"LICENSE")->executionInput,"Material license missing or executable");
         std::filesystem::remove_all(root);
         std::cout<<"Workspace ShaderScene declared roots/includes/owners/missing/cycle/escape/license/Enscape PASS\n";return 0;
     } catch(const std::exception& e){std::filesystem::remove_all(root);std::cerr<<e.what()<<'\n';return 1;}

@@ -2,6 +2,8 @@
 
 `checker.shadermaterial` 是 v1 模型片元材质包。通过对象 Inspector 的 Shader material 绑定包路径；公开参数为 Gain 和 Checker frequency。场景示例是 `assets/scenes/fixtures/29_shader_material.myscene`，固定输出任务是 `assets/renderjobs/11_shader_material.renderjob`。
 
+在 Assets 的 ShaderScenes 分类选择或拖入 `.shadermaterial`，工作台只浏览包的源码、include、README 与许可证，保持当前 Scene。选择目标模型后点击 Bind to selected model 明确应用；Recompile active package 编译完整包。失败诊断可定位到 include 的原文件和行号，保留上一版材质；修复后再次编译。未选择模型时绑定按钮禁用。参数和清除绑定仍在对象 Inspector，使用 Back to scene Inspector 返回。
+
 当前合同：原生 Raster 的 Forward、静态不透明模型、关闭 TAA。一个 Entity 的全部不透明 submesh 共用一个包，仍从导入的 `ModelData` 读取材质因子和纹理；清除后恢复原生材质。Deferred、CPU PT、Module 场景、蒙皮、Mask/Blend/Transmission 会明确拒绝。版本和旧 Scene 格式保持兼容。
 
 包沿用 ShaderScene 的根目录与 include 安全边界、作者与许可证和 float 参数校验，使用 `.shadermaterial` 扩展名、`entry: main`、`camera: project` 与 `output: linear-rgba16f`。不得绑定为全屏 ShaderScene。参数 ID 不得占用 `u`、`gl_`、`iris` 宿主前缀。
@@ -14,6 +16,7 @@
 
 ```powershell
 cmake --build --preset msvc --target shader-material-gpu-acceptance
+./tools/ShaderMaterialWorkspaceAcceptance.ps1
 ./build-ci-msvc/Release/Iris.exe raster-sequence ./assets/renderjobs/11_shader_material.renderjob --output "E:/MyRenderer/.local/verification/a3m1/job/frame_{frame:04}"
 ```
 

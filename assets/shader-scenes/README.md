@@ -23,7 +23,7 @@ Iris 使用项目共享 Camera、Timeline、Job 与 GL 上下文运行全屏 fra
 | `irisCameraTanHalfFov`, `irisCameraNear` | float，项目 Camera 参数 |
 | 包公开参数 ID | float / bool，当前共享覆盖值或声明默认值 |
 
-`mainImage(out vec4 color, in vec2 coord)` 的 coord 来自 `gl_FragCoord.xy`，不翻转 Y；每次调用需写满 RGBA。宿主不自动注入 Shadertoy 的 `iTime/iResolution/iChannel/iMouse`。`irisMouse` 使用当前按键而非 Shadertoy 点击起点/负号约定；仅 Viewport 图像内且没有 UI 捕获时有效，离开/隐藏后归零。实际使用鼠标的包在输入改变时清历史；未使用的包不受鼠标影响。Scene 不保存鼠标，Queue/CLI 固定 zero-input 并记录报告；交互轨迹录制/离线回放尚未支持。见 [鼠标模板](mouse/README.md)。移动/旋转项目 Camera 仍使用编辑器已有操作。未支持音频、cubemap 通道、Compute Shader、任意 Shadertoy 自动导入、节点图或模型材质 Shader。
+`mainImage(out vec4 color, in vec2 coord)` 的 coord 来自 `gl_FragCoord.xy`，不翻转 Y；每次调用需写满 RGBA。宿主不自动注入 Shadertoy 的 `iTime/iResolution/iChannel/iMouse`。`irisMouse` 使用当前按键而非 Shadertoy 点击起点/负号约定；仅 Viewport 图像内且没有 UI 捕获时有效，离开/隐藏后归零。实际使用鼠标的包在输入改变时清历史；未使用的包不受鼠标影响。Scene 不保存鼠标，Queue/CLI 固定 zero-input 并记录报告；交互轨迹录制/离线回放尚未支持。见 [鼠标模板](mouse/README.md)。移动/旋转项目 Camera 仍使用编辑器已有操作。未支持音频、cubemap 通道、Compute Shader、任意 Shadertoy 自动导入或节点图。模型材质使用独立的 `.shadermaterial` v1 包，支持范围见 [Checker 说明](../shader-materials/checker/README.md)；选择该包只浏览，明确绑定到模型后应用，不作为全屏 ShaderScene 打开。
 
 同帧循环、缺失文件、非法通道和类型会拒绝候选；成功完整包替换清空反馈，失败保留旧实例。history 策略可保存参数/相机是否清历史和最大时间步；resize、包替换、倒退、策略变化和 Clear 始终重置。保留反馈没有运动重投影。热重载监听 mtime/大小，保留二者的内容修改需手动 Recompile。
 

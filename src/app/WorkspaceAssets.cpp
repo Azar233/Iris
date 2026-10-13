@@ -72,8 +72,8 @@ bool isOneOf(const std::string& extension, const std::initializer_list<const cha
 bool classify(const std::filesystem::path& relativePath, WorkspaceAssetCategory& category) {
     const std::string generic = lowercase(relativePath.generic_u8string());
     const std::string extension = lowercase(relativePath.extension().string());
-    if (extension == ".shaderscene") category = WorkspaceAssetCategory::ShaderScenes;
-    else if (isOneOf(extension, {".glsl", ".frag", ".vert", ".geom", ".shadermaterial"})) category = WorkspaceAssetCategory::Shaders;
+    if (extension == ".shaderscene" || extension == ".shadermaterial") category = WorkspaceAssetCategory::ShaderScenes;
+    else if (isOneOf(extension, {".glsl", ".frag", ".vert", ".geom"})) category = WorkspaceAssetCategory::Shaders;
     else if (extension == ".myscene") category = WorkspaceAssetCategory::Scenes;
     else if (extension == ".renderjob") category = WorkspaceAssetCategory::RenderJobs;
     else if (endsWith(generic, ".module.json")) category = WorkspaceAssetCategory::Modules;
@@ -288,7 +288,7 @@ bool WorkspaceAssetCatalog::registerShaderPackage(const std::filesystem::path& s
     try {
         const auto canonical=expandLongPath(std::filesystem::weakly_canonical(manifest));
         auto package=inspectWorkspaceShaderPackage(canonical);
-        if (lowercase(canonical.extension().u8string())!=".shaderscene" || !package.manifestReadable
+        if (!isOneOf(lowercase(canonical.extension().u8string()), {".shaderscene", ".shadermaterial"}) || !package.manifestReadable
             || !std::filesystem::is_directory(package.root)) {
             error="Cannot register ShaderScene package: "+canonical.u8string();return false;
         }
