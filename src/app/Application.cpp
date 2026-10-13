@@ -155,9 +155,6 @@ Application::Application(bool offlineCapture)
     : sourceRoot_(findRuntimeRoot()) {
     std::filesystem::path sampleJob = sourceRoot_ / "assets" / "renderjobs"
         / "01_cpu_reference.renderjob";
-    const std::filesystem::path sourceSample = std::filesystem::path(MYRENDERER_SOURCE_DIR)
-        / "assets" / "renderjobs" / "01_cpu_reference.renderjob";
-    if (std::filesystem::is_regular_file(sourceSample)) sampleJob = sourceSample;
     const std::string sampleJobText = sampleJob.string();
     std::snprintf(renderJobPathBuffer_.data(), renderJobPathBuffer_.size(), "%s", sampleJobText.c_str());
     renderQueue_ = std::make_unique<RenderQueue>(offlineCapture ? std::filesystem::path{} : renderQueueStatePath());

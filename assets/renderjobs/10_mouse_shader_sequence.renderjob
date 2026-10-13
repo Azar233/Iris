@@ -1,0 +1,15 @@
+{
+  "format": "MyRendererRenderJob",
+  "schemaVersion": 4,
+  "scene": "../shader-scenes/mouse/mouse.shaderscene",
+  "renderer": "raster",
+  "camera": "scene",
+  "resolution": [320, 180],
+  "frames": {"start":3, "end":8, "fps":24},
+  "sampling": {"spp":1, "maxDepth":1, "seed":7},
+  "raster": {"determinism":true, "warmupFrames":0, "temporalAccumulation":false},
+  "shaderScene": {"version":1, "history":"reset-at-start", "warmupFrames":3},
+  "aovs": ["beauty"],
+  "output": {"path":"../../.local/render-jobs/10_mouse_shader_sequence/frame_{frame:04}", "formats":["png"], "resume":false},
+  "failurePolicy": "stop"
+}

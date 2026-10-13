@@ -11,6 +11,8 @@
 
 void Application::runShaderSequenceAcceptance(const std::filesystem::path& directory) {
     const auto check=[](bool ok,const char* message){if(!ok)throw std::runtime_error(message);};
+    check(std::filesystem::equivalent(std::filesystem::u8path(renderJobPathBuffer_.data()),
+        sourceRoot_/"assets/renderjobs/01_cpu_reference.renderjob"),"Default Queue Job escaped the runtime resource root");
     const auto bytes=[](const std::filesystem::path& path){std::ifstream in(path,std::ios::binary);
         return std::string(std::istreambuf_iterator<char>(in),{});};
     std::filesystem::create_directories(directory);

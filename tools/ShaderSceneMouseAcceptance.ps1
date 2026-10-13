@@ -1,7 +1,8 @@
-param([string]$BuildDirectory='build-ci-msvc',[switch]$SingleWindow,[string]$ReuseDirectory)
+param([string]$BuildDirectory='build-ci-msvc',[switch]$SingleWindow,[string]$ReuseDirectory,[string]$RuntimeDirectory)
 $ErrorActionPreference='Stop'
 $root=Split-Path $PSScriptRoot -Parent
-$build=Join-Path $root $BuildDirectory
+$build=if($RuntimeDirectory){[IO.Path]::GetFullPath($RuntimeDirectory)}else{Join-Path $root $BuildDirectory}
+$inputs=if($RuntimeDirectory){$build}else{$root}
 $exe=if(Test-Path (Join-Path $build 'Release/Iris.exe')){Join-Path $build 'Release/Iris.exe'}else{Join-Path $build 'Iris.exe'}
 $out=if($ReuseDirectory){[IO.Path]::GetFullPath($ReuseDirectory)}else{Join-Path $root ('.local/verification/s1e/mouse/'+$BuildDirectory+'/'+[guid]::NewGuid().ToString('N'))}
 New-Item -ItemType Directory -Force $out | Out-Null
@@ -12,7 +13,7 @@ Get-ChildItem Env: | Where-Object {$_.Name -like 'IRIS_*' -or $_.Name -like 'MYR
 function Invoke-Iris([string[]]$Arguments,[string]$Log,[int]$ExpectedExit=0){
     $info=New-Object System.Diagnostics.ProcessStartInfo
     $info.FileName=$exe;$info.Arguments=($Arguments | ForEach-Object {'"'+$_+'"'}) -join ' '
-    $info.WorkingDirectory=$root;$info.UseShellExecute=$false;$info.CreateNoWindow=$true
+    $info.WorkingDirectory=$inputs;$info.UseShellExecute=$false;$info.CreateNoWindow=$true
     $info.RedirectStandardOutput=$true;$info.RedirectStandardError=$true
     $process=New-Object System.Diagnostics.Process;$process.StartInfo=$info
     if(-not $process.Start()){throw 'Cannot start mouse acceptance'}
@@ -28,7 +29,7 @@ function Invoke-Iris([string[]]$Arguments,[string]$Log,[int]$ExpectedExit=0){
 try {
     $env:IRIS_STATE_DIRECTORY=Join-Path $out 'state';New-Item -ItemType Directory -Force $env:IRIS_STATE_DIRECTORY | Out-Null
     Set-Content (Join-Path $env:IRIS_STATE_DIRECTORY 'language') en
-    $package=Join-Path $root 'assets/shader-scenes/mouse/mouse.shaderscene'
+    $package=Join-Path $inputs 'assets/shader-scenes/mouse/mouse.shaderscene'
     $env:MYRENDERER_SMOKE_TEST='1';$env:MYRENDERER_RENDER_WIDTH='320';$env:MYRENDERER_RENDER_HEIGHT='180'
     $env:MYRENDERER_EDITOR_SCREENSHOT_WARMUP='24';$env:IRIS_SHADER_MOUSE_UI_TEST='1'
     $widths=if($SingleWindow){@(1440)}else{@(1440,1100)}
@@ -69,12 +70,47 @@ try {
         if($report.shaderScene.mouse.version -ne 1 -or $report.shaderScene.mouse.uniform -ne 'irisMouse' -or
             $report.shaderScene.mouse.policy -ne 'zero-input' -or $report.shaderScene.mouse.value.Count -ne 4 -or
             @($report.shaderScene.mouse.value | Where-Object {$_ -ne 0}).Count -ne 0){throw 'Mouse report identity is not zero-input'}
+        if($RuntimeDirectory){
+            if(-not $report.inputManifest.complete){throw 'Installed mouse input identity incomplete'}
+            foreach($file in $report.inputManifest.files){
+                $path=[IO.Path]::GetFullPath($file.path)
+                if(-not($path.StartsWith($build+'\',[StringComparison]::OrdinalIgnoreCase) -or
+                    $path.StartsWith($out+'\',[StringComparison]::OrdinalIgnoreCase))){throw "Installed mouse consumed source-tree input: $path"}
+            }
+        }
         $png=$reportFile.FullName -replace '-report\.json$','.png'
         $queued=Join-Path $case ('queued/'+[IO.Path]::GetFileName($png))
         if((Get-FileHash $png).Hash -ne (Get-FileHash $queued).Hash){throw 'Mouse GUI/Queue/CLI PNG mismatch'}
     }
     if(@(Get-ChildItem (Join-Path $out 'cli') -Filter '*.png').Count -ne 6){throw 'Incomplete mouse sequence'}
     if(@(Get-ChildItem (Join-Path $out 'cli') -Filter '*-report.json').Count -ne 6){throw 'Incomplete mouse reports'}
+    if($RuntimeDirectory){
+        foreach($file in Get-ChildItem (Join-Path $root 'assets/shader-scenes/mouse') -File){
+            if((Get-FileHash $file.FullName).Hash -ne (Get-FileHash (Join-Path (Split-Path $package) $file.Name)).Hash){
+                throw "Installed mouse package differs: $($file.Name)"
+            }
+        }
+        foreach($file in @('LICENSE','ASSET_LICENSES.md','assets/renderjobs/10_mouse_shader_sequence.renderjob')){
+            if((Get-FileHash (Join-Path $root $file)).Hash -ne (Get-FileHash (Join-Path $build $file)).Hash){
+                throw "Installed mouse delivery differs: $file"
+            }
+        }
+        Invoke-Iris @('raster-sequence',(Join-Path $build 'assets/renderjobs/10_mouse_shader_sequence.renderjob'),
+            '--output',(Join-Path $out 'installed-example/frame_{frame:04}')) (Join-Path $out 'installed-example.log') | Out-Null
+        foreach($frame in 3..8){
+            $stem='frame_{0:0000}' -f $frame
+            if((Get-FileHash (Join-Path $out "cli/$stem.png")).Hash -ne
+                (Get-FileHash (Join-Path $out "installed-example/$stem.png")).Hash){throw 'Shipped mouse example differs from GUI/Queue/CLI'}
+            $report=Get-Content (Join-Path $out "installed-example/$stem-report.json") -Raw | ConvertFrom-Json
+            if(-not $report.inputManifest.complete -or $report.shaderScene.mouse.policy -ne 'zero-input' -or
+                @($report.shaderScene.mouse.value | Where-Object {$_ -ne 0}).Count -ne 0){throw 'Shipped mouse report incomplete'}
+            foreach($file in $report.inputManifest.files){
+                if(-not([IO.Path]::GetFullPath($file.path).StartsWith($build+'\',[StringComparison]::OrdinalIgnoreCase))){
+                    throw "Shipped mouse example consumed source-tree input: $($file.path)"
+                }
+            }
+        }
+    }
     $bad=(Get-Content $job -Raw | ConvertFrom-Json)
     $bad.shaderScene | Add-Member -NotePropertyName mouse -NotePropertyValue @(1,2,1,1)
     # Keep path identities valid so the rejection tests unsupported input, not a missing Scene.

@@ -9,7 +9,7 @@
   "sampling": {"spp": 2, "maxDepth": 4, "seed": 20260917},
   "aovs": ["beauty", "albedo", "normal", "depth", "direct", "indirect", "sample-count", "variance"],
   "output": {
-    "path": "../../build-ci-msvc/render-jobs/01_cpu_reference/frame_{frame:04}",
+    "path": "../../.local/render-jobs/01_cpu_reference/frame_{frame:04}",
     "formats": ["png", "hdr"],
     "resume": true
   },
