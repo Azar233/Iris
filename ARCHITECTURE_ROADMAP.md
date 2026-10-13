@@ -26,7 +26,7 @@
 
 A1 是可行性实验，不代表通用插件平台完成。首次迁移不修改 Shader 算法，保留 `.myscene` 旧 Enscape 开关/参数，仍借用 RendererSettings；跨插件配置、通用服务依赖图、动态 UI 与材质扩展在 A2/A3 才实现。只有 A2 证明第二种能力可接入后，才扩展全面迁移。
 
-2026-10-13 A3 全屏 ShaderScene 子集已由 S1-A～F 验收并完成 Windows Runtime 交付：v1/v2/v3、mainImage、多 Pass/反馈/纹理、统一时间/Camera/鼠标输入、文件与参数工作台、完整包事务重载、schema 4 序列 Job 和输入报告均已接通。新增随包 `10_mouse_shader_sequence.renderjob`，与 08/09 共用同一序列合同；离线鼠标固定零输入。S1-E 的 MSVC/GCC 各 37/37 与真实 GPU 专项作为渲染合同证据；S1-F 补独立目录验收，并修复 Queue 默认 Job 错用源码根的问题。模型材质 Shader 尚未实现，A3 父项保持未完成；下一项先完成其最小纵向切片，再按 A4 → P1 → M3 推进。当前支持范围与模板见 [ShaderScene 说明](assets/shader-scenes/README.md)。
+2026-10-13 A3 全屏 ShaderScene 子集已由 S1-A～F 验收并完成 Windows Runtime 交付：v1/v2/v3、mainImage、多 Pass/反馈/纹理、统一时间/Camera/鼠标输入、文件与参数工作台、完整包事务重载、schema 4 序列 Job 和输入报告均已接通。新增随包 `10_mouse_shader_sequence.renderjob`，与 08/09 共用同一序列合同；离线鼠标固定零输入。S1-E 的 MSVC/GCC 各 37/37 与真实 GPU 专项作为渲染合同证据；S1-F 补独立目录验收，并修复 Queue 默认 Job 错用源码根的问题。模型材质 Shader 的 A3-M1 最小纵向切片已完成：Entity 绑定、Forward 静态不透明模型、参数、Scene 事务及原生 Raster Job。两编译器 CPU 各 37/37，最终报告合同各 1/1，真实 GPU/双窗口/两帧 Job/63 图及 Label Capture 通过；其他路径明确拒绝。A3 父项仍待 A3-M2 模型包关联文件工作台与独立 Runtime 收口，再按 A4 → P1 → M3 推进。当前支持范围与模板见 [ShaderScene 说明](assets/shader-scenes/README.md)。
 
 2026-10-11 A3 首个单 Image 切片已验收：严格 `.shaderscene` v1、包内有界 float 初始值、项目 Camera/时间/分辨率、单 Pass display 输出和 Orbit 模板，通过现有打开/拖入/Scene 相对引用/PNG 捕获运行。双编译器最终 CTest 各 33/33、真实 GL 失败保留/恢复/resize/discard 清零、双尺寸应用往返和重复输出、既有十套图像/Stylized/PT 与带 ShaderScene Image Label 的 RDC 通过；未改基线。后续多 Pass、反馈、mainImage 和纹理见下条；A3 父项仍未完成，运行参数覆盖 UI、文件工作台、Job 和模型材质 Shader 按后续切片推进，当前 Job 明确拒绝且无输出。
 

@@ -53,6 +53,8 @@ std::shared_ptr<const ModelData> loadModelData(const std::string& resource,
 }
 
 pathtracer::SceneSnapshot loadSnapshot(const RenderJob& job, const SceneDocument& document) {
+    for(const auto& entity:document.entities)if(!entity.shaderMaterial.resource.empty())
+        throw std::runtime_error("CPU path tracing does not support ShaderMaterial GLSL");
     if (!document.renderer.shaderSceneResource.empty())
         throw std::runtime_error("CPU path tracing does not support ShaderScene GLSL");
     Camera camera;

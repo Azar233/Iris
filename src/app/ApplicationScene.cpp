@@ -330,8 +330,8 @@ void Application::processEditorCommands() {
             case EditorCommandType::BackendChanged: {
                 const auto backend = static_cast<EditorRenderBackend>(command.value);
                 const int requested = backend == EditorRenderBackend::CpuPathTraced ? 1 : 0;
-                if (requested == 1 && !iris::shaderSceneResourceFor(rendererSettings_).empty()) {
-                    statusMessage_ = "CPU path tracing does not support ShaderScene GLSL";
+                if (requested == 1 && (!iris::shaderSceneResourceFor(rendererSettings_).empty() || scene_.hasShaderMaterials())) {
+                    statusMessage_ = "CPU path tracing does not support ShaderScene or ShaderMaterial GLSL";
                     editorSession_.requestBackend(EditorRenderBackend::Raster);
                     break;
                 }
@@ -539,6 +539,22 @@ void Application::processEditorCommands() {
                 entity->motionHistoryValid = false;
                 cpuPreviewRestartRequested_ = true;
                 if (renderer_ != nullptr) renderer_->invalidateTemporalHistory();
+                break;
+            }
+            case EditorCommandType::SetEntityShaderMaterial: {
+                auto* entity = scene_.find(command.entity);
+                if (!entity || !entity->model) { statusMessage_ = "ShaderMaterial requires a model entity"; break; }
+                try {
+                    if (!command.shaderMaterial.resource.empty() && (viewportRenderMode_ != 0 || modulePreviewEnabled()))
+                        throw std::runtime_error("ShaderMaterial requires native Raster without a Module");
+                    iris::validateShaderMaterialBinding(command.shaderMaterial);
+                    auto items = scene_.buildRenderItems();
+                    for (auto& item : items) if (item.entityId == command.entity) item.shaderMaterial = command.shaderMaterial;
+                    renderer_->prepareShaderMaterials(items, rendererSettings_, command.flag);
+                    entity->shaderMaterial = command.shaderMaterial;
+                    cpuPreviewRestartRequested_ = true;
+                    statusMessage_ = "ShaderMaterial updated";
+                } catch (const std::exception& error) { statusMessage_ = "ShaderMaterial rejected; previous binding preserved: " + std::string(error.what()); }
                 break;
             }
             case EditorCommandType::SetEntityTint: {
@@ -768,6 +784,9 @@ void Application::processEditorCommands() {
                     statusMessage_ = "Inspector rejected invalid shading settings.";
                     break;
                 }
+                if (scene_.hasShaderMaterials() && shading.renderPath != static_cast<int>(RenderPath::Forward)) {
+                    statusMessage_ = "ShaderMaterial requires Forward"; break;
+                }
                 rendererSettings_.shadingMode = static_cast<ShadingMode>(shading.shadingMode);
                 rendererSettings_.renderPath = static_cast<RenderPath>(shading.renderPath);
                 rendererSettings_.gBufferDebugView =
@@ -932,6 +951,7 @@ void Application::processEditorCommands() {
                 statusMessage_="Plugin configuration updated: "+command.text;break;
             }
             case EditorCommandType::SetRenderPipelineMode: {
+                if (command.flag && scene_.hasShaderMaterials()) { statusMessage_ = "ShaderMaterial requires native Forward"; break; }
                 std::string error;
                 if(!iris::validatePluginConfiguration(iris::builtinRenderPlugins(),rendererSettings_.renderPlugins,
                     command.flag ? (rendererSettings_.enscapeShaderSceneResource.empty() ? iris::enscapePluginId : "") : iris::postProcessPluginId,error)){
@@ -954,6 +974,9 @@ void Application::processEditorCommands() {
             }
             case EditorCommandType::SetPostProcessingSettings: {
                 const auto& post = command.postProcessing;
+                if (scene_.hasShaderMaterials() && post.temporalAaEnabled) {
+                    statusMessage_ = "ShaderMaterial does not support TAA"; break;
+                }
                 const bool valid = post.temporalDebugView >= 0 && post.temporalDebugView <= 2
                     && post.ssaoRadius >= 0.05f && post.ssaoRadius <= 2.0f
                     && post.ssaoBias >= 0.0f && post.ssaoBias <= 0.15f
@@ -1307,6 +1330,9 @@ void Application::processEditorCommands() {
                 break;
             }
             case EditorCommandType::SetActiveModule: {
+                if (!command.text.empty() && scene_.hasShaderMaterials()) {
+                    statusMessage_ = "ShaderMaterial does not support Module-generated scenes"; break;
+                }
                 if (command.text == activeModuleId_) break;
                 if (!command.text.empty() && !moduleRegistry_.contains(command.text)) {
                     statusMessage_ = "Module selection rejected: unknown module id: " + command.text;
@@ -2813,6 +2839,8 @@ void Application::newEmptyScene() {
     currentModelPath_.clear();
     currentScenePath_.clear();
     modelPathBuffer_.fill(0);
+    shaderMaterialPathBuffer_.fill(0);
+    shaderMaterialInspectorEntity_ = invalidSceneEntityId;
     modelDiagnostics_.clear();
     pendingScreenshotPath_.clear();
     loadedMeshCount_ = loadedSubmeshCount_ = loadedTransparentSubmeshCount_ = 0;
@@ -2868,6 +2896,7 @@ SceneDocument Application::captureSceneDocument() const {
         entity.transform = source.transform;
         entity.light = source.light;
         entity.tint = source.tint;
+        entity.shaderMaterial=source.shaderMaterial;
         entity.visible = source.visible && source.enabledByPreset;
         entity.castsShadow = source.castsShadow;
         entity.instanceCandidate = source.instanceCandidate;
@@ -3009,6 +3038,25 @@ bool Application::openScene(const std::filesystem::path& path) {
             modelsByPath.emplace(key, pointer);
         }
 
+        const auto modelFor = [&](const std::string& resource) -> const GpuModel* {
+            if (resource.empty()) return nullptr;
+            if (resource == builtinGroundResource) return groundModel_.get();
+            if (resource == builtinGlassBackdropResource) return glassBackdropModel_.get();
+            const auto resolved = resolvedResources.find(resource);
+            if (resolved == resolvedResources.end()) return nullptr;
+            const auto found = modelsByPath.find(resolved->second);
+            return found == modelsByPath.end() ? nullptr : found->second;
+        };
+        std::vector<RenderItem> materialItems;
+        for (const auto& saved : document.entities) {
+            RenderItem item;
+            item.model = modelFor(saved.modelResource);
+            item.entityId = saved.id;
+            item.shaderMaterial = saved.shaderMaterial;
+            materialItems.push_back(std::move(item));
+        }
+        renderer_->prepareShaderMaterials(materialItems, document.renderer, true);
+
         newEmptyScene();
         currentScenePath_ = absolute;
         loadedSceneDocument_ = true;
@@ -3018,7 +3066,8 @@ bool Application::openScene(const std::filesystem::path& path) {
         if (absolute.extension() == ".shaderscene") {
             currentScenePath_.clear();selectedWorkspaceAsset_=absolute;
         }
-        if (!iris::shaderSceneResourceFor(document.renderer).empty()) editorSession_.requestBackend(EditorRenderBackend::Raster);
+        if (!iris::shaderSceneResourceFor(document.renderer).empty()
+            || std::any_of(document.entities.begin(), document.entities.end(), [](const auto& entity) { return !entity.shaderMaterial.resource.empty(); })) editorSession_.requestBackend(EditorRenderBackend::Raster);
         if (document.entities.empty() && rendererSettings_.enscapeCubeShaderEnabled) {
             focusRendererTab_ = true;
             pendingGlslControlsScrollFrames_ = 3;
@@ -3048,15 +3097,6 @@ bool Application::openScene(const std::filesystem::path& path) {
                 importedModels_.push_back(std::move(prepared[index].model));
             }
         }
-        const auto modelFor = [&](const std::string& resource) -> const GpuModel* {
-            if (resource.empty()) return nullptr;
-            if (resource == builtinGroundResource) return groundModel_.get();
-            if (resource == builtinGlassBackdropResource) return glassBackdropModel_.get();
-            const auto resolved = resolvedResources.find(resource);
-            if (resolved == resolvedResources.end()) return nullptr;
-            const auto found = modelsByPath.find(resolved->second);
-            return found == modelsByPath.end() ? nullptr : found->second;
-        };
         for (const SceneDocumentEntity& saved : document.entities) {
             const std::string persistentResource = saved.modelResource.rfind("builtin:", 0U) == 0U
                 ? saved.modelResource
@@ -3069,6 +3109,7 @@ bool Application::openScene(const std::filesystem::path& path) {
             entity->transform = saved.transform;
             entity->light = saved.light;
             entity->tint = saved.tint;
+            entity->shaderMaterial=saved.shaderMaterial;
             entity->visible = saved.visible;
             entity->enabledByPreset = true;
             entity->castsShadow = saved.castsShadow;
@@ -5245,4 +5286,75 @@ bool Application::runLightEntityAcceptance(const std::filesystem::path& director
         std::cout << "Light entity command/persistence acceptance: PASS\n";
         return true;
     } catch (const std::exception& error) { std::cerr << "Light entity acceptance: " << error.what() << '\n'; return false; }
+}
+
+void Application::drawShaderMaterialInspector(const SceneEntity& entity) {
+    if (!EditorUi::section("Shader material", true)) return;
+    ++shaderMaterialUiFrames_;
+    const auto interact = [&](int phase, int frame, float position = .5f) {
+        if (!std::getenv("IRIS_SHADER_MATERIAL_UI_TEST") || shaderMaterialUiFrames_ < frame) return;
+        auto& io=ImGui::GetIO();
+        if (shaderMaterialUiPhase_ == phase) {
+            if (!ImGui::IsItemVisible()) { ImGui::SetScrollHereY(.5f); return; }
+            const auto a=ImGui::GetItemRectMin(), b=ImGui::GetItemRectMax();
+            io.AddFocusEvent(true);io.AddMousePosEvent(a.x+(b.x-a.x)*position,(a.y+b.y)*.5f);
+            io.AddMouseButtonEvent(0,true);++shaderMaterialUiPhase_;
+        } else if (shaderMaterialUiPhase_ == phase+1) {io.AddMouseButtonEvent(0,false);++shaderMaterialUiPhase_;}
+    };
+    if (shaderMaterialInspectorEntity_ != entity.id) {
+        shaderMaterialInspectorEntity_ = entity.id;
+        std::snprintf(shaderMaterialPathBuffer_.data(), shaderMaterialPathBuffer_.size(), "%s", entity.shaderMaterial.resource.c_str());
+    }
+    ImGui::TextWrapped("%s", EditorUi::chinese ? "静态不透明模型 · Forward · 线性 HDR" : "Static opaque model · Forward · linear HDR");
+    EditorUi::propertyRow(EditorUi::chinese ? "包路径" : "Package", [&](const char* id) {
+        return ImGui::InputText(id, shaderMaterialPathBuffer_.data(), shaderMaterialPathBuffer_.size());
+    });
+    const auto request = [&](iris::ShaderMaterialBinding binding, bool retry) {
+        EditorCommand command{EditorCommandType::SetEntityShaderMaterial, entity.id};
+        command.shaderMaterial = std::move(binding); command.flag = retry;
+        editorSession_.request(std::move(command));
+    };
+    if (ImGui::Button(EditorUi::chinese ? "绑定包" : "Bind package")) {
+        iris::ShaderMaterialBinding binding;
+        binding.resource = std::filesystem::absolute(std::filesystem::u8path(shaderMaterialPathBuffer_.data())).u8string();
+        request(std::move(binding), true);
+    }
+    interact(4,14);
+    ImGui::SameLine();
+    if (ImGui::Button(EditorUi::chinese ? "清除" : "Clear")) { request({}, false); shaderMaterialUiCleared_=true; }
+    interact(2,10);
+    if (entity.shaderMaterial.resource.empty()) return;
+    ImGui::TextWrapped("%s", entity.shaderMaterial.resource.c_str());
+    if (ImGui::Button(EditorUi::chinese ? "重新编译" : "Recompile")) request(entity.shaderMaterial, true);
+    interact(6,18);
+    if (!renderer_->shaderMaterialError().empty()) {
+        ImGui::TextWrapped("%s", EditorUi::chinese ? "重载失败，保留上一版。" : "Reload failed; previous program retained.");
+        ImGui::TextWrapped("%s", renderer_->shaderMaterialError().c_str());
+    }
+    const auto* package = renderer_->shaderMaterialPackage(entity.shaderMaterial.resource);
+    if (!package) return;
+    ImGui::TextWrapped("%s | %s | %s", package->id.c_str(), package->author.c_str(), package->license.c_str());
+    if (ImGui::Button(EditorUi::chinese ? "打开片元源码" : "Open fragment source")) {
+        EditorCommand command{EditorCommandType::OpenWorkspaceSource};
+        command.text = package->passes.front().fragment.u8string(); editorSession_.request(std::move(command));
+    }
+    const auto values = iris::shaderMaterialValues(*package, entity.shaderMaterial);
+    for (std::size_t index = 0; index < values.size(); ++index) {
+        const auto& descriptor = package->parameters.descriptors()[index];
+        float number = values[index].number;
+        ImGui::PushID(descriptor.id.c_str());
+        if (EditorUi::propertyRow(descriptor.displayName.c_str(), [&](const char* id) {
+                const bool changed=ImGui::SliderFloat(id, &number, static_cast<float>(descriptor.minimum), static_cast<float>(descriptor.maximum), "%.3f");
+                if (descriptor.id == "gain") interact(0,5,.25f);
+                return changed;
+            })) {
+            shaderMaterialUiEdited_=true;
+            auto binding = entity.shaderMaterial;
+            auto found = std::find_if(binding.parameters.begin(), binding.parameters.end(), [&](const auto& entry) { return entry.id == descriptor.id; });
+            ModuleParameterOverride value; value.id = descriptor.id; value.value.type = ModuleParameterType::Float; value.value.number = number;
+            if (found == binding.parameters.end()) binding.parameters.push_back(value); else *found = value;
+            request(std::move(binding), false);
+        }
+        ImGui::PopID();
+    }
 }

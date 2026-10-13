@@ -32,7 +32,7 @@ std::string fileFingerprint(const std::filesystem::path& path) {
 }
 bool writeRasterFrameReport(const std::filesystem::path& path,const RenderJob& job,
     int frame,const RendererSettings& settings,const std::string& gpu,std::string& error,const capture::InputManifest* manifest,
-    const iris::ShaderScenePackage* package) {
+    const iris::ShaderScenePackage* package, const SceneDocument* scene) {
     try {
         if(manifest) manifest->validate();
         json::StringBuffer buffer;json::PrettyWriter<json::StringBuffer> w(buffer);
@@ -43,6 +43,9 @@ bool writeRasterFrameReport(const std::filesystem::path& path,const RenderJob& j
         w.Key("frame");w.Int(frame);
         w.Key("timeSeconds");w.Double(static_cast<double>(job.shaderSceneSequence ? frame : frame-job.startFrame)/job.framesPerSecond);
         w.Key("fps");w.Int(job.framesPerSecond);
+        w.Key("timeStepSeconds");w.Double(1.0/job.framesPerSecond);
+        w.Key("buildId");w.String(MYRENDERER_BUILD_ID);
+        w.Key("renderPluginApiVersion");w.Int(iris::renderPluginApiVersion);
         if(job.shaderSceneSequence) {
             if(!package) throw std::runtime_error("ShaderScene report requires the committed package");
             if(settings.shaderSceneMouse != glm::vec4(0)) throw std::runtime_error("ShaderScene output requires zero mouse input");
@@ -99,6 +102,20 @@ bool writeRasterFrameReport(const std::filesystem::path& path,const RenderJob& j
                 w.Key("path");w.String(texture.path.generic_u8string().c_str());w.EndObject();}w.EndArray();
             w.EndObject();
         }
+        w.Key("shaderMaterials");w.StartArray();
+        if (scene) for (const auto& entity : scene->entities) if (!entity.shaderMaterial.resource.empty()) {
+            iris::ShaderScenePackage material;std::string materialError;
+            if (!iris::loadShaderScenePackage(std::filesystem::u8path(entity.shaderMaterial.resource),material,materialError))
+                throw std::runtime_error(materialError);
+            const auto values=iris::shaderMaterialValues(material,entity.shaderMaterial);
+            w.StartObject();w.Key("entity");w.Uint64(entity.id);w.Key("id");w.String(material.id.c_str());
+            w.Key("version");w.Int(material.version);w.Key("resource");w.String(material.manifest.generic_u8string().c_str());
+            w.Key("author");w.String(material.author.c_str());w.Key("license");w.String(material.license.c_str());
+            w.Key("parameters");w.StartObject();
+            for (std::size_t i=0;i<values.size();++i) {w.Key(material.parameters.descriptors()[i].id.c_str());w.Double(values[i].number);}
+            w.EndObject();w.EndObject();
+        }
+        w.EndArray();
         w.Key("resolution");w.StartArray();w.Uint(job.renderSettings.width);w.Uint(job.renderSettings.height);w.EndArray();
         w.Key("gpu");w.String(gpu.c_str());
         w.Key("sceneFingerprint");w.String(fileFingerprint(job.scenePath).c_str());

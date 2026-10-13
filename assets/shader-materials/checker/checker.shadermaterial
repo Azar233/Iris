@@ -1,0 +1,29 @@
+{
+  "version": 1,
+  "id": "checker_material",
+  "resourceRoot": ".",
+  "fragment": "surface.frag",
+  "entry": "main",
+  "output": "linear-rgba16f",
+  "camera": "project",
+  "author": "Iris contributors",
+  "license": "MIT",
+  "parameters": [
+    {
+      "id": "gain",
+      "label": "Gain",
+      "type": "float",
+      "default": 0.7,
+      "min": 0,
+      "max": 1
+    },
+    {
+      "id": "frequency",
+      "label": "Checker frequency",
+      "type": "float",
+      "default": 8,
+      "min": 1,
+      "max": 32
+    }
+  ]
+}

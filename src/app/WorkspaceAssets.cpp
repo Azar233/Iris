@@ -73,7 +73,7 @@ bool classify(const std::filesystem::path& relativePath, WorkspaceAssetCategory&
     const std::string generic = lowercase(relativePath.generic_u8string());
     const std::string extension = lowercase(relativePath.extension().string());
     if (extension == ".shaderscene") category = WorkspaceAssetCategory::ShaderScenes;
-    else if (isOneOf(extension, {".glsl", ".frag", ".vert", ".geom"})) category = WorkspaceAssetCategory::Shaders;
+    else if (isOneOf(extension, {".glsl", ".frag", ".vert", ".geom", ".shadermaterial"})) category = WorkspaceAssetCategory::Shaders;
     else if (extension == ".myscene") category = WorkspaceAssetCategory::Scenes;
     else if (extension == ".renderjob") category = WorkspaceAssetCategory::RenderJobs;
     else if (endsWith(generic, ".module.json")) category = WorkspaceAssetCategory::Modules;

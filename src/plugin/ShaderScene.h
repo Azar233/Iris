@@ -56,6 +56,7 @@ struct ShaderScenePackage {
     ParameterRegistry parameters;
     int version{1};
     bool mainImageEntry{false}; // v2/v3; applies to every Pass.
+    bool modelMaterial{false}; // .shadermaterial v1, opaque Forward surface, linear output.
     std::vector<ShaderScenePass> passes;
     std::vector<std::size_t> executionOrder;
     std::vector<ShaderSceneTexture> textures; // v3 only; CPU staging released after upload.

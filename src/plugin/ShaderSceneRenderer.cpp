@@ -171,6 +171,7 @@ void ShaderSceneRenderer::prepareResources(const RendererSettings& settings, int
     const auto input = capture::snapshot(std::filesystem::u8path(resource));
     candidate->manifestInput = input;
     if (!loadShaderScenePackage(std::filesystem::u8path(resource), candidate->package, error)) throw std::runtime_error(error);
+    if (candidate->package.modelMaterial) throw std::runtime_error("ShaderMaterial cannot replace a fullscreen ShaderScene");
     for (const auto& description : candidate->package.passes) {
         auto pass = std::make_unique<Pass>();
         Shader::SourcePolicy policy; policy.fragmentRoot = candidate->package.root;

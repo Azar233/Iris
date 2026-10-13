@@ -8,7 +8,7 @@
 
 namespace {
 
-void require(bool condition, const char* message) {
+void require(bool condition, const std::string& message) {
     if (!condition) throw std::runtime_error(message);
 }
 
@@ -479,9 +479,9 @@ int main() {
         parameterScene.renderer.shaderSceneHistory={false,false,.5f};
         const auto parameterPath=directory/"parameters.myscene";
         std::string parameterError;
-        require(saveSceneDocument(parameterPath,parameterScene,parameterError),parameterError.c_str());
+        require(saveSceneDocument(parameterPath,parameterScene,parameterError),parameterError);
         SceneDocument reopened;
-        require(loadSceneDocument(parameterPath,reopened,parameterError),parameterError.c_str());
+        require(loadSceneDocument(parameterPath,reopened,parameterError),parameterError);
         require(reopened.renderer.shaderSceneParameters.size()==1 && reopened.renderer.shaderSceneParameters[0].value.number==.8f,"ShaderScene override roundtrip failed");
         require(reopened.renderer.shaderSceneHistory == parameterScene.renderer.shaderSceneHistory,"History policy roundtrip failed");
         const auto rejectHistory = [&](const std::string& history) {
@@ -501,7 +501,7 @@ int main() {
         rejectHistory(R"({"version":1,"resetOnParameters":false,"resetOnCamera":false,"maximumTimeStep":0.5},"shaderSceneHistory":{"version":1,"resetOnParameters":true,"resetOnCamera":true,"maximumTimeStep":0.25})");
         std::ofstream(directory/"legacy-history.myscene") << R"({"format":"MyRendererScene","version":1,"renderer":{},"entities":[]})";
         SceneDocument legacyHistory;
-        require(loadSceneDocument(directory/"legacy-history.myscene",legacyHistory,parameterError),parameterError.c_str());
+        require(loadSceneDocument(directory/"legacy-history.myscene",legacyHistory,parameterError),parameterError);
         require(legacyHistory.renderer.shaderSceneHistory == iris::ShaderSceneHistoryPolicy{},"Old Scene history defaults changed");
         auto invalidHistoryScene=parameterScene;invalidHistoryScene.renderer.shaderSceneHistory.maximumTimeStep=0;
         require(!saveSceneDocument(directory/"rejected-history-save.myscene",invalidHistoryScene,parameterError),"Invalid history policy saved");
@@ -518,6 +518,25 @@ int main() {
         require(loadSceneDocument(shaderManifest,reopened,parameterError) && reopened.renderer.shaderSceneParameters.empty(),"New package inherited previous overrides");
         require(reopened.renderer.shaderSceneHistory == iris::ShaderSceneHistoryPolicy{},"New package inherited old history policy");
         std::cout << "ShaderScene override relative roundtrip / invalid transaction / new-package defaults PASS\n";
+        const auto materialManifest=directory/"surface.shadermaterial";
+        std::ofstream(directory/"surface.frag") << "#version 330 core\nvoid main(){}\n";
+        std::ofstream(materialManifest) << R"({"version":1,"id":"surface","resourceRoot":".","fragment":"surface.frag","entry":"main","output":"linear-rgba16f","camera":"project","author":"test","license":"MIT","parameters":[{"id":"gain","label":"Gain","type":"float","default":0.5,"min":0,"max":1}]})";
+        SceneDocument materialScene;SceneDocumentEntity entity;entity.id=1;entity.name="surface";entity.modelResource="builtin:ground-plane";
+        entity.shaderMaterial.resource=materialManifest.u8string();
+        ModuleParameterOverride materialGain;materialGain.id="gain";materialGain.value.type=ModuleParameterType::Float;materialGain.value.number=.7f;
+        entity.shaderMaterial.parameters={materialGain};materialScene.entities.push_back(entity);
+        const auto materialScenePath=directory/"surface.myscene";
+        require(saveSceneDocument(materialScenePath,materialScene,parameterError),parameterError);
+        require(loadSceneDocument(materialScenePath,reopened,parameterError),parameterError);
+        require(reopened.entities[0].shaderMaterial.resource==materialManifest.u8string()
+            && close(reopened.entities[0].shaderMaterial.parameters[0].value.number,.7f),"Material relative roundtrip failed");
+        materialScene.renderer.renderPath=RenderPath::Deferred;
+        require(!saveSceneDocument(directory/"invalid-material.myscene",materialScene,parameterError)
+            && !std::filesystem::exists(directory/"invalid-material.myscene"),"Unsupported material path created output");
+        std::ofstream(materialScenePath) << R"({"format":"MyRendererScene","version":2,"entities":[{"id":1,"model":"builtin:ground-plane","shaderMaterial":{"version":1,"resource":"surface.shadermaterial","values":[{"id":"unknown","value":1}]}}]})";
+        require(!loadSceneDocument(materialScenePath,reopened,parameterError)
+            && close(reopened.entities[0].shaderMaterial.parameters[0].value.number,.7f),"Rejected material Scene replaced output document");
+        std::cout << "ShaderMaterial defaults / relative roundtrip / invalid transaction PASS\n";
         std::cout << "Scene document repeat-load acceptance test passed\n";
         return 0;
     } catch (const std::exception& exception) {

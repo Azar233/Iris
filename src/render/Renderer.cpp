@@ -1,4 +1,5 @@
 #include "render/Renderer.h"
+#include "render/ShaderMaterialRuntime.h"
 
 #include <iostream>
 
@@ -159,6 +160,14 @@ Renderer::~Renderer() {
     glDeleteQueries(static_cast<GLsizei>(passStartQueries_.size()), passStartQueries_.data());
     glDeleteQueries(static_cast<GLsizei>(passEndQueries_.size()), passEndQueries_.data());
 }
+void Renderer::prepareShaderMaterials(const std::vector<RenderItem>& items,const RendererSettings& settings,bool retry) {
+    if(!shaderMaterials_)shaderMaterials_=std::make_unique<ShaderMaterialRuntime>(shaderDirectory_);
+    if(shaderMaterials_->prepare(items,settings,false,retry))invalidateTemporalHistory();
+}
+const iris::ShaderScenePackage* Renderer::shaderMaterialPackage(const std::string& resource) const {
+    return shaderMaterials_?shaderMaterials_->package(resource):nullptr;
+}
+std::string Renderer::shaderMaterialError() const {return shaderMaterials_?shaderMaterials_->error():std::string{};}
 
 // A rebuild costs a few hundred milliseconds, so it only happens when the sun moved enough to be
 // visible in the sky or a parameter changed. This keeps dragging responsive while guaranteeing
@@ -199,6 +208,8 @@ void Renderer::render(
     int height
 ) {
     bufferPreviewNearPlane_ = camera.nearPlane();
+    if(!shaderMaterials_)shaderMaterials_=std::make_unique<ShaderMaterialRuntime>(shaderDirectory_);
+    if(shaderMaterials_->prepare(renderItems,requestedSettings,true,false,requestedSettings.shaderHotReloadEnabled && shaderReloadPollFrame_ % 15U == 0U))invalidateTemporalHistory();
     cpuPassTimings_.clear();
     RendererSettings settings = requestedSettings;
     settings.shaderSceneResource = iris::shaderSceneResourceFor(requestedSettings);
@@ -445,7 +456,7 @@ void Renderer::render(
     const auto instancePreparationStart = std::chrono::steady_clock::now();
     const ViewFrustum viewFrustum = extractViewFrustum(projection * view);
     for (const RenderItem& item : renderItems) {
-        if (!item.visible || item.model == nullptr || !item.instanceCandidate) continue;
+        if (!item.visible || item.model == nullptr || !item.instanceCandidate || !item.shaderMaterial.resource.empty()) continue;
         ++submittedInstanceCount_;
         std::size_t lodLevel = 0U;
         if (settings.instanceOptimizationEnabled) {
@@ -1151,9 +1162,18 @@ sequence.add("Shadow maps", [&] {
                 if (!item.visible || item.model == nullptr) {
                     continue;
                 }
-                if (settings.instanceOptimizationEnabled && item.instanceCandidate) continue;
-                shader_->setMat4("uModel", item.modelMatrix);
-                item.model->drawOpaque(*shader_, item.tint, settings.cullBackFaces);
+                if (settings.instanceOptimizationEnabled && item.instanceCandidate && item.shaderMaterial.resource.empty()) continue;
+                if(item.shaderMaterial.resource.empty()) {
+                    shader_->setMat4("uModel", item.modelMatrix);
+                    item.model->drawOpaque(*shader_, item.tint, settings.cullBackFaces);
+                }else {
+                    auto& materialShader=shaderMaterials_->bind(item,camera,settings,width,height);
+                    const bool labels=GLAD_GL_KHR_debug && glPushDebugGroup && glPopDebugGroup;
+                    if(labels)glPushDebugGroup(GL_DEBUG_SOURCE_APPLICATION,0,-1,"ShaderMaterial opaque model");
+                    item.model->drawOpaque(materialShader,item.tint,settings.cullBackFaces);
+                    if(labels)glPopDebugGroup();
+                    bindSceneShader();
+                }
                 drawCallCount_ += item.model->opaqueSubmeshCount();
             }
             for (const InstanceBatch& batch : instanceBatches) {

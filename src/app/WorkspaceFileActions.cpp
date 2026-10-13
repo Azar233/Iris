@@ -25,7 +25,7 @@ bool prepareWorkspaceFileRequest(const std::filesystem::path& selected, bool dir
             if(!std::filesystem::is_regular_file(path)) throw std::runtime_error("Source file does not exist");
             auto extension=path.extension().u8string();
             std::transform(extension.begin(),extension.end(),extension.begin(),[](unsigned char c){return static_cast<char>(std::tolower(c));});
-            static const std::set<std::string> textExtensions{ ".glsl", ".frag", ".vert", ".geom", ".shaderscene", ".md", ".txt" };
+            static const std::set<std::string> textExtensions{ ".glsl", ".frag", ".vert", ".geom", ".shaderscene", ".shadermaterial", ".md", ".txt" };
             if(!textExtensions.count(extension) && path.filename()!="LICENSE")
                 throw std::runtime_error("Only source/Manifest/documentation text can be opened in the editor");
         }

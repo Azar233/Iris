@@ -28,6 +28,7 @@ struct SceneDocumentEntity {
     bool visible{true};
     bool castsShadow{true};
     bool instanceCandidate{false};
+    iris::ShaderMaterialBinding shaderMaterial{};
 };
 
 struct ScenePlaybackSettings {

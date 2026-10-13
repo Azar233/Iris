@@ -1,0 +1,60 @@
+{
+  "format": "MyRendererScene",
+  "version": 2,
+  "camera": {
+    "target": [
+      0,
+      0,
+      0
+    ],
+    "yawDegrees": 25,
+    "pitchDegrees": 18,
+    "distance": 5.8,
+    "fieldOfViewDegrees": 38
+  },
+  "renderer": {
+    "renderPath": 0,
+    "temporalAaEnabled": false,
+    "showGrid": false,
+    "showAxes": false,
+    "iblEnabled": false,
+    "skyboxEnabled": false,
+    "shadowsEnabled": true,
+    "toneMapping": false,
+    "bloom": false
+  },
+  "entities": [
+    {
+      "id": 1,
+      "name": "Shader material cube",
+      "model": "../../models/cube.obj",
+      "shaderMaterial": {
+        "version": 1,
+        "resource": "../../shader-materials/checker/checker.shadermaterial",
+        "values": []
+      }
+    },
+    {
+      "id": 2,
+      "name": "Native cube",
+      "model": "../../models/cube.obj",
+      "transform": {
+        "translation": [
+          2,
+          0,
+          0
+        ],
+        "scale": [
+          0.6,
+          0.6,
+          0.6
+        ]
+      },
+      "tint": [
+        0.3,
+        0.8,
+        0.4
+      ]
+    }
+  ]
+}

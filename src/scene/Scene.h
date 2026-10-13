@@ -42,6 +42,7 @@ struct SceneEntity {
     bool instanceCandidate{false};
     bool motionHistoryValid{false};
     bool worldTransformInitialized{false};
+    iris::ShaderMaterialBinding shaderMaterial{};
 };
 
 class Scene {
@@ -68,6 +69,7 @@ public:
     SceneEntity* find(SceneEntityId id);
     const SceneEntity* find(SceneEntityId id) const;
     const std::vector<SceneEntity>& entities() const { return entities_; }
+    bool hasShaderMaterials() const;
     std::size_t size() const { return entities_.size(); }
 
     void beginFrame();

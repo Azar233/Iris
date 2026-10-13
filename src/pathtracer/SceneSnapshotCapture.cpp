@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <utility>
+#include <stdexcept>
 
 #include <glm/trigonometric.hpp>
 #include <glm/geometric.hpp>
@@ -34,6 +35,7 @@ SceneSnapshot captureSceneSnapshot(
     }
     SceneSnapshotBuilder builder(snapshotCamera, std::move(lighting));
     for (const SceneEntity& entity : scene.entities()) {
+        if(!entity.shaderMaterial.resource.empty())throw std::runtime_error("CPU path tracing does not support ShaderMaterial GLSL");
         if (entity.model == nullptr || !entity.visible || !entity.enabledByPreset) continue;
         builder.addModel(
             entity.model->sourceData(),

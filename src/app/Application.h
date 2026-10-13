@@ -104,6 +104,8 @@ private:
     void runShaderHistoryAcceptance(const std::filesystem::path& directory);
     void runShaderSequenceAcceptance(const std::filesystem::path& directory);
     void drawShaderRuntimeInspector();
+    void drawShaderMaterialInspector(const SceneEntity& entity);
+    void runShaderMaterialAcceptance(const std::filesystem::path& directory);
     void runEnscapeShaderSceneAcceptance(const std::filesystem::path& directory);
     void updateViewportCameraNavigation();
     void drawModulePanel();
@@ -296,6 +298,12 @@ private:
     std::vector<std::filesystem::path> availableModels_;
     std::vector<std::filesystem::path> availableScenes_;
     std::array<char, 1024> modelPathBuffer_{};
+    std::array<char, 4096> shaderMaterialPathBuffer_{};
+    SceneEntityId shaderMaterialInspectorEntity_{invalidSceneEntityId};
+    int shaderMaterialUiFrames_{0};
+    int shaderMaterialUiPhase_{0};
+    bool shaderMaterialUiEdited_{false};
+    bool shaderMaterialUiCleared_{false};
     std::string statusMessage_{"Ready"};
     std::string gpuDescription_;
     std::vector<ModelDiagnostic> modelDiagnostics_;

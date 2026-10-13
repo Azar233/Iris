@@ -8,6 +8,7 @@
 
 #include "runtime/Timeline.h"
 #include "plugin/ShaderSceneHistory.h"
+#include "plugin/ShaderMaterial.h"
 
 enum class EditorRenderBackend {
     Raster = 0,
@@ -44,6 +45,7 @@ enum class EditorCommandType {
     SetLightEntitySettings,
     SetEntityTransform,
     SetEntityTint,
+    SetEntityShaderMaterial,
     SetEntityCastsShadow,
     SetStageSettings,
     SetMaterialSettings,
@@ -408,6 +410,7 @@ struct EditorCommand {
     EditorAtmosphereSettingsPayload atmosphere;
     EditorModuleParameterPayload moduleParameter;
     iris::ShaderSceneHistoryPolicy shaderSceneHistory;
+    iris::ShaderMaterialBinding shaderMaterial;
 };
 
 class EditorSession {

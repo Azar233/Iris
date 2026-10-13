@@ -616,6 +616,10 @@ void readRendererSettings(const scene_json::Value& value, RendererSettings& sett
 }
 
 void validateDocument(const SceneDocument& document, const iris::RenderPluginParameterCatalog& parameters) {
+    for (const auto& resource : {document.renderer.shaderSceneResource, document.renderer.enscapeShaderSceneResource}) {
+        if (!resource.empty() && std::filesystem::u8path(resource).extension() == ".shadermaterial")
+            throw std::runtime_error("ShaderMaterial cannot replace a fullscreen ShaderScene");
+    }
     std::string parameterError;
     if (!parameters.validateSettings(document.renderer, parameterError)) throw std::runtime_error(parameterError);
     if (document.moduleId.empty() && !document.moduleParameters.empty()) {
@@ -643,6 +647,12 @@ void validateDocument(const SceneDocument& document, const iris::RenderPluginPar
         throw std::runtime_error("Scene supports at most 64 combined local lights");
     std::unordered_map<SceneEntityId, SceneEntityId> parents;
     for (const SceneDocumentEntity& entity : document.entities) {
+        iris::validateShaderMaterialBinding(entity.shaderMaterial);
+        if(!entity.shaderMaterial.resource.empty()) {
+            if (!document.moduleId.empty()) throw std::runtime_error("ShaderMaterial does not support Module-generated scenes");
+            if(entity.modelResource.empty() || entity.light)throw std::runtime_error("ShaderMaterial requires a model entity");
+            iris::validateShaderMaterialSettings(document.renderer);
+        }
         if (entity.id == invalidSceneEntityId || !parents.emplace(entity.id, entity.parent).second) {
             throw std::runtime_error("Scene entity IDs must be unique non-zero values");
         }
@@ -760,6 +770,13 @@ bool saveSceneDocument(
             writer.EndObject();
             writer.Key("visible"); writer.Bool(entity.visible);
             writer.Key("tint"); writeVec3(writer, entity.tint);
+            if(!entity.shaderMaterial.resource.empty()) {
+                writer.Key("shaderMaterial");writer.StartObject();writer.Key("version");writer.Int(1);
+                writer.Key("resource");writer.String(makeSceneRelativeResource(entity.shaderMaterial.resource,path).c_str());
+                writer.Key("values");writer.StartArray();for(const auto& parameter:entity.shaderMaterial.parameters){
+                    writer.StartObject();writer.Key("id");writer.String(parameter.id.c_str());writer.Key("value");writer.Double(parameter.value.number);writer.EndObject();
+                }writer.EndArray();writer.EndObject();
+            }
             writer.Key("castsShadow"); writer.Bool(entity.castsShadow);
             writer.Key("instanceCandidate"); writer.Bool(entity.instanceCandidate);
             writer.EndObject();
@@ -1053,6 +1070,27 @@ bool loadSceneDocument(
             }
             entity.visible = readBool(item, "visible", entity.visible);
             entity.tint = readVec3(item, "tint", entity.tint);
+            if(const auto* material=optionalMember(item,"shaderMaterial")) {
+                if(!material->IsObject() || material->MemberCount()!=3 || !material->HasMember("version")
+                    || !(*material)["version"].IsInt() || (*material)["version"].GetInt()!=1
+                    || !material->HasMember("resource") || !(*material)["resource"].IsString()
+                    || !material->HasMember("values") || !(*material)["values"].IsArray() || (*material)["values"].Size()>16)
+                    throw std::runtime_error("Invalid ShaderMaterial binding version/fields");
+                std::unordered_set<std::string> keys;
+                for (auto entry=material->MemberBegin(); entry!=material->MemberEnd(); ++entry)
+                    if (!keys.insert(entry->name.GetString()).second) throw std::runtime_error("Duplicate ShaderMaterial member");
+                const auto& resource=(*material)["resource"];
+                const std::string name(resource.GetString(),resource.GetStringLength());
+                if(name.empty() || name.size()>4096 || name.find('\0')!=std::string::npos)throw std::runtime_error("Invalid ShaderMaterial resource");
+                entity.shaderMaterial.resource=resolveSceneResource(name,std::filesystem::absolute(path)).u8string();
+                for(const auto& value:(*material)["values"].GetArray()) {
+                    if(!value.IsObject() || value.MemberCount()!=2 || !value.HasMember("id") || !value["id"].IsString()
+                        || !value.HasMember("value") || !value["value"].IsNumber())throw std::runtime_error("Invalid ShaderMaterial parameter entry");
+                    ModuleParameterOverride parameter;parameter.id.assign(value["id"].GetString(),value["id"].GetStringLength());
+                    parameter.value.type=ModuleParameterType::Float;parameter.value.number=static_cast<float>(value["value"].GetDouble());
+                    entity.shaderMaterial.parameters.push_back(std::move(parameter));
+                }
+            }
             entity.castsShadow = readBool(item, "castsShadow", entity.castsShadow);
             entity.instanceCandidate = readBool(item, "instanceCandidate", entity.instanceCandidate);
             loaded.entities.push_back(std::move(entity));

@@ -1,4 +1,5 @@
 #include "plugin/ShaderScene.h"
+#include "plugin/ShaderMaterial.h"
 #include "render/Renderer.h"
 #include "asset/InputWatch.h"
 #include <filesystem>
@@ -104,6 +105,22 @@ int main(int argc, char** argv) {
         write(mainImage); check(iris::loadShaderScenePackage(path, package, error), "v2 mainImage rejected");
         check(package.mainImageEntry && package.executionOrder == std::vector<std::size_t>({1, 0}), "mainImage entry or graph lost");
         write(valid); check(iris::loadShaderScenePackage(path, package, error) && !package.mainImageEntry, "v1 main did not restore entry default");
+        const auto materialPath = root / "test.shadermaterial";
+        auto material = valid; material.replace(material.find("display-rgba8"),13,"linear-rgba16f");
+        std::ofstream(materialPath) << material;
+        check(iris::loadShaderScenePackage(materialPath,package,error) && package.modelMaterial,"Material package not accepted");
+        gain.id="gain";gain.value.number=.8f;
+        iris::ShaderMaterialBinding binding; binding.resource=materialPath.u8string(); binding.parameters={gain};
+        check(iris::shaderMaterialValues(package,binding)[0].number==.8f,"Material override lost");
+        binding.parameters.push_back(gain);
+        bool rejected=false;try{iris::validateShaderMaterialBinding(binding);}catch(const std::exception&){rejected=true;}
+        check(rejected,"Duplicate material override accepted");
+        RendererSettings native;iris::validateShaderMaterialSettings(native);
+        native.renderPath=RenderPath::Deferred;rejected=false;
+        try{iris::validateShaderMaterialSettings(native);}catch(const std::exception&){rejected=true;}
+        check(rejected,"Deferred material accepted");
+        std::ofstream(materialPath) << valid;
+        check(!iris::loadShaderScenePackage(materialPath,package,error),"Display output accepted as linear material");
         std::filesystem::remove_all(root);
         check(argc == 2, "Texture fixture directory required");
         testShaderSceneTexturesCpu(std::filesystem::u8path(argv[1]));

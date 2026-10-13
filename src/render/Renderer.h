@@ -38,6 +38,7 @@ class GpuModel;
 class OpticalPathDebugRenderer;
 class RenderTarget;
 class Shader;
+class ShaderMaterialRuntime;
 class ShadowMap;
 class SsaoRenderer;
 class SpectralBeamRenderer;
@@ -332,6 +333,9 @@ public:
     // of a cloud or sun edit instead of guessing at it.
     double environmentBuildMilliseconds() const;
     TextureCache& textureCache();
+    void prepareShaderMaterials(const std::vector<RenderItem>&, const RendererSettings&, bool retry=false);
+    const iris::ShaderScenePackage* shaderMaterialPackage(const std::string&) const;
+    std::string shaderMaterialError() const;
     const std::string& shaderReloadStatus() const { return shaderReloadStatus_; }
     const std::vector<ShaderSourceDiagnostic>& shaderReloadDiagnostics() const { return shaderReloadDiagnostics_; }
     bool shaderReloadFailed() const { return shaderReloadFailed_; }
@@ -372,6 +376,7 @@ private:
     bool atmosphereActive_{false};
     int builtEnvironmentPreset_{0};
     std::unique_ptr<Shader> shader_;
+    std::unique_ptr<ShaderMaterialRuntime> shaderMaterials_;
     std::filesystem::path shaderDirectory_;
     std::unique_ptr<CausticsMap> causticsMap_;
     std::unique_ptr<CloudLayerRenderer> cloudLayer_;

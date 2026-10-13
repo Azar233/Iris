@@ -1,4 +1,5 @@
 #include "plugin/ShaderScene.h"
+#include "plugin/ShaderMaterial.h"
 #include "asset/InputManifest.h"
 #include "asset/InputWatch.h"
 #include "plugin/RenderPluginParameters.h"
@@ -109,7 +110,8 @@ bool loadShaderScenePackage(const std::filesystem::path& path, ShaderScenePackag
         ShaderScenePackage loaded;
         capture::watchInput(path);
         loaded.manifest = std::filesystem::canonical(path);
-        if (loaded.manifest.extension() != ".shaderscene") throw std::runtime_error("Expected .shaderscene manifest");
+        loaded.modelMaterial = loaded.manifest.extension() == ".shadermaterial";
+        if (!loaded.modelMaterial && loaded.manifest.extension() != ".shaderscene") throw std::runtime_error("Expected .shaderscene or .shadermaterial manifest");
         if (std::filesystem::file_size(loaded.manifest) > 65536) throw std::runtime_error("Manifest exceeds 64 KiB");
         capture::recordInput(loaded.manifest);
         std::ifstream file(loaded.manifest, std::ios::binary);
@@ -122,6 +124,7 @@ bool loadShaderScenePackage(const std::filesystem::path& path, ShaderScenePackag
             || (json["version"].GetInt() < 1 || json["version"].GetInt() > 3))
             throw std::runtime_error("Unsupported ShaderScene version (expected 1..3)");
         loaded.version = json["version"].GetInt();
+        if (loaded.modelMaterial && loaded.version != 1) throw std::runtime_error("ShaderMaterial supports version 1 only");
         if (loaded.version == 1) fields(json, {"version", "id", "resourceRoot", "fragment", "entry", "output", "camera", "author", "license", "parameters"});
         else if (loaded.version == 2) fields(json, {"version", "id", "resourceRoot", "entry", "camera", "author", "license", "parameters", "passes"});
         else fields(json, {"version", "id", "resourceRoot", "entry", "camera", "author", "license", "parameters", "passes", "textures", "parameterSource"});
@@ -130,7 +133,7 @@ bool loadShaderScenePackage(const std::filesystem::path& path, ShaderScenePackag
         loaded.author = string(json, "author"); loaded.license = string(json, "license");
         const auto entry = string(json, "entry");
         loaded.mainImageEntry = loaded.version >= 2 && entry == "mainImage";
-        if ((entry != "main" && !loaded.mainImageEntry) || (loaded.version == 1 && string(json, "output") != "display-rgba8")
+        if ((entry != "main" && !loaded.mainImageEntry) || (loaded.version == 1 && string(json, "output") != (loaded.modelMaterial ? "linear-rgba16f" : "display-rgba8"))
             || string(json, "camera") != "project") throw std::runtime_error("Unsupported entry/output/camera contract");
         loaded.root = inside(loaded.manifest.parent_path(), string(json, "resourceRoot"));
         if (!std::filesystem::is_directory(loaded.root)) throw std::runtime_error("Resource root must be a directory");
@@ -184,6 +187,7 @@ bool loadShaderScenePackage(const std::filesystem::path& path, ShaderScenePackag
         }
         if (loaded.version == 1) {
             ShaderScenePass pass; pass.id = "Image"; pass.fragment = fragmentPath(loaded.root, string(json, "fragment"));
+            if (loaded.modelMaterial) pass.format = ShaderSceneFormat::LinearRgba16f;
             loaded.passes.push_back(std::move(pass));
         } else {
             if (!json.HasMember("passes") || !json["passes"].IsArray() || json["passes"].Empty()
@@ -256,6 +260,27 @@ bool loadShaderScenePackage(const std::filesystem::path& path, ShaderScenePackag
         if (!shaderSceneTextureInputsCurrent(loaded)) throw std::runtime_error("Textures changed during package load");
         package = std::move(loaded); error.clear(); return true;
     } catch (const std::exception& exception) { error = "ShaderScene " + path.string() + ": " + exception.what(); return false; }
+}
+std::vector<ModuleParameterValue> shaderMaterialValues(const ShaderScenePackage& package, const ShaderMaterialBinding& binding) {
+    if (!package.modelMaterial) throw std::runtime_error("Expected a ShaderMaterial package");
+    for (const auto& parameter : package.parameters.descriptors())
+        if (parameter.id.rfind("u",0)==0 || parameter.id == "irisTime" || parameter.id == "irisResolution") throw std::runtime_error("ShaderMaterial parameter IDs cannot start with host prefix u");
+    RendererSettings settings; settings.shaderSceneParameters=binding.parameters;
+    return shaderSceneParameterValues(package,settings);
+}
+void validateShaderMaterialBinding(const ShaderMaterialBinding& binding) {
+    if (binding.resource.empty()) {
+        if (!binding.parameters.empty()) throw std::runtime_error("Unbound ShaderMaterial has parameter overrides");
+        return;
+    }
+    ShaderScenePackage package;std::string error;
+    if (!loadShaderScenePackage(std::filesystem::u8path(binding.resource),package,error)) throw std::runtime_error(error);
+    shaderMaterialValues(package,binding);
+}
+void validateShaderMaterialSettings(const RendererSettings& settings) {
+    if (settings.renderPath != RenderPath::Forward || !shaderSceneResourceFor(settings).empty()
+        || settings.enscapeCubeShaderEnabled || settings.temporalAaEnabled)
+        throw std::runtime_error("ShaderMaterial requires native Forward without TAA; Deferred/fullscreen GLSL are unsupported");
 }
 std::string shaderSceneResourceFor(const RendererSettings& settings) {
     if (!settings.shaderSceneResource.empty() && settings.enscapeCubeShaderEnabled)

@@ -272,6 +272,9 @@ int Application::runRasterSequence(const RenderJob& job, const std::string& canc
         std::cerr << statusMessage_ << '\n';
         return 66;
     }
+    if (scene_.hasShaderMaterials() && (!job.module.id.empty() || job.rasterTemporalAccumulation)) {
+        std::cerr << "ShaderMaterial Job requires no Module and no TAA\n"; return 66;
+    }
     ModuleRuntime runtime(moduleRegistry_);
     std::string error;
     if (!job.module.id.empty()) {
@@ -351,7 +354,7 @@ int Application::runRasterSequence(const RenderJob& job, const std::string& canc
             return 74;
         }
         if (!writeRasterFrameReport(partialReport, job, frame, frameSettings, gpuDescription_, error, &inputManifest,
-                renderer_->activeShaderScenePackage())) {
+                renderer_->activeShaderScenePackage(), &authoredScene)) {
             std::cerr << "Raster report failed: " << error << '\n';
             return 74;
         }
@@ -1103,6 +1106,7 @@ int Application::run(const std::filesystem::path& initialModel) {
     if (std::getenv("IRIS_SHADER_PACKAGE_RELOAD_ACCEPTANCE_DIRECTORY")) smokeTestFrames = 18;
     if (std::getenv("IRIS_SHADER_HISTORY_UI_TEST")) smokeTestFrames = 24;
     if (std::getenv("IRIS_SHADER_MOUSE_UI_TEST")) smokeTestFrames = 32;
+    if (std::getenv("IRIS_SHADER_MATERIAL_UI_TEST")) smokeTestFrames = 32;
     const auto cpuPreviewSmokeDeadline = std::chrono::steady_clock::now()
         + std::chrono::seconds(30);
     const auto thumbnailDeadline = std::chrono::steady_clock::now() + std::chrono::seconds(30);
@@ -1148,6 +1152,7 @@ int Application::run(const std::filesystem::path& initialModel) {
     if(const char* directory=std::getenv("IRIS_EXTERNAL_SHADER_PACKAGE_ACCEPTANCE_DIRECTORY"))runExternalShaderPackageAcceptance(std::filesystem::u8path(directory));
     if(const char* directory=std::getenv("IRIS_SHADER_PACKAGE_RELOAD_ACCEPTANCE_DIRECTORY"))runShaderPackageReloadAcceptance(std::filesystem::u8path(directory));
     if(const char* directory=std::getenv("IRIS_SHADER_HISTORY_ACCEPTANCE_DIRECTORY"))runShaderHistoryAcceptance(std::filesystem::u8path(directory));
+    if(const char* directory=std::getenv("IRIS_SHADER_MATERIAL_ACCEPTANCE_DIRECTORY"))runShaderMaterialAcceptance(std::filesystem::u8path(directory));
     if(const char* directory=std::getenv("IRIS_SHADER_SEQUENCE_ACCEPTANCE_DIRECTORY"))runShaderSequenceAcceptance(std::filesystem::u8path(directory));
     if (std::getenv("IRIS_SHADER_WORKSPACE_UI_BAD") && std::getenv("MYRENDERER_SMOKE_TEST")
         && std::getenv("IRIS_SHADER_WORKSPACE_ACCEPTANCE") && std::getenv("MYRENDERER_SHADER_SCENE_ACCEPTANCE_DIRECTORY")) {
@@ -1199,6 +1204,7 @@ int Application::run(const std::filesystem::path& initialModel) {
         if (animationEnabled_ && (rendererSettings_.water.enabled
             || rendererSettings_.enscapeCubeShaderEnabled
             || !rendererSettings_.shaderSceneResource.empty()
+            || scene_.hasShaderMaterials()
             || modulePreviewEnabled()
             || (model_ != nullptr && model_->hasSkinning()))) {
             if (animationFrameStep_ > 0.0f) {
@@ -1496,10 +1502,15 @@ int Application::run(const std::filesystem::path& initialModel) {
         const char* historyDirectory=std::getenv("IRIS_SHADER_HISTORY_ACCEPTANCE_DIRECTORY");
         if (shaderHistoryUiPassed_) shaderHistoryUiPassed_ = historyDirectory && saveSceneTo(std::filesystem::u8path(historyDirectory)/"ui-saved.myscene");
     }
+    const bool materialUiPassed = !std::getenv("IRIS_SHADER_MATERIAL_UI_TEST")
+        || (shaderMaterialUiPhase_ == 8 && shaderMaterialUiEdited_ && shaderMaterialUiCleared_
+            && scene_.hasShaderMaterials() && renderer_->shaderMaterialError().empty());
     shutdown();
     if (lightUiInteraction && !lightUiInteractionComplete_) std::cerr << "Light UI incomplete: phase=" << lightUiInteractionPhase_ << ", lights=" << scene_.lightEntityCount() << "\n";
     if (std::getenv("IRIS_SHADER_PARAMETER_UI_TEST")) std::cout << "ShaderScene real Float+Bool controls: " << (shaderParameterUiPassed ? "PASS" : "FAIL") << '\n';
-    return (!std::getenv("IRIS_SHADER_MOUSE_UI_TEST") || shaderMouseUiPhase_ == 8)
+    if (std::getenv("IRIS_SHADER_MATERIAL_UI_TEST")) std::cout << "ShaderMaterial real slider/clear/bind/recompile: " << (materialUiPassed ? "PASS" : "FAIL") << " phase=" << shaderMaterialUiPhase_
+        << " edited=" << shaderMaterialUiEdited_ << " cleared=" << shaderMaterialUiCleared_ << '\n';
+    return materialUiPassed && (!std::getenv("IRIS_SHADER_MOUSE_UI_TEST") || shaderMouseUiPhase_ == 8)
         && shaderParameterUiPassed && diagnosticUiPassed && workspaceUiPassed && shaderBrowserPassed && recoveryPassed && appendPassed && interactionsPassed && pluginsPassed && pluginParametersPassed
         && (shaderTransactionSources_.empty() || (shaderTransactionDone && shaderTransactionPassed))
         && (!std::getenv("MYRENDERER_SHADER_TRANSACTION_UI_RETRY") || shaderRetryInteractionComplete_)
@@ -2058,6 +2069,7 @@ void Application::drawInspectorPanel() {
                 }
             }
 
+            if (selectedEntity && selectedEntity->model) drawShaderMaterialInspector(*selectedEntity);
             if (selectedEntity && !selectedEntity->light && EditorUi::section("Lighting", true)) {
                 bool visible = selectedEntity->visible;
                 if (EditorUi::Checkbox(EditorUi::label("Visibility"), &visible)) {
@@ -2367,7 +2379,9 @@ void Application::drawInspectorPanel() {
                 int renderPath = static_cast<int>(rendererSettings_.renderPath);
                 const char* renderPaths[] = {"Forward", "Deferred (hybrid)"};
                 if (EditorUi::Combo("Opaque render path", &renderPath, renderPaths, 2)) {
-                    rendererSettings_.renderPath = static_cast<RenderPath>(renderPath);
+                    if (scene_.hasShaderMaterials() && renderPath != static_cast<int>(RenderPath::Forward))
+                        statusMessage_ = "ShaderMaterial requires Forward";
+                    else rendererSettings_.renderPath = static_cast<RenderPath>(renderPath);
                 }
                 ImGui::BeginDisabled(rendererSettings_.renderPath != RenderPath::Deferred);
                 int gBufferDebug = static_cast<int>(rendererSettings_.gBufferDebugView);
@@ -3044,7 +3058,9 @@ void Application::drawInspectorPanel() {
                 EditorUi::SliderFloat("SSAO strength", &rendererSettings_.ssaoStrength, 0.1f, 3.0f, "%.2f");
                 ImGui::EndDisabled();
                 ImGui::EndDisabled();
+                ImGui::BeginDisabled(scene_.hasShaderMaterials());
                 EditorUi::Checkbox("Temporal AA", &rendererSettings_.temporalAaEnabled);
+                ImGui::EndDisabled();
                 ImGui::BeginDisabled(!rendererSettings_.temporalAaEnabled);
                 EditorUi::SliderFloat(
                 "TAA history weight",

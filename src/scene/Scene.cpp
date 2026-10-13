@@ -131,7 +131,8 @@ std::vector<RenderItem> Scene::buildRenderItems() const {
             entity.instanceCandidate,
             entity.id,
             entity.previousWorldTransform,
-            entity.motionHistoryValid
+            entity.motionHistoryValid,
+            entity.shaderMaterial
         });
     }
     return items;
@@ -191,4 +192,10 @@ std::vector<LocalLight> Scene::buildLocalLights() const {
         lights.push_back(light);
     }
     return lights;
+}
+
+bool Scene::hasShaderMaterials() const {
+    return std::any_of(entities_.begin(), entities_.end(), [](const auto& entity) {
+        return !entity.shaderMaterial.resource.empty();
+    });
 }

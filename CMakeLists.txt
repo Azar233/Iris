@@ -277,6 +277,7 @@ endif()
 option(IRIS_ENABLE_ENSCAPE_PLUGIN "Build the optional Enscape render plugin" ON)
 option(IRIS_ENABLE_POSTPROCESS_PLUGIN "Build the native pipeline postprocess plugin" ON)
 add_library(IrisRenderPluginHost STATIC
+    src/render/ShaderMaterialRuntime.cpp
     src/plugin/RenderPluginRegistry.cpp src/plugin/BuiltinRenderPlugins.cpp
     src/plugin/RenderPlugin.cpp src/plugin/RenderPluginContract.cpp
     src/plugin/RenderPluginConfiguration.cpp src/plugin/ShaderSceneRenderer.cpp)
@@ -314,6 +315,7 @@ add_executable(MyRenderer
     src/app/Application.cpp
     src/app/ApplicationScene.cpp
     src/app/ApplicationShaderSequenceAcceptance.cpp
+    src/app/ApplicationShaderMaterialAcceptance.cpp
     src/app/RenderPluginPanel.cpp
     src/app/EditorSession.cpp
     src/app/WorkspaceAssets.cpp
@@ -590,6 +592,7 @@ if(BUILD_TESTING)
         src/app/EditorSession.cpp
     )
     target_include_directories(MyRendererEditorSessionTests PRIVATE src)
+    target_link_libraries(MyRendererEditorSessionTests PRIVATE glm::glm)
     if(MSVC)
         target_compile_options(MyRendererEditorSessionTests PRIVATE /W4 /permissive- /utf-8)
     else()
@@ -1608,6 +1611,12 @@ if(BUILD_TESTING)
         )
     endif()
 endif()
+
+add_custom_target(shader-material-gpu-acceptance
+    COMMAND ${CMAKE_COMMAND} -DIRIS_EXECUTABLE=$<TARGET_FILE:MyRenderer>
+        -DIRIS_ROOT=${CMAKE_CURRENT_SOURCE_DIR} -P ${CMAKE_CURRENT_SOURCE_DIR}/tools/RunShaderMaterialAcceptance.cmake
+    DEPENDS MyRenderer
+    COMMENT "Validating model ShaderMaterial transactions on real Forward OpenGL")
 
 add_custom_target(gpu-smoke
     COMMAND ${CMAKE_COMMAND} -E env

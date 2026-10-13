@@ -69,6 +69,19 @@ int main(){try{
     require(report.find("\"effectiveTaa\": false")!=std::string::npos
         &&report.find("\"effectiveCloudHistory\": false")!=std::string::npos,"determinism must override requested history in metadata");
     require(report.find("procedural-shared-field")!=std::string::npos,"report must not claim offline noise assets");
+    require(report.find("\"buildId\": \"\"")==std::string::npos
+        && report.find("\"buildId\"")!=std::string::npos && report.find("\"timeStepSeconds\"")!=std::string::npos
+        && report.find("\"renderPluginApiVersion\"")!=std::string::npos,"Native report lost build/API/time-step identity");
+    SceneDocument materialScene;
+    require(loadSceneDocument(std::filesystem::path(MYRENDERER_SOURCE_DIR)/"assets/scenes/fixtures/29_shader_material.myscene",materialScene,error),error.c_str());
+    require(writeRasterFrameReport(root/"material.json",job,0,settings,"test GPU",error,nullptr,nullptr,&materialScene),error.c_str());
+    const auto materialReport=read(root/"material.json");
+    require(materialReport.find("checker_material")!=std::string::npos && materialReport.find("\"gain\": 0.699")!=std::string::npos
+        && materialReport.find("\"frequency\": 8")!=std::string::npos,"Material report lost effective defaults and package identity");
+    ModuleParameterOverride invalid;invalid.id="unknown";invalid.value.type=ModuleParameterType::Float;
+    materialScene.entities.front().shaderMaterial.parameters={invalid};
+    require(!writeRasterFrameReport(root/"material-rejected.json",job,0,settings,"test GPU",error,nullptr,nullptr,&materialScene)
+        && !std::filesystem::exists(root/"material-rejected.json"),"Invalid material report published an artifact");
     settings.atmosphere.cloudOfflineNoise=true;
     require(writeRasterFrameReport(root/"offline.json",job,0,settings,"test GPU",error),error.c_str());
     const auto offline=read(root/"offline.json");
