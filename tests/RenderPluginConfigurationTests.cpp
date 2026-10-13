@@ -1,5 +1,6 @@
 #include "plugin/RenderPluginConfiguration.h"
 #include "plugin/RenderPluginRegistry.h"
+#include "render/Renderer.h"
 #include <iostream>
 #include <stdexcept>
 namespace {void require(bool ok,const char* text){if(!ok)throw std::runtime_error(text);}}
@@ -21,5 +22,21 @@ int main(){try{
     config.back().enabled=true;require(!iris::validatePluginConfiguration(registry,config,"native",error),"Missing active plugin accepted");
     config={{"optional",true},{"optional",false}};
     require(!iris::validatePluginConfiguration(registry,config,"native",error),"Duplicate plugin config accepted");
+    iris::RenderPluginRegistry shading;
+    shading.add({iris::postProcessPluginId,iris::renderPluginApiVersion,{iris::openGlFullscreenService},"MIT"},factory);
+    RendererSettings settings;
+    require(iris::validateRendererPluginConfiguration(shading,settings,error),"Ordinary native scene requires NPR");
+    settings.shadingMode=ShadingMode::Stylized;
+    require(!iris::validateRendererPluginConfiguration(shading,settings,error) && error.find(iris::nprPluginId)!=std::string::npos,"Missing NPR accepted");
+    shading.add({iris::nprPluginId,iris::renderPluginApiVersion,{iris::openGlShadingService},"MIT",{iris::PluginStage::MaterialShading,{},{}}},factory);
+    require(iris::validateRendererPluginConfiguration(shading,settings,error),"NPR service rejected");
+    settings.renderPlugins={{iris::nprPluginId,false}};
+    require(!iris::validateRendererPluginConfiguration(shading,settings,error),"Active disabled NPR accepted");
+    settings.shadingMode=ShadingMode::PhysicallyBased;
+    require(iris::validateRendererPluginConfiguration(shading,settings,error),"Inactive NPR cannot be disabled");
+    settings.shadingMode=ShadingMode::Stylized;settings.shaderSceneResource="package.shaderscene";
+    require(iris::validateRendererPluginConfiguration(shading,settings,error),"Fullscreen scene requires native NPR");
+    settings.enscapeCubeShaderEnabled=true;
+    require(!iris::validateRendererPluginConfiguration(shading,settings,error),"Conflicting pipeline configuration accepted");
     std::cout<<"Plugin activation dependency/transaction contracts: PASS\n";return 0;
 }catch(const std::exception& error){std::cerr<<error.what()<<'\n';return 1;}}

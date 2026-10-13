@@ -13,6 +13,8 @@
 #include <vector>
 #include <unordered_set>
 
+namespace iris { struct PluginControlBounds; }
+
 #include <glm/mat4x4.hpp>
 #include <glm/vec3.hpp>
 
@@ -91,6 +93,8 @@ private:
     bool editorInteractionRegression();
     bool pluginActivationRegression();
     bool pluginParameterRegression();
+    bool nprRegression();
+    void interactNprParameters(const std::vector<iris::PluginControlBounds>& controls);
     bool shaderTransactionAcceptance();
     void drawInspectorPanel();
     void drawViewportPanel();
@@ -304,6 +308,9 @@ private:
     std::array<char, 4096> shaderMaterialPathBuffer_{};
     SceneEntityId shaderMaterialInspectorEntity_{invalidSceneEntityId};
     int shaderMaterialWorkspacePhase_{0};
+    int nprUiPhase_{0};
+    int nprUiFrames_{0};
+    float nprUiInitialRim_{0.0f};
     std::filesystem::path shaderMaterialWorkspaceDirectory_;
     std::size_t shaderMaterialWorkspaceEntityCount_{0};
     int shaderMaterialUiFrames_{0};

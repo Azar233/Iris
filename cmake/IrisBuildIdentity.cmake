@@ -7,7 +7,7 @@ list(APPEND iris_identity_sources "${CMAKE_CURRENT_SOURCE_DIR}/CMakeLists.txt"
     "${CMAKE_CURRENT_SOURCE_DIR}/cmake/IrisBuildIdentity.cmake")
 list(SORT iris_identity_sources)
 set(iris_identity "${CMAKE_CXX_COMPILER_ID}|${CMAKE_CXX_COMPILER_VERSION}|${CMAKE_CXX_FLAGS}|${CMAKE_CXX_FLAGS_DEBUG}|${CMAKE_CXX_FLAGS_RELEASE}|${CMAKE_CXX_FLAGS_RELWITHDEBINFO}|${CMAKE_CXX_FLAGS_MINSIZEREL}")
-foreach(iris_feature IRIS_ENABLE_ENSCAPE_PLUGIN IRIS_ENABLE_POSTPROCESS_PLUGIN)
+foreach(iris_feature IRIS_ENABLE_ENSCAPE_PLUGIN IRIS_ENABLE_POSTPROCESS_PLUGIN IRIS_ENABLE_NPR_PLUGIN)
     if(DEFINED ${iris_feature})
         string(APPEND iris_identity "|${iris_feature}=${${iris_feature}}")
     else()

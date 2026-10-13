@@ -85,7 +85,8 @@ public:
         const std::string& id,
         const std::string& displayName,
         const glm::vec3& defaultValue,
-        const std::string& tooltip = {}
+        const std::string& tooltip = {},
+        double minimum = 0.0, double maximum = 1.0
     );
     void registerEnum(
         const std::string& id,

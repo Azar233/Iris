@@ -276,6 +276,7 @@ endif()
 
 option(IRIS_ENABLE_ENSCAPE_PLUGIN "Build the optional Enscape render plugin" ON)
 option(IRIS_ENABLE_POSTPROCESS_PLUGIN "Build the native pipeline postprocess plugin" ON)
+option(IRIS_ENABLE_NPR_PLUGIN "Build the native material NPR shading extension" ON)
 add_library(IrisRenderPluginHost STATIC
     src/render/ShaderMaterialRuntime.cpp
     src/plugin/RenderPluginRegistry.cpp src/plugin/BuiltinRenderPlugins.cpp
@@ -285,7 +286,8 @@ target_include_directories(IrisRenderPluginHost PUBLIC src)
 target_link_libraries(IrisRenderPluginHost PUBLIC IrisParameters PRIVATE glm::glm glad_gl_core_33)
 target_compile_definitions(IrisRenderPluginHost PRIVATE
     IRIS_ENABLE_ENSCAPE_PLUGIN=$<BOOL:${IRIS_ENABLE_ENSCAPE_PLUGIN}>
-    IRIS_ENABLE_POSTPROCESS_PLUGIN=$<BOOL:${IRIS_ENABLE_POSTPROCESS_PLUGIN}>)
+    IRIS_ENABLE_POSTPROCESS_PLUGIN=$<BOOL:${IRIS_ENABLE_POSTPROCESS_PLUGIN}>
+    IRIS_ENABLE_NPR_PLUGIN=$<BOOL:${IRIS_ENABLE_NPR_PLUGIN}>)
 if(IRIS_ENABLE_ENSCAPE_PLUGIN)
     add_library(IrisEnscapePlugin STATIC plugins/enscape/EnscapeCubeRenderer.cpp)
     target_include_directories(IrisEnscapePlugin PUBLIC plugins/enscape PRIVATE src)
@@ -298,7 +300,13 @@ if(IRIS_ENABLE_POSTPROCESS_PLUGIN)
     target_link_libraries(IrisPostProcessPlugin PUBLIC glm::glm PRIVATE glad_gl_core_33)
     target_link_libraries(IrisRenderPluginHost PRIVATE IrisPostProcessPlugin)
 endif()
-foreach(pluginTarget IrisRenderPluginHost IrisEnscapePlugin IrisPostProcessPlugin)
+if(IRIS_ENABLE_NPR_PLUGIN)
+    add_library(IrisNprPlugin STATIC plugins/npr/NprRenderer.cpp)
+    target_include_directories(IrisNprPlugin PUBLIC plugins/npr PRIVATE src)
+    target_link_libraries(IrisNprPlugin PUBLIC glm::glm PRIVATE glad_gl_core_33)
+    target_link_libraries(IrisRenderPluginHost PRIVATE IrisNprPlugin)
+endif()
+foreach(pluginTarget IrisRenderPluginHost IrisEnscapePlugin IrisPostProcessPlugin IrisNprPlugin)
     if(TARGET ${pluginTarget})
         if(MSVC)
             target_compile_options(${pluginTarget} PRIVATE /W4 /permissive- /utf-8)
@@ -316,6 +324,7 @@ add_executable(MyRenderer
     src/app/ApplicationScene.cpp
     src/app/ApplicationShaderSequenceAcceptance.cpp
     src/app/ApplicationShaderMaterialAcceptance.cpp
+    src/app/ApplicationNprAcceptance.cpp
     src/app/RenderPluginPanel.cpp
     src/app/EditorSession.cpp
     src/app/WorkspaceAssets.cpp
@@ -484,7 +493,7 @@ if(BUILD_TESTING)
     target_link_libraries(IrisRenderPluginContractTests PRIVATE IrisRenderPluginHost)
     iris_add_test(NAME render-plugin-contract COMMAND IrisRenderPluginContractTests)
     add_executable(IrisRenderPluginConfigurationTests tests/RenderPluginConfigurationTests.cpp)
-    target_link_libraries(IrisRenderPluginConfigurationTests PRIVATE IrisRenderPluginHost)
+    target_link_libraries(IrisRenderPluginConfigurationTests PRIVATE IrisRenderPluginHost glad_gl_core_33)
     iris_add_test(NAME render-plugin-configuration COMMAND IrisRenderPluginConfigurationTests)
     add_executable(IrisRenderPluginParameterTests tests/RenderPluginParameterTests.cpp src/scene/Scene.cpp src/scene/SceneDocument.cpp)
     target_include_directories(IrisRenderPluginParameterTests PRIVATE src ${assimp_SOURCE_DIR}/contrib/rapidjson/include)

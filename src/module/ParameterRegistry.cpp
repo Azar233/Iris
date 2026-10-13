@@ -127,22 +127,23 @@ void ParameterRegistry::registerColor(
     const std::string& id,
     const std::string& displayName,
     const glm::vec3& defaultValue,
-    const std::string& tooltip
+    const std::string& tooltip,
+    double minimum, double maximum
 ) {
     ModuleParameterDescriptor descriptor;
     descriptor.id = id;
     descriptor.displayName = displayName;
     descriptor.tooltip = tooltip;
     descriptor.type = ModuleParameterType::Color;
-    descriptor.minimum = 0.0;
-    descriptor.maximum = 1.0;
+    descriptor.minimum = std::min(minimum, maximum);
+    descriptor.maximum = std::max(minimum, maximum);
     ModuleParameterValue value;
     value.type = ModuleParameterType::Color;
     value.color = isFiniteColor(defaultValue)
         ? glm::vec3(
-            clampChannel(defaultValue.x, 0.0, 1.0),
-            clampChannel(defaultValue.y, 0.0, 1.0),
-            clampChannel(defaultValue.z, 0.0, 1.0)
+            clampChannel(defaultValue.x, descriptor.minimum, descriptor.maximum),
+            clampChannel(defaultValue.y, descriptor.minimum, descriptor.maximum),
+            clampChannel(defaultValue.z, descriptor.minimum, descriptor.maximum)
         )
         : glm::vec3(0.0f);
     descriptors_.push_back(std::move(descriptor));

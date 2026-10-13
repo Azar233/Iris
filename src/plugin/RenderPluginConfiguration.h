@@ -30,6 +30,9 @@ inline bool validPluginConfigurationShape(const RenderPluginConfiguration& confi
     return true;
 }
 class RenderPluginRegistry;
+bool nprRequired(const RendererSettings& settings);
+bool validateRendererPluginConfiguration(const RenderPluginRegistry& registry,
+    const RendererSettings& settings, std::string& error);
 bool validatePluginConfiguration(const RenderPluginRegistry& registry,
     const RenderPluginConfiguration& config,const std::string& required,std::string& error);
 bool setPluginEnabled(const RenderPluginRegistry& registry,RenderPluginConfiguration& config,

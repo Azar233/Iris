@@ -4,7 +4,7 @@
 #include <utility>
 
 namespace iris {
-enum class PluginStage { FullscreenScene, PostProcess };
+enum class PluginStage { FullscreenScene, PostProcess, MaterialShading };
 enum class TextureFormat { HdrColor, DisplayColor, Depth, Data };
 enum class ResourceScope { Input, Output, Transient, History, Generated };
 struct PluginResource {

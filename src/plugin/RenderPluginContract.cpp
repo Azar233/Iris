@@ -5,6 +5,8 @@
 
 namespace iris {
 void validatePluginContract(const RenderPluginContract& contract) {
+    if (contract.stage == PluginStage::MaterialShading && (!contract.resources.empty() || !contract.passes.empty()))
+        throw std::invalid_argument("Material shading extensions bind uniforms without texture resources or draw passes");
     std::map<std::string, PluginResource> resources;
     std::set<std::string> ready, written, passNames;
     for (const auto& resource : contract.resources) {

@@ -816,6 +816,11 @@ void Application::processEditorCommands() {
                 if (scene_.hasShaderMaterials() && shading.renderPath != static_cast<int>(RenderPath::Forward)) {
                     statusMessage_ = "ShaderMaterial requires Forward"; break;
                 }
+                auto candidateSettings=rendererSettings_;std::string pluginError;
+                candidateSettings.shadingMode=static_cast<ShadingMode>(shading.shadingMode);
+                if(!iris::validateRendererPluginConfiguration(iris::builtinRenderPlugins(),candidateSettings,pluginError)) {
+                    statusMessage_="Shading change rejected: "+pluginError;break;
+                }
                 rendererSettings_.shadingMode = static_cast<ShadingMode>(shading.shadingMode);
                 rendererSettings_.renderPath = static_cast<RenderPath>(shading.renderPath);
                 rendererSettings_.gBufferDebugView =
@@ -980,17 +985,21 @@ void Application::processEditorCommands() {
             case EditorCommandType::SetRenderPluginEnabled: {
                 std::string error;
                 const std::string required=rendererSettings_.enscapeCubeShaderEnabled?iris::enscapePluginId:iris::postProcessPluginId;
-                if(!iris::setPluginEnabled(iris::builtinRenderPlugins(),rendererSettings_.renderPlugins,required,command.text,command.flag,error)){
+                auto candidate=rendererSettings_;
+                if(!iris::setPluginEnabled(iris::builtinRenderPlugins(),candidate.renderPlugins,required,command.text,command.flag,error)
+                    || !iris::validateRendererPluginConfiguration(iris::builtinRenderPlugins(),candidate,error)){
                     statusMessage_="Plugin change rejected: "+error;break;
                 }
+                rendererSettings_.renderPlugins=std::move(candidate.renderPlugins);
                 if(renderer_)renderer_->invalidateTemporalHistory();
                 statusMessage_="Plugin configuration updated: "+command.text;break;
             }
             case EditorCommandType::SetRenderPipelineMode: {
                 if (command.flag && scene_.hasShaderMaterials()) { statusMessage_ = "ShaderMaterial requires native Forward"; break; }
                 std::string error;
-                if(!iris::validatePluginConfiguration(iris::builtinRenderPlugins(),rendererSettings_.renderPlugins,
-                    command.flag ? (rendererSettings_.enscapeShaderSceneResource.empty() ? iris::enscapePluginId : "") : iris::postProcessPluginId,error)){
+                auto candidateSettings=rendererSettings_;candidateSettings.enscapeCubeShaderEnabled=command.flag;
+                candidateSettings.shaderSceneResource.clear();
+                if(!iris::validateRendererPluginConfiguration(iris::builtinRenderPlugins(),candidateSettings,error)){
                     statusMessage_="Pipeline change rejected: "+error;break;
                 }
                 std::unique_ptr<iris::RenderPlugin> prepared;
@@ -3026,8 +3035,7 @@ bool Application::openScene(const std::filesystem::path& path) {
             + std::string(iris::postProcessPluginId);
         return false;
     }
-    if(!iris::validatePluginConfiguration(iris::builtinRenderPlugins(),document.renderer.renderPlugins,
-        !iris::shaderSceneResourceFor(document.renderer).empty()?"":document.renderer.enscapeCubeShaderEnabled?iris::enscapePluginId:iris::postProcessPluginId,documentError)){
+    if(!iris::validateRendererPluginConfiguration(iris::builtinRenderPlugins(),document.renderer,documentError)){
         statusMessage_="Open scene failed; current scene preserved: "+documentError;return false;
     }
     // Validate against the same registry as Batch before replacing the edit scene.

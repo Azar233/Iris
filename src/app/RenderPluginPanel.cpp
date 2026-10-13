@@ -16,7 +16,7 @@ std::optional<EditorCommand> drawRenderPluginPanel(const RenderPluginRegistry& r
         ImGui::PushID(descriptor.id.c_str());ImGui::Separator();
         ImGui::TextWrapped("%s",descriptor.id.c_str());
         const bool available=registry.contains(descriptor.id);
-        const bool needed=required==descriptor.id;
+        const bool needed=required==descriptor.id || (settings && descriptor.id==nprPluginId && nprRequired(*settings));
         bool enabled=available&&pluginEnabled(config,descriptor.id);
         ImGui::TextWrapped("%s",!available?(EditorUi::chinese?"未编译，无法启用":"Not built / unavailable"):
             needed?(EditorUi::chinese?"当前管线正在使用":"In use by current pipeline"):
@@ -51,7 +51,10 @@ std::optional<EditorCommand> drawRenderPluginPanel(const RenderPluginRegistry& r
                             changed = ImGui::DragFloat(widgetId, &value.number, 0.01f,
                                 static_cast<float>(metadata->minimum), static_cast<float>(metadata->maximum), "%.3f"); break;
                         case ModuleParameterType::Int:
-                            changed = ImGui::SliderInt(widgetId, &value.integer,
+                            if (metadata->maximum - metadata->minimum > 100000)
+                                changed = ImGui::DragInt(widgetId, &value.integer, 1.0f,
+                                    static_cast<int>(metadata->minimum), static_cast<int>(metadata->maximum));
+                            else changed = ImGui::SliderInt(widgetId, &value.integer,
                                 static_cast<int>(metadata->minimum), static_cast<int>(metadata->maximum)); break;
                         case ModuleParameterType::Color: changed = ImGui::ColorEdit3(widgetId, &value.color.x); break;
                         case ModuleParameterType::Enum: {

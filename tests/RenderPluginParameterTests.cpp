@@ -27,11 +27,25 @@ int main() {
         registry.add({iris::enscapePluginId, iris::renderPluginApiVersion, {}, "test", {}, ocean}, factory);
         registry.add({iris::postProcessPluginId, iris::renderPluginApiVersion, {}, "test", {}, post}, factory);
         RendererSettings settings;
+        bool history = false; std::string error;
+        const auto* npr=iris::builtinRenderPluginParameterSchema(iris::nprPluginId);
+        require(npr && npr->metadata.descriptors().size()==10, "NPR shading schema missing");
+        require(npr->apply(settings,{number("stylizedRimIntensity",1.25f)},history,error),"NPR float binding rejected");
+        require(settings.stylizedRimIntensity==1.25f && history && settings.renderPluginValues.empty(),"NPR created a second value source or lost history");
+        auto legacyNpr=settings;legacyNpr.stylizedBandCount=1;legacyNpr.stylizedDebugView=static_cast<StylizedDebugView>(99);
+        legacyNpr.stylizedShadowTint=glm::vec3(-.25f,2.f,.5f);legacyNpr.stylizedRimIntensity=100.f;
+        require(iris::builtinRenderPluginParameterCatalog().validateSettings(legacyNpr,error),"Legacy finite NPR values newly rejected");
+        require(npr->apply(settings,npr->capture(legacyNpr),history,error)
+            && settings.stylizedShadowTint==legacyNpr.stylizedShadowTint && settings.stylizedBandCount==1
+            && settings.renderPluginValues.empty(),"NPR legacy values clamped or shadowed");
+        const auto beforeNpr=settings;
+        require(!npr->apply(settings,{number("stylizedRimIntensity",std::numeric_limits<float>::quiet_NaN())},history,error)
+            && settings.stylizedRimIntensity==beforeNpr.stylizedRimIntensity,"Non-finite NPR edit committed");
+        settings=RendererSettings{};
         bool noContextRejected=false;
         try { registry.prepareReplacement(iris::postProcessPluginId,{}, {},settings,320,180); }
         catch(const std::runtime_error& exception) { noContextRejected=std::string(exception.what()).find("OpenGL context")!=std::string::npos; }
         require(noContextRejected,"CPU caller entered GPU resource preparation without a context");
-        bool history = false; std::string error;
         require(iris::setPluginParameter(registry, settings, iris::enscapePluginId, number("waveHeight", 0.9f), history, error)
             && history && settings.enscapeCube.waveHeight == 0.9f, "Ocean edit did not update shared settings/history");
         require(iris::setPluginParameter(registry, settings, iris::postProcessPluginId, number("exposure", 1.7f), history, error)

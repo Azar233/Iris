@@ -236,8 +236,7 @@ int Application::runRasterSequence(const RenderJob& job, const std::string& canc
         std::cerr << "Scene has a module; Raster requires explicit Render Job module configuration (id, seed, parameters)\n";
         return 65;
     }
-    if(!iris::validatePluginConfiguration(iris::builtinRenderPlugins(),authoredScene.renderer.renderPlugins,
-        !iris::shaderSceneResourceFor(authoredScene.renderer).empty()?"":authoredScene.renderer.enscapeCubeShaderEnabled?iris::enscapePluginId:iris::postProcessPluginId,sceneError)){
+    if(!iris::validateRendererPluginConfiguration(iris::builtinRenderPlugins(),authoredScene.renderer,sceneError)){
         std::cerr<<"Raster Scene plugin configuration invalid: "<<sceneError<<'\n';return 66;
     }
     if(!job.sourcePath.empty()) {
@@ -1108,6 +1107,7 @@ int Application::run(const std::filesystem::path& initialModel) {
     if (std::getenv("IRIS_SHADER_MOUSE_UI_TEST")) smokeTestFrames = 32;
     if (std::getenv("IRIS_SHADER_MATERIAL_UI_TEST")) smokeTestFrames = 32;
     if (std::getenv("IRIS_SHADER_MATERIAL_WORKSPACE_DIRECTORY")) smokeTestFrames = 48;
+    if (std::getenv("IRIS_NPR_UI_TEST")) smokeTestFrames = 64;
     const auto cpuPreviewSmokeDeadline = std::chrono::steady_clock::now()
         + std::chrono::seconds(30);
     const auto thumbnailDeadline = std::chrono::steady_clock::now() + std::chrono::seconds(30);
@@ -1154,6 +1154,8 @@ int Application::run(const std::filesystem::path& initialModel) {
     if(const char* directory=std::getenv("IRIS_SHADER_PACKAGE_RELOAD_ACCEPTANCE_DIRECTORY"))runShaderPackageReloadAcceptance(std::filesystem::u8path(directory));
     if(const char* directory=std::getenv("IRIS_SHADER_HISTORY_ACCEPTANCE_DIRECTORY"))runShaderHistoryAcceptance(std::filesystem::u8path(directory));
     if(const char* directory=std::getenv("IRIS_SHADER_MATERIAL_WORKSPACE_DIRECTORY"))runShaderMaterialWorkspaceAcceptance(std::filesystem::u8path(directory));
+    if(std::getenv("IRIS_NPR_ACCEPTANCE_DIRECTORY"))focusPluginsTab_=true;
+    if(std::getenv("IRIS_NPR_UI_TEST"))nprUiInitialRim_=rendererSettings_.stylizedRimIntensity;
     if(const char* directory=std::getenv("IRIS_SHADER_MATERIAL_ACCEPTANCE_DIRECTORY"))runShaderMaterialAcceptance(std::filesystem::u8path(directory));
     if(const char* directory=std::getenv("IRIS_SHADER_SEQUENCE_ACCEPTANCE_DIRECTORY"))runShaderSequenceAcceptance(std::filesystem::u8path(directory));
     if (std::getenv("IRIS_SHADER_WORKSPACE_UI_BAD") && std::getenv("MYRENDERER_SMOKE_TEST")
@@ -1505,6 +1507,7 @@ int Application::run(const std::filesystem::path& initialModel) {
         if (shaderHistoryUiPassed_) shaderHistoryUiPassed_ = historyDirectory && saveSceneTo(std::filesystem::u8path(historyDirectory)/"ui-saved.myscene");
     }
     const bool materialWorkspacePassed = finishShaderMaterialWorkspaceAcceptance();
+    const bool nprPassed=!std::getenv("IRIS_NPR_ACCEPTANCE_DIRECTORY") || nprRegression();
     const bool materialUiPassed = !std::getenv("IRIS_SHADER_MATERIAL_UI_TEST")
         || (shaderMaterialUiPhase_ == 8 && shaderMaterialUiEdited_ && shaderMaterialUiCleared_
             && scene_.hasShaderMaterials() && renderer_->shaderMaterialError().empty());
@@ -1513,7 +1516,7 @@ int Application::run(const std::filesystem::path& initialModel) {
     if (std::getenv("IRIS_SHADER_PARAMETER_UI_TEST")) std::cout << "ShaderScene real Float+Bool controls: " << (shaderParameterUiPassed ? "PASS" : "FAIL") << '\n';
     if (std::getenv("IRIS_SHADER_MATERIAL_UI_TEST")) std::cout << "ShaderMaterial real slider/clear/bind/recompile: " << (materialUiPassed ? "PASS" : "FAIL") << " phase=" << shaderMaterialUiPhase_
         << " edited=" << shaderMaterialUiEdited_ << " cleared=" << shaderMaterialUiCleared_ << '\n';
-    return materialWorkspacePassed && materialUiPassed && (!std::getenv("IRIS_SHADER_MOUSE_UI_TEST") || shaderMouseUiPhase_ == 8)
+    return nprPassed && materialWorkspacePassed && materialUiPassed && (!std::getenv("IRIS_SHADER_MOUSE_UI_TEST") || shaderMouseUiPhase_ == 8)
         && shaderParameterUiPassed && diagnosticUiPassed && workspaceUiPassed && shaderBrowserPassed && recoveryPassed && appendPassed && interactionsPassed && pluginsPassed && pluginParametersPassed
         && (shaderTransactionSources_.empty() || (shaderTransactionDone && shaderTransactionPassed))
         && (!std::getenv("MYRENDERER_SHADER_TRANSACTION_UI_RETRY") || shaderRetryInteractionComplete_)
@@ -2119,10 +2122,12 @@ void Application::drawInspectorPanel() {
         const bool showPlugins=focusPluginsTab_;focusPluginsTab_=false;
         if(ImGui::BeginTabItem(EditorUi::chinese?"插件###RenderPlugins":"Plugins###RenderPlugins",nullptr,showPlugins?ImGuiTabItemFlags_SetSelected:0)){
             std::vector<iris::PluginControlBounds> resourceControls;
+            std::vector<iris::PluginControlBounds> nprControls;
             const bool resourceUiTest=std::getenv("MYRENDERER_PLUGIN_RESOURCE_UI_TEST") != nullptr;
             if(auto change=iris::drawRenderPluginPanel(iris::builtinRenderPlugins(),iris::builtinRenderPluginCatalog(),
                 rendererSettings_.renderPlugins,rendererSettings_.enscapeCubeShaderEnabled?iris::enscapePluginId:iris::postProcessPluginId,
-                nullptr, resourceUiTest ? nullptr : &rendererSettings_, nullptr, &resourceControls))editorSession_.request(*change);
+                nullptr, resourceUiTest ? nullptr : &rendererSettings_, std::getenv("IRIS_NPR_UI_TEST")?&nprControls:nullptr, &resourceControls))editorSession_.request(*change);
+            interactNprParameters(nprControls);
             if (renderer_ && !renderer_->pluginResourceStatus().empty())
                 ImGui::TextWrapped("%s", renderer_->pluginResourceStatus().c_str());
             if(resourceUiTest && shaderRetryInteractionPhase_ < 4) {

@@ -414,6 +414,7 @@ private:
     std::unique_ptr<Shader> gBufferShader_;
     std::unique_ptr<Shader> deferredLightingShader_;
     std::unique_ptr<iris::RenderPlugin> postProcessor_;
+    std::unique_ptr<iris::RenderPlugin> nprRenderer_;
     std::unique_ptr<RenderTarget> renderTarget_;
     std::unique_ptr<TextureCache> textureCache_;
     std::unique_ptr<WaterSurface> waterSurface_;

@@ -266,8 +266,36 @@ const std::vector<RenderPluginParameterSchema>& builtinRenderPluginParameterSche
         OCEAN_FLOAT(exposure, "Exposure", 0.25f, 3.0f);
 #undef OCEAN_BOOL
 #undef OCEAN_FLOAT
-        post.validate(); ocean.validate();
-        return std::vector<RenderPluginParameterSchema>{std::move(post), std::move(ocean)};
+        RenderPluginParameterSchema npr;
+        npr.pluginId = nprPluginId;
+        // Preserve legacy finite Scene values; their renderer/GLSL interpretation
+        // is unchanged. Existing shading controls keep their compact UI ranges.
+#define NPR_FLOAT(field, label) addFloat(npr, #field, label, std::numeric_limits<float>::lowest(), std::numeric_limits<float>::max(), [](const auto& s) { return s.field; }, [](auto& s, float v) { s.field = v; }, true)
+        NPR_FLOAT(stylizedBandSoftness, "Band softness");
+        NPR_FLOAT(stylizedSpecularSize, "Specular size");
+        NPR_FLOAT(stylizedSpecularSoftness, "Specular softness");
+        NPR_FLOAT(stylizedRimWidth, "Rim width");
+        NPR_FLOAT(stylizedRimSoftness, "Rim softness");
+        NPR_FLOAT(stylizedRimIntensity, "Rim intensity");
+#undef NPR_FLOAT
+        npr.metadata.registerInt("stylizedBandCount", "Bands", RendererSettings{}.stylizedBandCount,
+            std::numeric_limits<int>::min(), std::numeric_limits<int>::max());
+        npr.bindings.push_back({"stylizedBandCount", [](const RendererSettings& s) { ModuleParameterValue v; v.type=ModuleParameterType::Int; v.integer=s.stylizedBandCount; return v; },
+            [](RendererSettings& s, const ModuleParameterValue& v) { s.stylizedBandCount=v.integer; }, true});
+        npr.metadata.registerInt("stylizedDebugView", "Debug view (0-6)", static_cast<int>(RendererSettings{}.stylizedDebugView),
+            std::numeric_limits<int>::min(), std::numeric_limits<int>::max());
+        npr.bindings.push_back({"stylizedDebugView", [](const RendererSettings& s) { ModuleParameterValue v; v.type=ModuleParameterType::Int; v.integer=static_cast<int>(s.stylizedDebugView); return v; },
+            [](RendererSettings& s, const ModuleParameterValue& v) { s.stylizedDebugView=static_cast<StylizedDebugView>(v.integer); }, true});
+        const auto color = [&](const char* id, const char* label, glm::vec3 RendererSettings::*member) {
+            npr.metadata.registerColor(id, label, RendererSettings{}.*member, {},
+                std::numeric_limits<float>::lowest(), std::numeric_limits<float>::max());
+            npr.bindings.push_back({id, [member](const RendererSettings& s) { ModuleParameterValue v; v.type=ModuleParameterType::Color; v.color=s.*member; return v; },
+                [member](RendererSettings& s, const ModuleParameterValue& v) { s.*member=v.color; }, true});
+        };
+        color("stylizedShadowTint", "Shadow tint", &RendererSettings::stylizedShadowTint);
+        color("stylizedRimColor", "Rim color", &RendererSettings::stylizedRimColor);
+        post.validate(); ocean.validate(); npr.validate();
+        return std::vector<RenderPluginParameterSchema>{std::move(post), std::move(ocean), std::move(npr)};
     }();
     return schemas;
 }

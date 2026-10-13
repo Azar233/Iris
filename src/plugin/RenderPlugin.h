@@ -7,6 +7,7 @@
 #include "module/ParameterRegistry.h"
 
 class Camera;
+class Shader;
 class RenderTarget;
 struct RendererSettings;
 struct PostProcessSettings;
@@ -17,7 +18,9 @@ struct RenderPluginParameterSchema;
 inline constexpr int renderPluginApiVersion = 2;
 inline constexpr const char* enscapePluginId = "iris.enscape-study";
 inline constexpr const char* postProcessPluginId = "iris.postprocess";
+inline constexpr const char* nprPluginId = "iris.npr";
 inline constexpr const char* openGlFullscreenService = "opengl.fullscreen.v1";
+inline constexpr const char* openGlShadingService = "opengl.material-shading.v1";
 
 // Borrowed frame inputs. The caller owns the context, target and scheduling.
 // RendererSettings is a compatibility bridge for this first migration, not a
@@ -25,7 +28,7 @@ inline constexpr const char* openGlFullscreenService = "opengl.fullscreen.v1";
 struct RenderPluginFrame {
     RenderPluginFrame(RenderTarget& target, const Camera& camera, const RendererSettings& settings,
         int width, int height, float timeSeconds, unsigned int fullscreenVertexArray,
-        const PostProcessSettings* postProcessSettings = nullptr);
+        const PostProcessSettings* postProcessSettings = nullptr, Shader* shadingShader = nullptr);
     RenderTarget& target;
     const Camera& camera;
     const RendererSettings& settings;
@@ -34,6 +37,9 @@ struct RenderPluginFrame {
     float timeSeconds;
     unsigned int fullscreenVertexArray;
     const PostProcessSettings* postProcessSettings;
+    // Borrowed, already-bound scene shader for MaterialShading extensions.
+    // Such extensions only write uniforms; they neither draw nor retain it.
+    Shader* shadingShader;
     std::vector<RenderTextureBinding> textures;
     unsigned int texture(const std::string& name) const;
     std::vector<ModuleParameterOverride> parameterValues(const RenderPluginParameterSchema& schema) const;

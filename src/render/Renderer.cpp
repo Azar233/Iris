@@ -207,17 +207,19 @@ void Renderer::render(
     int width,
     int height
 ) {
-    bufferPreviewNearPlane_ = camera.nearPlane();
-    if(!shaderMaterials_)shaderMaterials_=std::make_unique<ShaderMaterialRuntime>(shaderDirectory_);
-    if(shaderMaterials_->prepare(renderItems,requestedSettings,true,false,requestedSettings.shaderHotReloadEnabled && shaderReloadPollFrame_ % 15U == 0U))invalidateTemporalHistory();
-    cpuPassTimings_.clear();
     RendererSettings settings = requestedSettings;
     settings.shaderSceneResource = iris::shaderSceneResourceFor(requestedSettings);
     if (!settings.shaderSceneResource.empty()) settings.enscapeCubeShaderEnabled = false;
     std::string pluginError;
-    if (!iris::validatePluginConfiguration(iris::builtinRenderPlugins(),settings.renderPlugins,
-        !settings.shaderSceneResource.empty() ? "" : settings.enscapeCubeShaderEnabled ? iris::enscapePluginId : iris::postProcessPluginId,pluginError))
+    if (!iris::validateRendererPluginConfiguration(iris::builtinRenderPlugins(),settings,pluginError))
         throw std::runtime_error(pluginError);
+    bufferPreviewNearPlane_ = camera.nearPlane();
+    if(!shaderMaterials_)shaderMaterials_=std::make_unique<ShaderMaterialRuntime>(shaderDirectory_);
+    if(shaderMaterials_->prepare(renderItems,requestedSettings,true,false,requestedSettings.shaderHotReloadEnabled && shaderReloadPollFrame_ % 15U == 0U))invalidateTemporalHistory();
+    cpuPassTimings_.clear();
+    if (!iris::nprRequired(settings)) nprRenderer_.reset();
+    else if (!nprRenderer_) nprRenderer_=iris::builtinRenderPlugins().create(iris::nprPluginId,
+        {iris::openGlShadingService},shaderDirectory_);
     if (!iris::pluginEnabled(settings.renderPlugins,iris::enscapePluginId)) enscapeCubeRenderer_.reset();
     if (!iris::pluginEnabled(settings.renderPlugins,iris::postProcessPluginId)) postProcessor_.reset();
     renderedWaterSettings_ = settings.water;
@@ -735,25 +737,9 @@ void Renderer::render(
     };
 
     const auto bindStylizedSettings = [&](Shader& targetShader) {
-        targetShader.setBool(
-            "uStylizedEnabled", settings.shadingMode == ShadingMode::Stylized
-        );
-        targetShader.setInt(
-            "uStylizedBandCount", std::clamp(settings.stylizedBandCount, 2, 8)
-        );
-        targetShader.setFloat("uStylizedBandSoftness", settings.stylizedBandSoftness);
-        targetShader.setFloat("uStylizedSpecularSize", settings.stylizedSpecularSize);
-        targetShader.setFloat(
-            "uStylizedSpecularSoftness", settings.stylizedSpecularSoftness
-        );
-        targetShader.setFloat("uStylizedRimWidth", settings.stylizedRimWidth);
-        targetShader.setFloat("uStylizedRimSoftness", settings.stylizedRimSoftness);
-        targetShader.setFloat("uStylizedRimIntensity", settings.stylizedRimIntensity);
-        targetShader.setVec3("uStylizedShadowTint", settings.stylizedShadowTint);
-        targetShader.setVec3("uStylizedRimColor", settings.stylizedRimColor);
-        targetShader.setInt(
-            "uStylizedDebugView", static_cast<int>(settings.stylizedDebugView)
-        );
+        if(nprRenderer_) nprRenderer_->renderFrame({*renderTarget_,camera,settings,width,height,
+            settings.water.timeSeconds,fullscreenVertexArray_,nullptr,&targetShader});
+        else targetShader.setBool("uStylizedEnabled",false);
     };
 
     const auto bindSceneShader = [&] {
@@ -1857,7 +1843,8 @@ deferredLightingShader_->setVec3("uCameraPosition", camera.position());
 
 bool Renderer::hasRenderPluginInstance(const std::string& id) const {
     return id == iris::enscapePluginId ? enscapeCubeRenderer_ != nullptr
-        : id == iris::postProcessPluginId && postProcessor_ != nullptr;
+        : id == iris::postProcessPluginId ? postProcessor_ != nullptr
+        : id == iris::nprPluginId && nprRenderer_ != nullptr;
 }
 
 unsigned int Renderer::colorTexture() const {
@@ -1932,9 +1919,10 @@ void Renderer::publishShaderScene(std::unique_ptr<iris::RenderPlugin> candidate,
 bool Renderer::rebuildPluginResources(const std::string& id, const RendererSettings& settings) {
     try {
         if (!iris::pluginEnabled(settings.renderPlugins, id)) throw std::runtime_error("Plugin disabled: " + id);
-        auto* owner = id == iris::enscapePluginId ? &enscapeCubeRenderer_ : id == iris::postProcessPluginId ? &postProcessor_ : nullptr;
+        auto* owner = id == iris::enscapePluginId ? &enscapeCubeRenderer_ : id == iris::postProcessPluginId ? &postProcessor_
+            : id == iris::nprPluginId ? &nprRenderer_ : nullptr;
         if (!owner) throw std::runtime_error("Unknown plugin: " + id);
-        auto candidate = iris::builtinRenderPlugins().prepareReplacement(id, {iris::openGlFullscreenService}, shaderDirectory_,
+        auto candidate = iris::builtinRenderPlugins().prepareReplacement(id, {iris::openGlFullscreenService,iris::openGlShadingService}, shaderDirectory_,
             settings, std::max(renderTarget_->width(), 1), std::max(renderTarget_->height(), 1));
         auto success = "Plugin resources committed: " + id;
         owner->swap(candidate);

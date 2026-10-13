@@ -8,7 +8,7 @@
 | `tests/` | 单元测试、契约与版本化回归基线 |
 | `cmake/`、`tools/`、`.github/` | 配置、测试领域索引、资源同步和 CI |
 | `build-ci-msvc/`、`build-mingw/` | 当前 MSVC/GCC Release 缓存；绝对路径绑定，保留可避免冷启动编译 |
-| `build-stored-off/` | 可选插件 OFF 专项缓存，相关变更才启用 |
+| `build-stored-off/` | 可选插件 OFF 专项缓存，相关变更才启用；实际开关以 CMakeCache 为准 |
 | `.cache/` | 可重建的本地依赖/工具缓存 |
 | `.local/verification/` | 每个编译器/领域/级别的最新计划与日志，同一入口覆盖旧临时日志 |
 | `.local/evidence/` | 已归档截图、报告和可编辑素材；旧路径映射在 `.local/maintenance/cleanup-manifest.json` |
@@ -42,3 +42,5 @@ cmake --install build-ci-msvc --config Release --component Runtime --prefix .loc
 发布 ZIP 使用 `cpack -C Release --config build-ci-msvc/CPackConfig.cmake -B .local/packages`，避免在根目录留下 ZIP 和 `_CPack_Packages`。安装时指定 `Runtime`，避免引入依赖库的开发头文件和静态库。
 
 普通开发分支 CI 保留构建和完整 CPU 检查，不再每次生成发布 ZIP。`v*` 标签或手动工作流的 `package=true` 执行 CPack/上传；手动入口依赖工作流进入默认分支。并发新提交取消同一分支的旧 CI。GPU 检查仍在本地完成，CI CPU 通过不代表 GPU 通过。
+
+A4-N1 的 NPR 移除专项使用 cmake --preset plugins-off -DIRIS_ENABLE_POSTPROCESS_PLUGIN=ON，保留普通原生 Raster 依赖的 PostProcess，关闭 Enscape/NPR；默认 preset 仍关闭全部可选插件。复用当前 build-stored-off 前核对这些实际开关，不能把该专项称作全插件 OFF。标准安装/ZIP 仍是 A3-M2，A4-N1 开发程序位于 build-ci-msvc/Release/Iris.exe；本切片未打包。

@@ -14,6 +14,10 @@ int main() {
         auto valid=iris::postProcessContract();
         iris::validatePluginContract(valid);
         iris::validatePluginContract(iris::enscapeContract());
+        iris::RenderPluginContract shading{iris::PluginStage::MaterialShading,{},{}};
+        iris::validatePluginContract(shading);
+        shading.passes.push_back({"draw",{},{},{}});
+        rejects([&]{iris::validatePluginContract(shading);});
         auto bad=valid;
         bad.passes[0].reads.push_back("bloom");
         rejects([&]{iris::validatePluginContract(bad);}); // same-frame cycle

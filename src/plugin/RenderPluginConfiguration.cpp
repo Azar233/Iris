@@ -1,8 +1,25 @@
 #include "plugin/RenderPluginConfiguration.h"
 #include "plugin/RenderPluginRegistry.h"
 #include "render/Renderer.h"
+#include "plugin/ShaderScene.h"
 #include <algorithm>
 namespace iris {
+bool nprRequired(const RendererSettings& settings) {
+    return settings.shadingMode==ShadingMode::Stylized && !settings.enscapeCubeShaderEnabled
+        && shaderSceneResourceFor(settings).empty();
+}
+bool validateRendererPluginConfiguration(const RenderPluginRegistry& registry,
+    const RendererSettings& settings, std::string& error) {
+    if(!settings.shaderSceneResource.empty() && settings.enscapeCubeShaderEnabled) {
+        error="ShaderScene and Enscape modes are mutually exclusive";return false;
+    }
+    const std::string required=!shaderSceneResourceFor(settings).empty()?"":settings.enscapeCubeShaderEnabled?enscapePluginId:postProcessPluginId;
+    if(!validatePluginConfiguration(registry,settings.renderPlugins,required,error))return false;
+    if(nprRequired(settings) && (!registry.contains(nprPluginId) || !pluginEnabled(settings.renderPlugins,nprPluginId))) {
+        error="Current pipeline requires enabled render plugin: "+std::string(nprPluginId);return false;
+    }
+    error.clear();return true;
+}
 bool setPluginParameter(const RenderPluginRegistry& registry, RendererSettings& settings,
     const std::string& id, const ModuleParameterOverride& parameter, bool& affectsHistory, std::string& error) {
     affectsHistory = false;
@@ -21,7 +38,7 @@ bool validatePluginConfiguration(const RenderPluginRegistry& registry,
         const auto* descriptor=registry.descriptor(entry.id);
         if(!descriptor){error="Render plugin unavailable: "+entry.id;return false;}
         for(const auto& service:descriptor->requiredServices)
-            if(service!=openGlFullscreenService){error="Render plugin service unavailable: "+service;return false;}
+            if(service!=openGlFullscreenService && service!=openGlShadingService){error="Render plugin service unavailable: "+service;return false;}
     }
     if(!required.empty()&&(!registry.contains(required)||!pluginEnabled(config,required))){
         error="Current pipeline requires enabled render plugin: "+required;return false;

@@ -3,6 +3,9 @@
 #if IRIS_ENABLE_ENSCAPE_PLUGIN
 #include "EnscapeCubeRenderer.h"
 #endif
+#if IRIS_ENABLE_NPR_PLUGIN
+#include "NprRenderer.h"
+#endif
 #if IRIS_ENABLE_POSTPROCESS_PLUGIN
 #include "PostProcessor.h"
 #endif
@@ -12,7 +15,8 @@ namespace iris {
 const std::vector<RenderPluginDescriptor>& builtinRenderPluginCatalog() {
     static const std::vector<RenderPluginDescriptor> catalog={
         {enscapePluginId,renderPluginApiVersion,{openGlFullscreenService},"CC BY-NC-SA-3.0 (third-party shaders)",enscapeContract(),builtinRenderPluginParameterSchema(enscapePluginId)},
-        {postProcessPluginId,renderPluginApiVersion,{openGlFullscreenService},"MIT",postProcessContract(),builtinRenderPluginParameterSchema(postProcessPluginId)}};
+        {postProcessPluginId,renderPluginApiVersion,{openGlFullscreenService},"MIT",postProcessContract(),builtinRenderPluginParameterSchema(postProcessPluginId)},
+        {nprPluginId,renderPluginApiVersion,{openGlShadingService},"MIT",{PluginStage::MaterialShading,{},{}},builtinRenderPluginParameterSchema(nprPluginId)}};
     return catalog;
 }
 
@@ -24,6 +28,11 @@ const RenderPluginRegistry& builtinRenderPlugins() {
             [](const std::filesystem::path& directory) {
                 return std::make_unique<EnscapeCubeRenderer>(directory);
             });
+#endif
+#if IRIS_ENABLE_NPR_PLUGIN
+        result.add(builtinRenderPluginCatalog()[2], [](const std::filesystem::path&) {
+            return std::make_unique<NprRenderer>();
+        });
 #endif
 #if IRIS_ENABLE_POSTPROCESS_PLUGIN
         result.add(builtinRenderPluginCatalog()[1],
