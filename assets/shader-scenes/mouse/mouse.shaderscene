@@ -1,0 +1,16 @@
+{
+  "version": 2,
+  "id": "mouseInput",
+  "resourceRoot": ".",
+  "entry": "mainImage",
+  "camera": "project",
+  "author": "Iris contributors",
+  "license": "MIT",
+  "parameters": [],
+  "passes": [
+    { "id": "Accum", "fragment": "accum.glsl", "output": "linear-rgba16f", "sizeDivisor": 2,
+      "channels": [{ "slot": 0, "source": "Accum", "frame": "previous", "filter": "nearest", "wrap": "clamp", "mip": "none" }] },
+    { "id": "Image", "fragment": "image.glsl", "output": "display-rgba8", "sizeDivisor": 1,
+      "channels": [{ "slot": 0, "source": "Accum", "frame": "current", "filter": "nearest", "wrap": "clamp", "mip": "none" }] }
+  ]
+}

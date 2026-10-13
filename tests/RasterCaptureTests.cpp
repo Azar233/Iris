@@ -94,6 +94,12 @@ int main(){try{
         job.shaderSceneSequence=true;job.shaderSceneWarmupFrames=3;
         require(writeRasterFrameReport(root/"package.json",job,0,settings,"test GPU",error,nullptr,&package),error.c_str());
         const auto identity=read(root/"package.json");
+        require(identity.find("\"uniform\": \"irisMouse\"")!=std::string::npos
+            && identity.find("\"policy\": \"zero-input\"")!=std::string::npos,"Mouse report policy missing");
+        settings.shaderSceneMouse={.5f,.5f,1,1};
+        require(!writeRasterFrameReport(root/"mouse-rejected.json",job,0,settings,"test GPU",error,nullptr,&package)
+            && !std::filesystem::exists(root/"mouse-rejected.json"),"Nonzero offline mouse report accepted/published");
+        settings.shaderSceneMouse=glm::vec4(0);
         require(identity.find("\"parameterSource\": \"iris.enscape-study\"")!=std::string::npos
             &&identity.find("CC BY-NC-SA 3.0")!=std::string::npos
             &&identity.find("\"encoding\": \"hash-v1\"")!=std::string::npos

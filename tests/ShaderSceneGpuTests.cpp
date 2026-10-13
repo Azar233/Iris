@@ -1,4 +1,5 @@
 #include "plugin/ShaderSceneRenderer.h"
+#include "plugin/ShaderSceneInput.h"
 #include "render/Renderer.h"
 #include "render/Shader.h"
 #include "render/Camera.h"
@@ -16,6 +17,7 @@
 #include <cstdlib>
 #include <iomanip>
 #include <sstream>
+#include <limits>
 
 namespace {
 void check(bool ok, const char* message) { if (!ok) throw std::runtime_error(message); }
@@ -127,9 +129,11 @@ int main(int argc, char** argv) {
             check(first[0] >= 127 && first[0] <= 128, "Parameter not consumed by GPU");
             check(first != draw(0.5f), "Time input has no contribution");
             camera.moveLocal(0, 1); check(first != draw(0.25f), "Camera input has no contribution"); camera.reset();
+            document.renderer.shaderSceneMouse={.5f,.5f,1,1};
             check(saveSceneDocument(directory / "saved.myscene", document, error), error.c_str());
             SceneDocument reopened; check(loadSceneDocument(directory / "saved.myscene", reopened, error), error.c_str());
             check(reopened.renderer.shaderSceneResource == settings.shaderSceneResource, "Relative reference round trip failed");
+            check(reopened.renderer.shaderSceneMouse==glm::vec4(0),"Scene persisted live mouse input");
             write(fragment, "#version 330 core\ninvalid shader\n");
             auto report = runtime.reloadResources(settings);
             check(report.failed > 0 && report.retained > 0 && first == draw(0.25f), "Compile rejection lost old image");
@@ -154,12 +158,47 @@ int main(int argc, char** argv) {
             const auto partial = draw(0.25f);
             check(partial[0] == 0 && partial[1] == 0 && partial[2] == 0 && partial[3] == 255
                 && partial[partial.size() - 4] == 255 && partial == draw(0.25f), "Discard retained undeclared previous frame pixels");
+            write(fragment,"#version 330 core\nout vec4 color;uniform vec4 irisMouse;uniform vec2 irisViewportResolution;void main(){color=vec4(irisMouse.xy/irisViewportResolution,irisMouse.z/7.,irisMouse.w);}\n");
+            runtime.prepareResources(settings,31,47);
+            const auto zeroMouse=draw(.25f);
+            check(zeroMouse[0]==0 && zeroMouse[1]==0 && zeroMouse[2]==0 && zeroMouse[3]==0,"Mouse default is not zero");
+            settings.shaderSceneMouse=iris::shaderSceneMouseInput(90,30,10,10,320,80,7,true);
+            const auto input=draw(.375f);
+            check(input[0]>=63 && input[0]<=64 && input[1]>=191 && input[1]<=192 && input[2]==255 && input[3]==255,
+                "Viewport mouse coordinate / button / inside GPU contribution failed");
+            check(!runtime.runtimeStatus().historyValid && input==draw(.375f),"Changed mouse did not reset / paused mouse drifted");
+            draw(.5f);check(runtime.runtimeStatus().historyValid,"Unchanged mouse reset history");
+            auto invalid=settings;invalid.shaderSceneMouse.z=.5f;
+            rejected=false;try{runtime.renderFrame({target,camera,invalid,31,47,.5f,vao});}catch(const std::exception&){rejected=true;}
+            check(rejected && input==draw(.5f),"Invalid mouse mutated output/history");
+            invalid.shaderSceneMouse.x=std::numeric_limits<float>::quiet_NaN();
+            rejected=false;try{runtime.renderFrame({target,camera,invalid,31,47,.5f,vao});}catch(const std::exception&){rejected=true;}
+            check(rejected && runtime.runtimeStatus().frame==1,"Nonfinite mouse accepted");
+            write(fragment,"#version 330 core\nout vec4 color;uniform vec3 irisMouse;void main(){color=vec4(irisMouse,1);}\n");
+            report=runtime.reloadResources(settings,true);
+            check(report.failed==1 && input==draw(.5f),"Mouse type rejection lost prior program");
+            settings.shaderSceneMouse=iris::shaderSceneMouseInput(10,10,10,10,320,80,0,false);
+            check(zeroMouse==draw(.625f) && !runtime.runtimeStatus().historyValid,"UI capture did not clear mouse/history");
+            check(iris::shaderSceneMouseInput(330,20,10,10,320,80,1,true)==glm::vec4(0),"Outside right edge accepted");
+            check(iris::shaderSceneMouseInput(20,90,10,10,320,80,1,true)==glm::vec4(0),"Outside bottom edge accepted");
+            std::cout<<"Mouse GPU: zero/coordinates/buttons/inside/paused/history/type rejection/nonfinite/retention PASS\n";
         }
         testShaderSceneMultiPass(std::filesystem::u8path(argv[1]), directory, vao);
         testShaderSceneEntry(std::filesystem::u8path(argv[1]), directory, vao);
         testShaderSceneTexturesGpu(std::filesystem::u8path(argv[1]), directory, vao);
         testShaderSceneReload(std::filesystem::u8path(argv[1]), directory, vao);
         testShaderSceneHistory(std::filesystem::u8path(argv[1]), directory, vao);
+        {
+            const auto shaderRoot=std::filesystem::u8path(argv[1]);
+            iris::ShaderSceneRenderer runtime(shaderRoot);RendererSettings settings;
+            settings.shaderSceneResource=(shaderRoot.parent_path()/"assets/shader-scenes/mouse/mouse.shaderscene").u8string();
+            settings.shaderSceneMouse={.25f,.75f,7,1};Camera camera;RenderTarget target;target.resize(64,32,1);
+            runtime.prepareResources(settings,64,32);runtime.renderFrame({target,camera,settings,64,32,0,vao});
+            const auto image=pixels(target);
+            check(image[0]>=37 && image[0]<=38 && image[1]>=87 && image[1]<=88 && image[2]>=119 && image[2]<=120,
+                "Half-size mainImage Pass did not receive final viewport mouse coordinates");
+            std::cout<<"Mouse half-size mainImage / current+previous Pass viewport coordinates: PASS\n";
+        }
         testPassTimings(std::filesystem::u8path(argv[1]),vao);
         glDeleteVertexArrays(1, &vao);
         check(glGetError() == GL_NO_ERROR, "Exit GL error");

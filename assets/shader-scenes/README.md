@@ -15,6 +15,7 @@ Iris 使用项目共享 Camera、Timeline、Job 与 GL 上下文运行全屏 fra
 | `irisTime`, `irisTimeDelta` | float，绝对秒及实际历史步长，重置后 delta=0 |
 | `irisFrame`, `irisHistoryValid`, `irisSeed` | int / bool / int，重置后帧 0、历史无效；Job Seed 范围 0～2147483647，GUI 默认 0，纹理 Seed 独立声明 |
 | `irisResolution`, `irisViewportResolution` | vec2，当前 Pass 尺寸与最终输出尺寸 |
+| `irisMouse` | vec4，xy 为最终 Viewport 像素坐标（左下原点）；z 为按键位掩码（左=1/右=2/中=4）；w 为输入有效标志。无输入全零，半尺寸 Pass 不缩放 xy |
 | `irisChannel0..3` | sampler2D / sampler3D，由通道声明的资源决定 |
 | `irisChannelResolution0..3`, `irisChannelExtent0..3` | vec2 / vec3，实际资源尺寸；Extent 是 v3 输入 |
 | `irisCameraPosition/Forward/Right/Up` | vec3，项目 Camera |
@@ -22,7 +23,7 @@ Iris 使用项目共享 Camera、Timeline、Job 与 GL 上下文运行全屏 fra
 | `irisCameraTanHalfFov`, `irisCameraNear` | float，项目 Camera 参数 |
 | 包公开参数 ID | float / bool，当前共享覆盖值或声明默认值 |
 
-`mainImage(out vec4 color, in vec2 coord)` 的 coord 来自 `gl_FragCoord.xy`，不翻转 Y；每次调用需写满 RGBA。宿主不自动注入 Shadertoy 的 `iTime/iResolution/iChannel/iMouse`。**鼠标输入 uniform 尚未实现**，移动/旋转项目 Camera 仍使用编辑器已有操作。未支持音频、cubemap 通道、Compute Shader、任意 Shadertoy 自动导入、节点图或模型材质 Shader。
+`mainImage(out vec4 color, in vec2 coord)` 的 coord 来自 `gl_FragCoord.xy`，不翻转 Y；每次调用需写满 RGBA。宿主不自动注入 Shadertoy 的 `iTime/iResolution/iChannel/iMouse`。`irisMouse` 使用当前按键而非 Shadertoy 点击起点/负号约定；仅 Viewport 图像内且没有 UI 捕获时有效，离开/隐藏后归零。实际使用鼠标的包在输入改变时清历史；未使用的包不受鼠标影响。Scene 不保存鼠标，Queue/CLI 固定 zero-input 并记录报告；交互轨迹录制/离线回放尚未支持。见 [鼠标模板](mouse/README.md)。移动/旋转项目 Camera 仍使用编辑器已有操作。未支持音频、cubemap 通道、Compute Shader、任意 Shadertoy 自动导入、节点图或模型材质 Shader。
 
 同帧循环、缺失文件、非法通道和类型会拒绝候选；成功完整包替换清空反馈，失败保留旧实例。history 策略可保存参数/相机是否清历史和最大时间步；resize、包替换、倒退、策略变化和 Clear 始终重置。保留反馈没有运动重投影。热重载监听 mtime/大小，保留二者的内容修改需手动 Recompile。
 

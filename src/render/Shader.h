@@ -42,6 +42,7 @@ public:
     Shader& operator=(const Shader&) = delete;
 
     void use() const;
+    bool hasUniform(const char* name) const { return uniformLocation(name) >= 0; }
     bool sourcesCurrent() const { return !snapshotChanged(watchedSources_); }
     std::size_t revision() const { return revision_; }
     void setBool(const char* name, bool value) const;

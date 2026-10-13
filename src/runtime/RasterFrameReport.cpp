@@ -45,6 +45,7 @@ bool writeRasterFrameReport(const std::filesystem::path& path,const RenderJob& j
         w.Key("fps");w.Int(job.framesPerSecond);
         if(job.shaderSceneSequence) {
             if(!package) throw std::runtime_error("ShaderScene report requires the committed package");
+            if(settings.shaderSceneMouse != glm::vec4(0)) throw std::runtime_error("ShaderScene output requires zero mouse input");
             w.Key("shaderScene");w.StartObject();
             w.Key("version");w.Int(1);w.Key("packageId");w.String(package->id.c_str());
             w.Key("packageVersion");w.Int(package->version);
@@ -61,6 +62,9 @@ bool writeRasterFrameReport(const std::filesystem::path& path,const RenderJob& j
             w.Key("warmupFrames");w.Int(job.shaderSceneWarmupFrames);
             w.Key("seed");w.Int(settings.shaderSceneSeed);
             w.Key("seedUniform");w.String("irisSeed");
+            w.Key("mouse");w.StartObject();w.Key("version");w.Int(1);
+            w.Key("uniform");w.String("irisMouse");w.Key("policy");w.String("zero-input");
+            w.Key("value");w.StartArray();for(int i=0;i<4;++i)w.Double(settings.shaderSceneMouse[i]);w.EndArray();w.EndObject();
             w.Key("effectiveTimeSeconds");w.Double(settings.water.timeSeconds);
             w.Key("historyPolicy");w.StartObject();
             w.Key("resetOnParameters");w.Bool(settings.shaderSceneHistory.resetOnParameters);

@@ -1,5 +1,6 @@
 #include "app/Application.h" // Raster capture metadata is published with each frame.
 #include "plugin/ShaderScene.h"
+#include "plugin/ShaderSceneInput.h"
 #include "runtime/ShaderSceneSequence.h"
 #include "app/StatePaths.h"
 #include "runtime/RasterFrameReport.h"
@@ -301,6 +302,7 @@ int Application::runRasterSequence(const RenderJob& job, const std::string& canc
                 : static_cast<float>(frame - job.startFrame) / static_cast<float>(job.framesPerSecond);
         }
         if (job.shaderSceneSequence) frameSettings.shaderSceneSeed = static_cast<int>(job.renderSettings.seed);
+        frameSettings.shaderSceneMouse = glm::vec4(0); // Offline never inherits editor pointer state.
         frameSettings.atmosphere.cloudDeterministic = job.rasterDeterminism;
         frameSettings.atmosphere.cloudTemporalEnabled = job.rasterTemporalAccumulation;
         frameSettings.temporalAaEnabled = job.rasterTemporalAccumulation;
@@ -1103,6 +1105,7 @@ int Application::run(const std::filesystem::path& initialModel) {
     if (std::getenv("IRIS_SHADER_PARAMETER_UI_TEST")) smokeTestFrames = 24;
     if (std::getenv("IRIS_SHADER_PACKAGE_RELOAD_ACCEPTANCE_DIRECTORY")) smokeTestFrames = 18;
     if (std::getenv("IRIS_SHADER_HISTORY_UI_TEST")) smokeTestFrames = 24;
+    if (std::getenv("IRIS_SHADER_MOUSE_UI_TEST")) smokeTestFrames = 32;
     const auto cpuPreviewSmokeDeadline = std::chrono::steady_clock::now()
         + std::chrono::seconds(30);
     const auto thumbnailDeadline = std::chrono::steady_clock::now() + std::chrono::seconds(30);
@@ -1499,7 +1502,8 @@ int Application::run(const std::filesystem::path& initialModel) {
     shutdown();
     if (lightUiInteraction && !lightUiInteractionComplete_) std::cerr << "Light UI incomplete: phase=" << lightUiInteractionPhase_ << ", lights=" << scene_.lightEntityCount() << "\n";
     if (std::getenv("IRIS_SHADER_PARAMETER_UI_TEST")) std::cout << "ShaderScene real Float+Bool controls: " << (shaderParameterUiPassed ? "PASS" : "FAIL") << '\n';
-    return shaderParameterUiPassed && diagnosticUiPassed && workspaceUiPassed && shaderBrowserPassed && recoveryPassed && appendPassed && interactionsPassed && pluginsPassed && pluginParametersPassed
+    return (!std::getenv("IRIS_SHADER_MOUSE_UI_TEST") || shaderMouseUiPhase_ == 8)
+        && shaderParameterUiPassed && diagnosticUiPassed && workspaceUiPassed && shaderBrowserPassed && recoveryPassed && appendPassed && interactionsPassed && pluginsPassed && pluginParametersPassed
         && (shaderTransactionSources_.empty() || (shaderTransactionDone && shaderTransactionPassed))
         && (!std::getenv("MYRENDERER_SHADER_TRANSACTION_UI_RETRY") || shaderRetryInteractionComplete_)
         && (!std::getenv("IRIS_SHADER_PACKAGE_RELOAD_UI_RETRY") || shaderRetryInteractionComplete_)
@@ -3575,6 +3579,7 @@ void Application::drawViewportPanel() {
     const bool visible = ImGui::Begin(EditorUi::label("Scene###Viewport"));
     ImGui::PopStyleVar();
     if (!visible) {
+        rendererSettings_.shaderSceneMouse = glm::vec4(0);
         ImGui::End();
         return;
     }
@@ -3584,6 +3589,8 @@ void Application::drawViewportPanel() {
         const SceneEntity* selected = scene_.find(selectedSceneEntity_);
         camera_.reset(selected ? glm::vec3(selected->worldTransform[3]) : modelPosition_);
     }
+    const ImVec2 frameButton((ImGui::GetItemRectMin().x + ImGui::GetItemRectMax().x)*.5f,
+        (ImGui::GetItemRectMin().y + ImGui::GetItemRectMax().y)*.5f);
     ImGui::SameLine();
     ImGui::SetNextItemWidth(142.0f);
     if (ImGui::SmallButton(viewportRenderMode_ == 0
@@ -3674,6 +3681,43 @@ void Application::drawViewportPanel() {
     const int height = renderHeightOverride_ > 0
         ? renderHeightOverride_
         : std::max(static_cast<int>(available.y), 1);
+
+    const ImVec2 imageOrigin = ImGui::GetCursorScreenPos();
+    const auto& pointer = ImGui::GetIO();
+    const int buttons = (pointer.MouseDown[0] ? 1 : 0) | (pointer.MouseDown[1] ? 2 : 0) | (pointer.MouseDown[2] ? 4 : 0);
+    rendererSettings_.shaderSceneMouse = iris::shaderSceneMouseInput(pointer.MousePos.x, pointer.MousePos.y,
+        imageOrigin.x, imageOrigin.y, static_cast<float>(width), static_cast<float>(height), buttons,
+        viewportRenderMode_ == 0 && !pointer.AppFocusLost && ImGui::IsWindowHovered() && !ImGui::IsAnyItemActive()
+            && !benchmarkMode_ && !prismReelMode_ && !referenceComparisonMode_);
+
+    if (std::getenv("IRIS_SHADER_MOUSE_UI_TEST")) {
+        auto& io = ImGui::GetIO();
+        const auto input = rendererSettings_.shaderSceneMouse;
+        const auto queue = [&](float x, float y, int mask) {
+            io.AddFocusEvent(true); io.AddMousePosEvent(x,y);
+            for(int button=0;button<3;++button)io.AddMouseButtonEvent(button,(mask&(1<<button))!=0);
+        };
+        const ImVec2 center(imageOrigin.x + width*.5f, imageOrigin.y + height*.5f);
+        const auto require = [](bool accepted) { if(!accepted)throw std::runtime_error("ShaderScene mouse viewport boundary failed"); };
+        if(shaderMouseUiPhase_==0 && ImGui::GetFrameCount()>=5) {queue(imageOrigin.x+width*.25f,imageOrigin.y+height*.25f,1);++shaderMouseUiPhase_;}
+        else if(shaderMouseUiPhase_==1 && io.MouseDown[0]) {
+            require(input.w==1 && std::abs(input.x-.25f)<.01f && std::abs(input.y-.75f)<.01f && input.z==1);
+            queue(frameButton.x,frameButton.y,1);++shaderMouseUiPhase_;
+        } else if(shaderMouseUiPhase_==2 && io.MousePos.y<imageOrigin.y) {
+            require(input==glm::vec4(0));queue(frameButton.x,frameButton.y,0);++shaderMouseUiPhase_;
+        } else if(shaderMouseUiPhase_==3 && !io.MouseDown[0]) {
+            require(input==glm::vec4(0));queue(frameButton.x,frameButton.y,1);++shaderMouseUiPhase_;
+        } else if(shaderMouseUiPhase_==4 && io.MouseDown[0]) {
+            require(input==glm::vec4(0));queue(center.x,center.y,1);++shaderMouseUiPhase_;
+        } else if(shaderMouseUiPhase_==5 && io.MousePos.y>imageOrigin.y) {
+            require(input==glm::vec4(0));queue(center.x,center.y,0);++shaderMouseUiPhase_;
+        } else if(shaderMouseUiPhase_==6 && !io.MouseDown[0]) {
+            require(input.w==1 && input.z==0);queue(center.x,center.y,6);++shaderMouseUiPhase_;
+        } else if(shaderMouseUiPhase_==7 && io.MouseDown[1] && io.MouseDown[2]) {
+            require(input.w==1 && input.z==6);queue(center.x,center.y,0);++shaderMouseUiPhase_;
+            std::cout<<"ShaderScene mouse real viewport / toolbar capture / three buttons: PASS\n";
+        }
+    }
 
     const glm::mat4 normalization =
         glm::scale(glm::mat4(1.0f), glm::vec3(modelNormalizationScale_))

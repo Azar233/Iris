@@ -36,7 +36,7 @@ void Application::runShaderSequenceAcceptance(const std::filesystem::path& direc
     std::string error;ShaderSceneSequencePlan plan;
     check(makeShaderSceneSequencePlan(job,rendererSettings_.shaderSceneHistory,plan,error),error.c_str());
     std::filesystem::create_directories(directory/"preview");
-    rendererSettings_.shaderSceneSeed=7;renderer_->invalidateTemporalHistory();
+    rendererSettings_.shaderSceneSeed=7;rendererSettings_.shaderSceneMouse=glm::vec4(0);renderer_->invalidateTemporalHistory();
     for(int frame=plan.firstFrame;frame<=plan.lastFrame;++frame){
         rendererSettings_.water.timeSeconds=plan.timeSeconds(frame);
         renderer_->render(scene_.buildRenderItems(),camera_,rendererSettings_,320,180);glFinish();

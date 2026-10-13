@@ -235,6 +235,7 @@ private:
     std::uint64_t workspaceShaderGeneration_{0};
     std::uint64_t workspaceShaderRuntimeRevision_{0};
     int shaderHistoryUiPhase_{0};
+    int shaderMouseUiPhase_{0};
     bool shaderHistoryUiPassed_{false};
     std::filesystem::path inspectedShaderFile_;
     int shaderBrowserInteractionPhase_{0};

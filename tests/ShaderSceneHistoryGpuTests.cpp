@@ -31,6 +31,9 @@ void testShaderSceneHistory(const std::filesystem::path& shaders,const std::file
     };
     const auto gain=[&](float value){ModuleParameterValue parameter;parameter.number=value;settings.shaderSceneParameters={{"gain",parameter}};};
     check(draw(0)[0]==32 && draw(.125f)[0]==64,"Default history did not advance");
+    settings.shaderSceneMouse={.25f,.75f,1,1};
+    check(draw(.125f)[0]==64 && runtime.runtimeStatus().historyValid,"Unused mouse reset existing package history");
+    settings.shaderSceneMouse=glm::vec4(0);
     gain(.25f);check(draw(.25f)[0]==64 && !runtime.runtimeStatus().historyValid,"Default parameter change did not reset");
     settings.shaderSceneHistory={false,false,.5f};
     check(draw(.25f)[0]==64 && runtime.runtimeStatus().frame==0,"Policy change did not reset");
@@ -67,5 +70,13 @@ void testShaderSceneHistory(const std::filesystem::path& shaders,const std::file
     std::ofstream(root/"accum.frag")<<accumulation;
     check(runtime.reloadResources(settings,true).reloaded==2 && runtime.runtimeStatus().resetPending,"Success reload retained stale history");
     check(draw(23.f/24)[0]==64 && !runtime.runtimeStatus().historyValid,"Reload did not keep policy and clear buffers");
+    std::ofstream(root/"accum.frag")<<"#version 330 core\nuniform sampler2D irisChannel0;uniform vec2 irisResolution;uniform vec4 irisMouse;out vec4 color;void main(){color=vec4(texture(irisChannel0,gl_FragCoord.xy/irisResolution).r+.125+irisMouse.w*.125,0,0,1);}\n";
+    runtime.prepareResources(settings,31,47);draw(0);check(draw(.125f)[0]==64,"Mouse feedback initial replay failed");
+    settings.shaderSceneHistory.resetOnParameters=false;settings.shaderSceneHistory.resetOnCamera=false;
+    draw(.125f);draw(.25f);settings.shaderSceneMouse={.5f,.5f,1,1};
+    check(draw(.375f)[0]==64 && runtime.runtimeStatus().frame==0,"Consumed mouse retained stale feedback under preserve policy");
+    check(encoded(draw(.5f)[0],.5f) && runtime.runtimeStatus().historyValid,"Stable mouse did not advance feedback");
+    settings.shaderSceneMouse=glm::vec4(0);
+    check(draw(.625f)[0]==32 && !runtime.runtimeStatus().historyValid,"Mouse exit kept stale feedback");
     std::cout<<"History policy GPU: defaults/preserve parameters+camera/pause/bounded step/rewind/policy change/invalid/resize/clear/reload/24-frame replay PASS\n";
 }

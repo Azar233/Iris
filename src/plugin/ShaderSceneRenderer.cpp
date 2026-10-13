@@ -1,4 +1,5 @@
 #include "plugin/ShaderSceneRenderer.h"
+#include "plugin/ShaderSceneInput.h"
 #include "render/Shader.h"
 #include "render/Renderer.h"
 #include "render/Camera.h"
@@ -141,6 +142,8 @@ struct ShaderSceneRenderer::State {
     std::vector<ModuleParameterValue> parameterValues;
     ShaderSceneHistoryPolicy historyPolicy;
     int seed{0};
+    glm::vec4 mouse{0};
+    bool consumesMouse{false};
     std::array<GLuint, 4 * timingStride> timingQueries{};
     std::array<bool, 4> timingPending{};
     std::size_t timingCursor{0};
@@ -174,7 +177,7 @@ void ShaderSceneRenderer::prepareResources(const RendererSettings& settings, int
         policy.mainImageEntry = candidate->package.mainImageEntry;
         policy.passLabel=description.id;
         policy.packageOwnedReload = true;
-        policy.uniforms = {{"irisSeed", GL_INT}, {"irisTime", GL_FLOAT}, {"irisTimeDelta", GL_FLOAT}, {"irisFrame", GL_INT},
+        policy.uniforms = {{"irisMouse", GL_FLOAT_VEC4}, {"irisSeed", GL_INT}, {"irisTime", GL_FLOAT}, {"irisTimeDelta", GL_FLOAT}, {"irisFrame", GL_INT},
             {"irisHistoryValid", GL_BOOL}, {"irisResolution", GL_FLOAT_VEC2}, {"irisViewportResolution", GL_FLOAT_VEC2},
             {"irisCameraPosition", GL_FLOAT_VEC3}, {"irisView", GL_FLOAT_MAT4}, {"irisProjection", GL_FLOAT_MAT4},
             {"irisCameraForward", GL_FLOAT_VEC3}, {"irisCameraRight", GL_FLOAT_VEC3}, {"irisCameraUp", GL_FLOAT_VEC3},
@@ -193,6 +196,7 @@ void ShaderSceneRenderer::prepareResources(const RendererSettings& settings, int
         try { pass->shader = std::make_unique<Shader>(vertex_, description.fragment, std::move(policy)); }
         catch (const ShaderSourceError&) { throw; }
         catch (const std::exception& exception) { throw std::runtime_error("ShaderScene Pass " + description.id + ": " + exception.what()); }
+        candidate->consumesMouse = candidate->consumesMouse || pass->shader->hasUniform("irisMouse");
         for (const auto& channel : description.channels) {
             auto& sampler = pass->samplers[static_cast<std::size_t>(channel.slot)]; glGenSamplers(1, &sampler);
             glSamplerParameteri(sampler, GL_TEXTURE_MIN_FILTER, channel.mipmaps
@@ -251,6 +255,7 @@ void ShaderSceneRenderer::renderFrame(const RenderPluginFrame& frame) {
     if (!std::isfinite(frame.timeSeconds) || frame.width < 1 || frame.height < 1
         || frame.target.width() != frame.width || frame.target.height() != frame.height) throw std::runtime_error("Invalid ShaderScene frame");
     auto& state = *state_;
+    if (!validShaderSceneMouseInput(frame.settings.shaderSceneMouse)) throw std::runtime_error("Invalid ShaderScene mouse input");
     std::string policyError;
     if (!validateShaderSceneHistoryPolicy(frame.settings.shaderSceneHistory, policyError)) throw std::runtime_error(policyError);
     const auto& policy = frame.settings.shaderSceneHistory;
@@ -276,6 +281,7 @@ void ShaderSceneRenderer::renderFrame(const RenderPluginFrame& frame) {
     const auto projection = frame.camera.projectionMatrix(static_cast<float>(frame.width) / frame.height);
     const float delta = frame.timeSeconds - state.time;
     const bool reset = state.invalidated || !state.rendered || policy != state.historyPolicy || frame.settings.shaderSceneSeed != state.seed
+        || (state.consumesMouse && frame.settings.shaderSceneMouse != state.mouse)
         || (policy.resetOnParameters && parameterChanged)
         || (policy.resetOnCamera && (!sameMatrix(view, state.view) || !sameMatrix(projection, state.projection)))
         || delta < 0 || delta > policy.maximumTimeStep || state.frameIndex == std::numeric_limits<int>::max();
@@ -342,6 +348,8 @@ void ShaderSceneRenderer::renderFrame(const RenderPluginFrame& frame) {
         pass.shader->setFloat("irisTime", frame.timeSeconds); pass.shader->setFloat("irisTimeDelta", state.timeDelta);
         pass.shader->setInt("irisFrame", state.frameIndex); pass.shader->setBool("irisHistoryValid", state.historyValid);
         pass.shader->setInt("irisSeed", frame.settings.shaderSceneSeed);
+        const auto mouse = frame.settings.shaderSceneMouse;
+        pass.shader->setVec4("irisMouse", glm::vec4(mouse.x * frame.width, mouse.y * frame.height, mouse.z, mouse.w));
         pass.shader->setVec2("irisResolution", glm::vec2(width, height));
         pass.shader->setVec2("irisViewportResolution", glm::vec2(frame.width, frame.height));
         pass.shader->setVec3("irisCameraPosition", frame.camera.position()); pass.shader->setMat4("irisView", view);
@@ -382,6 +390,7 @@ void ShaderSceneRenderer::renderFrame(const RenderPluginFrame& frame) {
     state.parameterValues = parameters;
     state.historyPolicy = policy;
     state.seed = frame.settings.shaderSceneSeed;
+    state.mouse = frame.settings.shaderSceneMouse;
     timingComplete = true;
 }
 std::vector<double> ShaderSceneRenderer::passGpuMilliseconds() const {

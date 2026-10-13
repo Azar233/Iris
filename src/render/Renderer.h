@@ -258,6 +258,7 @@ struct RendererSettings {
     bool shaderHotReloadEnabled{true};
     iris::ShaderSceneHistoryPolicy shaderSceneHistory;
     int shaderSceneSeed{0}; // Offline sequence input; optional irisSeed uniform.
+    glm::vec4 shaderSceneMouse{0}; // Runtime-only normalized input; see ShaderSceneInput.h.
 };
 
 class Renderer {

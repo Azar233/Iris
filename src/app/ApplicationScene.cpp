@@ -3259,6 +3259,12 @@ void Application::drawShaderRuntimeInspector() {
                     channel.linearFilter ? "linear" : "nearest", channel.repeatWrap ? "repeat" : "clamp", channel.mipmaps ? "mip" : "no mip");
         }
     }
+    if (EditorUi::section("Mouse input", true)) {
+        const auto input=rendererSettings_.shaderSceneMouse;
+        ImGui::TextWrapped("Viewport xy: %.1f, %.1f | buttons: %d | %s", input.x*runtime.width,
+            input.y*runtime.height, static_cast<int>(input.z),input.w==1?"inside":"no input");
+        ImGui::TextWrapped("%s",EditorUi::chinese ? "左/右/中键位为 1/2/4；UI 捕获与离线 Job 使用零输入。使用鼠标的包在输入变化时清历史。" : "L/R/M bits: 1/2/4. UI capture and offline Jobs use zero input. Consumed mouse changes reset history.");
+    }
     if (EditorUi::section("History policy", std::getenv("IRIS_SHADER_HISTORY_VIEW") != nullptr || std::getenv("IRIS_SHADER_HISTORY_UI_TEST") != nullptr)) {
         auto policy = rendererSettings_.shaderSceneHistory;
         bool changed = false;
