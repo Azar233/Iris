@@ -2,8 +2,14 @@
 #include <map>
 #include <set>
 #include <stdexcept>
+#include <limits>
 
 namespace iris {
+void validateIndexedTriangleGeometry(const IndexedTriangleGeometry& geometry) {
+    if (!geometry.vertexArray || !geometry.indexCount || geometry.indexCount % 3U
+        || geometry.indexCount > static_cast<std::size_t>(std::numeric_limits<int>::max()))
+        throw std::invalid_argument("Invalid borrowed indexed triangle geometry");
+}
 void validatePluginContract(const RenderPluginContract& contract) {
     if (contract.stage == PluginStage::MaterialShading && (!contract.resources.empty() || !contract.passes.empty()))
         throw std::invalid_argument("Material shading extensions bind uniforms without texture resources or draw passes");

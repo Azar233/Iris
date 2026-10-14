@@ -20,7 +20,7 @@ A3 / S1-A2a 增加 `.shaderscene` v2：最多 4 Pass、每 Pass 4 个二维 Pass
 
 A4-N1/N2 将 NPR 的 25 项共享参数、Forward/Deferred Uniform 绑定与 CPU 后处理设置适配迁入可选静态 `iris.npr`，不新增绘制 Pass 或 GPU 资源。Preset/Scene/Job 共用原字段，缺失或停用时明确拒绝；Shader 算法与 PostProcess 所有权保留，参数集中在 Render settings。见 [NPR 说明](plugins/npr/README.md)。
 
-A4-W1 将原生水面的 19 项共享参数与着色 Uniform 适配迁入可选静态 `iris.water`，复用同一 MaterialShading 借用合同；网格、Shader、附件、绘制和历史仍由后端拥有。旧水面场景、Preset、命令与 Job 保持，插件缺失时拒绝水面请求，普通干燥场景仍可运行。见 [水面插件](plugins/water/README.md)。
+A4-W1 将原生水面的 19 项共享参数与着色 Uniform 适配迁入可选静态 `iris.water`；A4-W2a 继续将 High/Low GPU 网格交给插件，后端通过显式服务借用网格，保留 Shader、附件、绘制和历史所有权。停用水面释放网格，重启时事务创建。旧水面场景、Preset、命令与 Job 保持，插件缺失时拒绝水面请求，普通干燥场景仍可运行。见 [水面插件](plugins/water/README.md)。
 
 模型 ShaderMaterial v1 示例和宿主接口见 [Checker 材质说明](assets/shader-materials/checker/README.md)。可运行 `Iris.exe assets/scenes/fixtures/29_shader_material.myscene` 或 `Iris.exe raster-sequence assets/renderjobs/11_shader_material.renderjob`；包的浏览、绑定及完整包重编译复用现有 Inspector，不覆盖当前 Scene。
 

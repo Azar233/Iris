@@ -1,6 +1,7 @@
 #include "plugin/RenderPluginContract.h"
 #include <iostream>
 #include <stdexcept>
+#include <limits>
 namespace {
 void require(bool value, const char* text) { if (!value) throw std::runtime_error(text); }
 template<class Function> void rejects(Function function) {
@@ -11,6 +12,11 @@ template<class Function> void rejects(Function function) {
 }
 int main() {
     try {
+        iris::validateIndexedTriangleGeometry({1, 6});
+        rejects([] { iris::validateIndexedTriangleGeometry({0, 6}); });
+        rejects([] { iris::validateIndexedTriangleGeometry({1, 0}); });
+        rejects([] { iris::validateIndexedTriangleGeometry({1, 4}); });
+        rejects([] { iris::validateIndexedTriangleGeometry({1, static_cast<std::size_t>(std::numeric_limits<int>::max()) + 2U}); });
         auto valid=iris::postProcessContract();
         iris::validatePluginContract(valid);
         iris::validatePluginContract(iris::enscapeContract());

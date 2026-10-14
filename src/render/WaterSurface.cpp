@@ -27,6 +27,9 @@ WaterSurface::WaterSurface(int resolution) {
     }
     indexCount_ = indices.size();
     bytes_ = vertices.size() * sizeof(float) + indices.size() * sizeof(std::uint32_t);
+    GLint previousVao = 0, previousArrayBuffer = 0;
+    glGetIntegerv(GL_VERTEX_ARRAY_BINDING, &previousVao);
+    glGetIntegerv(GL_ARRAY_BUFFER_BINDING, &previousArrayBuffer);
     glGenVertexArrays(1, &vertexArray_);
     glGenBuffers(1, &vertexBuffer_);
     glGenBuffers(1, &indexBuffer_);
@@ -40,17 +43,12 @@ WaterSurface::WaterSurface(int resolution) {
     glBufferData(GL_ELEMENT_ARRAY_BUFFER,
                  static_cast<GLsizeiptr>(indices.size() * sizeof(std::uint32_t)),
                  indices.data(), GL_STATIC_DRAW);
-    glBindVertexArray(0);
+    glBindVertexArray(previousVao);
+    glBindBuffer(GL_ARRAY_BUFFER, previousArrayBuffer);
 }
 
 WaterSurface::~WaterSurface() {
     if (indexBuffer_ != 0U) glDeleteBuffers(1, &indexBuffer_);
     if (vertexBuffer_ != 0U) glDeleteBuffers(1, &vertexBuffer_);
     if (vertexArray_ != 0U) glDeleteVertexArrays(1, &vertexArray_);
-}
-
-void WaterSurface::draw() const {
-    glBindVertexArray(vertexArray_);
-    glDrawElements(GL_TRIANGLES, static_cast<GLsizei>(indexCount_), GL_UNSIGNED_INT, nullptr);
-    glBindVertexArray(0);
 }

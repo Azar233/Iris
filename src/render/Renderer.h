@@ -43,7 +43,6 @@ class ShadowMap;
 class SsaoRenderer;
 class SpectralBeamRenderer;
 class TextureCache;
-class WaterSurface;
 
 enum class GlassDebugView {
     Final = 0,
@@ -418,8 +417,6 @@ private:
     std::unique_ptr<iris::RenderPlugin> waterRenderer_;
     std::unique_ptr<RenderTarget> renderTarget_;
     std::unique_ptr<TextureCache> textureCache_;
-    std::unique_ptr<WaterSurface> waterSurface_;
-    std::unique_ptr<WaterSurface> waterSurfaceLow_;
     std::unique_ptr<Shader> waterForwardShader_;
     std::unique_ptr<Shader> waterGBufferShader_;
     float previousWaterTime_{0.0f};

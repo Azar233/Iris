@@ -38,7 +38,6 @@
 #include "render/SsaoRenderer.h"
 #include "render/SpectralBeamRenderer.h"
 #include "render/Texture2D.h"
-#include "render/WaterSurface.h"
 
 namespace {
 
@@ -131,8 +130,6 @@ Renderer::Renderer(
     )),
     renderTarget_(std::make_unique<RenderTarget>()),
     textureCache_(std::make_unique<TextureCache>()),
-    waterSurface_(std::make_unique<WaterSurface>(water::gridResolution)),
-    waterSurfaceLow_(std::make_unique<WaterSurface>(water::lowGridResolution)),
     waterForwardShader_(std::make_unique<Shader>(
         vertexShaderPath.parent_path() / "water.vert",
         vertexShaderPath.parent_path() / "water_forward.frag")),
@@ -221,8 +218,9 @@ void Renderer::render(
     else if (!nprRenderer_) nprRenderer_=iris::builtinRenderPlugins().create(iris::nprPluginId,
         {iris::openGlShadingService},shaderDirectory_);
     if (!iris::waterRequired(settings)) waterRenderer_.reset();
-    else if (!waterRenderer_) waterRenderer_=iris::builtinRenderPlugins().create(iris::waterPluginId,
-        {iris::openGlShadingService},shaderDirectory_);
+    else if (!waterRenderer_) waterRenderer_=iris::builtinRenderPlugins().prepareReplacement(iris::waterPluginId,
+        {iris::openGlShadingService,iris::openGlIndexedGeometryService},shaderDirectory_,settings,
+        std::max(width,1),std::max(height,1));
     if (!iris::pluginEnabled(settings.renderPlugins,iris::enscapePluginId)) enscapeCubeRenderer_.reset();
     if (!iris::pluginEnabled(settings.renderPlugins,iris::postProcessPluginId)) postProcessor_.reset();
     renderedWaterSettings_ = settings.water;
@@ -826,6 +824,8 @@ shader_->setMat4("uView", view);
 
     const auto drawWater = [&](bool deferred) {
         if (!settings.water.enabled) return;
+        const auto geometry = waterRenderer_->borrowIndexedGeometry(settings);
+        iris::validateIndexedTriangleGeometry(geometry);
         Shader& waterShader = deferred ? *waterGBufferShader_ : *waterForwardShader_;
         waterShader.use();
         waterShader.setMat4("uCurrentViewProjection", currentViewProjection);
@@ -896,7 +896,9 @@ shader_->setMat4("uView", view);
         glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
         glEnable(GL_DEPTH_TEST);
         glDepthMask(deferred ? GL_FALSE : GL_TRUE);
-        (settings.water.quality == WaterQuality::Low ? *waterSurfaceLow_ : *waterSurface_).draw();
+        glBindVertexArray(geometry.vertexArray);
+        glDrawElements(GL_TRIANGLES, static_cast<GLsizei>(geometry.indexCount), GL_UNSIGNED_INT, nullptr);
+        glBindVertexArray(0);
         ++drawCallCount_;
     };
 
@@ -1881,7 +1883,7 @@ bool Renderer::rebuildPluginResources(const std::string& id, const RendererSetti
         auto* owner = id == iris::enscapePluginId ? &enscapeCubeRenderer_ : id == iris::postProcessPluginId ? &postProcessor_
             : id == iris::nprPluginId ? &nprRenderer_ : id == iris::waterPluginId ? &waterRenderer_ : nullptr;
         if (!owner) throw std::runtime_error("Unknown plugin: " + id);
-        auto candidate = iris::builtinRenderPlugins().prepareReplacement(id, {iris::openGlFullscreenService,iris::openGlShadingService}, shaderDirectory_,
+        auto candidate = iris::builtinRenderPlugins().prepareReplacement(id, {iris::openGlFullscreenService,iris::openGlShadingService,iris::openGlIndexedGeometryService}, shaderDirectory_,
             settings, std::max(renderTarget_->width(), 1), std::max(renderTarget_->height(), 1));
         auto success = "Plugin resources committed: " + id;
         owner->swap(candidate);
@@ -1973,7 +1975,7 @@ std::size_t Renderer::estimatedRenderMemoryBytes() const {
         + ssaoRenderer_->estimatedBytes()
         + causticsMap_->estimatedBytes()
         + spectralBeamRenderer_->vertexBufferBytes()
-        + waterSurface_->estimatedBytes() + waterSurfaceLow_->estimatedBytes();
+        + (waterRenderer_ ? waterRenderer_->estimatedBytes() : 0);
 }
 
 double Renderer::environmentBuildMilliseconds() const {

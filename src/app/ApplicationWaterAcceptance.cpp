@@ -60,12 +60,20 @@ bool Application::waterPluginRegression() {
             rendererSettings_.water.amplitude=.1f;draw();parameter(.8f);draw();check(pixels()==deferred,"Water legacy/generic values differ");
             draw(320,180);draw();check(pixels()==deferred,"Water resize changed output");
             check(renderer_->rebuildPluginResources(iris::waterPluginId,rendererSettings_),"Water replacement rejected");draw();check(pixels()==deferred,"Water replacement changed pixels");
-            legacyEnabled(false);draw();activation(false);const auto before=renderer_->historyInvalidationRevision();legacyEnabled(true);draw();
+            const auto activeMemory=renderer_->estimatedRenderMemoryBytes();
+            const auto gridBytes=[](int resolution){return static_cast<std::size_t>((resolution+1)*(resolution+1)*8+resolution*resolution*24);};
+            const auto waterBytes=gridBytes(water::gridResolution)+gridBytes(water::lowGridResolution);
+            legacyEnabled(false);draw();
+            check(!renderer_->hasRenderPluginInstance(iris::waterPluginId)
+                && activeMemory-renderer_->estimatedRenderMemoryBytes()==waterBytes,"Water disable did not release grid memory");
+            activation(false);const auto before=renderer_->historyInvalidationRevision();legacyEnabled(true);draw();
             check(!rendererSettings_.water.enabled && renderer_->historyInvalidationRevision()==before && !renderer_->hasRenderPluginInstance(iris::waterPluginId),"Disabled water switch changed state");
             SceneDocument bad;check(loadSceneDocument(saved,bad,error),"Cannot load water saved fixture");bad.renderer.renderPlugins={{iris::waterPluginId,false}};
             const auto invalid=directory/"disabled.myscene";check(saveSceneDocument(invalid,bad,error),"Cannot save disabled water fixture");
             const auto oldPath=currentScenePath_;check(!openScene(invalid) && currentScenePath_==oldPath && before==renderer_->historyInvalidationRevision(),"Disabled water Scene replaced current scene");
             activation(true);legacyEnabled(true);draw();check(renderer_->hasRenderPluginInstance(iris::waterPluginId),"Water did not recreate instance");
+            check(renderer_->estimatedRenderMemoryBytes()==activeMemory,"Water restart memory differs");
+            std::cout<<"Water owned grid release/restart: "<<waterBytes<<" bytes PASS\n";
             std::cout<<"Water real parameter UI / both paths / legacy parity / history / rejection / Scene / resize / replacement / disable-enable PASS\n";
         }
         rendererSettings_=authored;draw();return true;

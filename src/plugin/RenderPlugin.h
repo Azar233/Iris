@@ -22,6 +22,7 @@ inline constexpr const char* nprPluginId = "iris.npr";
 inline constexpr const char* waterPluginId = "iris.water";
 inline constexpr const char* openGlFullscreenService = "opengl.fullscreen.v1";
 inline constexpr const char* openGlShadingService = "opengl.material-shading.v1";
+inline constexpr const char* openGlIndexedGeometryService = "opengl.indexed-geometry.v1";
 
 // Borrowed frame inputs. The caller owns the context, target and scheduling.
 // RendererSettings is a compatibility bridge for this first migration, not a
@@ -66,6 +67,9 @@ public:
     // Context thread only. Allocate/validate private resources without rendering
     // into borrowed targets. A failed candidate is destroyed before publication.
     virtual void prepareResources(const RendererSettings&, int, int) {}
+    // Only extensions requiring the indexed-geometry service supply this borrow.
+    // The backend owns draw scheduling, shaders, attachments and GL draw state.
+    virtual IndexedTriangleGeometry borrowIndexedGeometry(const RendererSettings&) const { return {}; }
     virtual void invalidateHistory() = 0;
     virtual RenderPluginFrameInfo frameInfo() const = 0;
     virtual std::size_t estimatedBytes() const { return 0; }

@@ -1,4 +1,5 @@
 #pragma once
+#include <cstddef>
 #include <string>
 #include <vector>
 #include <utility>
@@ -36,6 +37,13 @@ struct RenderTextureBinding {
     int width;
     int height;
 };
+// Context-thread borrow of plugin-owned triangles with uint32 indices. Valid
+// only until the owner is replaced/destroyed; callers must not retain the VAO.
+struct IndexedTriangleGeometry {
+    unsigned int vertexArray{0};
+    std::size_t indexCount{0};
+};
+void validateIndexedTriangleGeometry(const IndexedTriangleGeometry& geometry);
 // Ordered logical pass plans: reject ambiguous writers, unproduced reads and
 // same-frame cycles. Private blur loops/ping-pong remain owned by the plugin.
 void validatePluginContract(const RenderPluginContract& contract);

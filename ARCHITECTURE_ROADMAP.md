@@ -136,3 +136,13 @@ A4-N2 将 15 个屏幕效果参数纳入 iris.npr 的 CPU schema（共 25 项）
 成本为 120 预热/900 帧、640×360、MSAA1/time0：Draw/资源不变，Forward 19/167826616 bytes、Deferred 20/173817016 bytes。首轮 MSVC Deferred GPU P95 0.479232 超出原 0.424608 ms 预算，失败保留；相同协议两次复测 0.419840/0.377856 通过。其他三组满足原 CPU/GPU 门槛；不放宽阈值、不宣称零开销或加速。详细证据在本地 docs/a4w1-water-shading-extension.md 与 .local/verification/a4w1。
 
 前项 A4-N2 655d057 的 CI 38546907506 completed/success、head 一致。W1 提交/推送/CI 按最终交付记录核对；无新安装/ZIP。下一入口 A4-W2：先调查水面 GPU 资源与执行所有权的最小切片并固定合同。A4 父项、P1/M3 保持未完成。
+
+## A4-W2a：水面 GPU 网格所有权（2026-10-14，成本验收待完成）
+
+固定 High 192/Low 96 网格的 VAO/VBO/EBO 由 iris.water 拥有。后端通过显式 opengl.indexed-geometry.v1 服务短期借用 uint32 索引三角形，继续拥有 Shader、附件、绘制状态、调度和历史。原 Scene/Job/参数/网格算法保持；停用释放 1,479,184 bytes，重启事务创建，候选失败/取消保留旧资源和调用者绑定。WaterSurface 不进入 Water OFF 应用。
+
+功能检查通过：双编译器 CPU 各 37/37；两编译器真实 GL 布局/内存/取消/替换/销毁/重启/绑定；双窗口 UI 与两路径 GUI/Job；最终 OFF/PostProcess ON plugins CPU 5/5、普通场景和两路径 66/无输出；GPU smoke/Water contracts/云水集成；34 张迁移 PNG 精确一致。
+
+成本未验收：四组 CPU/Draw/活跃资源 bytes 通过，GPU P95 均超出本次冻结预算。MSVC Forward 首轮 0.340992 ms，两次复测 0.495616/0.525312 ms，预算 0.321184 ms。同机旧 W1 的 P95 也升至 0.476160/0.351232 ms，新程序交叉为 0.360448/0.360448 ms；遥测出现 930～2490 MHz 频率变化，不能因此直接宣布固定预算通过。原 before/阈值未改，失败和交叉诊断全部保留在 .local/verification/a4w2a，本地文档 docs/a4w2a-water-grid-ownership.md。
+
+W1 最终 7f9e30f 的 CI 38560551936 已核对 completed/success。W2a 作为功能实现检查点交付，成本门槛和整项验收未勾选；先完成本项成本复核，再调查 W2b Shader/执行所有权。A4 父项、P1/M3 未完成，无新安装/ZIP。

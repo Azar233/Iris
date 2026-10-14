@@ -1,8 +1,26 @@
 #include "WaterRenderer.h"
 #include "render/Renderer.h"
 #include "render/Shader.h"
+#include "render/WaterSurface.h"
 #include <stdexcept>
 namespace iris {
+WaterRenderer::WaterRenderer() = default;
+WaterRenderer::~WaterRenderer() = default;
+void WaterRenderer::prepareResources(const RendererSettings&, int, int) {
+    if (high_ && low_) return;
+    auto high = std::make_unique<WaterSurface>(water::gridResolution);
+    auto low = std::make_unique<WaterSurface>(water::lowGridResolution);
+    high_ = std::move(high);
+    low_ = std::move(low);
+}
+IndexedTriangleGeometry WaterRenderer::borrowIndexedGeometry(const RendererSettings& settings) const {
+    const auto* surface = settings.water.quality == WaterQuality::Low ? low_.get() : high_.get();
+    if (!surface) throw std::runtime_error("Water geometry has not been prepared");
+    return {surface->vertexArray(), surface->indexCount()};
+}
+std::size_t WaterRenderer::estimatedBytes() const {
+    return (high_ ? high_->estimatedBytes() : 0) + (low_ ? low_->estimatedBytes() : 0);
+}
 void WaterRenderer::renderFrame(const RenderPluginFrame& frame) {
     if (!frame.shadingShader) throw std::invalid_argument("Water requires a bound water shader");
     auto& shader=*frame.shadingShader;

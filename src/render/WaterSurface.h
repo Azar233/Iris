@@ -11,7 +11,8 @@ public:
     WaterSurface(const WaterSurface&) = delete;
     WaterSurface& operator=(const WaterSurface&) = delete;
 
-    void draw() const;
+    unsigned int vertexArray() const { return vertexArray_; }
+    std::size_t indexCount() const { return indexCount_; }
     std::size_t triangleCount() const { return indexCount_ / 3U; }
     std::size_t estimatedBytes() const { return bytes_; }
 

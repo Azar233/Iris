@@ -309,7 +309,7 @@ if(IRIS_ENABLE_NPR_PLUGIN)
     target_link_libraries(IrisRenderPluginHost PRIVATE IrisNprPlugin)
 endif()
 if(IRIS_ENABLE_WATER_PLUGIN)
-    add_library(IrisWaterPlugin STATIC plugins/water/WaterRenderer.cpp src/render/WaterWaves.cpp)
+    add_library(IrisWaterPlugin STATIC plugins/water/WaterRenderer.cpp src/render/WaterWaves.cpp src/render/WaterSurface.cpp)
     target_include_directories(IrisWaterPlugin PUBLIC plugins/water PRIVATE src)
     target_link_libraries(IrisWaterPlugin PUBLIC glm::glm PRIVATE glad_gl_core_33)
     target_link_libraries(IrisRenderPluginHost PRIVATE IrisWaterPlugin)
@@ -373,7 +373,6 @@ add_executable(MyRenderer
     src/render/SsaoRenderer.cpp
     src/render/SpectralBeamRenderer.cpp
     src/render/Texture2D.cpp
-    src/render/WaterSurface.cpp
     src/render/WaterWaves.cpp
     src/scene/Scene.cpp
     src/scene/SceneDocument.cpp
@@ -544,7 +543,17 @@ if(BUILD_TESTING)
         add_custom_target(postprocess-plugin-gpu-acceptance COMMAND IrisPostProcessPluginGpuTests
             DEPENDS IrisPostProcessPluginGpuTests COMMENT "Validating a second plugin's real resource and history lifecycle")
     endif()
-    foreach(pluginTestTarget IrisRenderPluginRegistryTests IrisRenderPluginContractTests IrisRenderPluginConfigurationTests IrisRenderPluginPanelTests IrisRenderPluginGpuTests IrisPostProcessPluginGpuTests IrisStoredPluginGpuTests IrisRenderPluginParameterTests)
+    if(IRIS_ENABLE_WATER_PLUGIN)
+        add_executable(IrisWaterPluginGpuTests tests/WaterPluginGpuTests.cpp
+            src/render/Camera.cpp src/render/RenderTarget.cpp src/render/Shader.cpp)
+        target_include_directories(IrisWaterPluginGpuTests PRIVATE src
+            ${assimp_SOURCE_DIR}/contrib/zlib ${assimp_BINARY_DIR}/contrib/zlib)
+        target_link_libraries(IrisWaterPluginGpuTests PRIVATE IrisRenderPluginHost IrisWaterPlugin glad_gl_core_33 glfw glm::glm zlibstatic)
+        target_compile_definitions(IrisWaterPluginGpuTests PRIVATE GLFW_INCLUDE_NONE)
+        add_custom_target(water-plugin-gpu-acceptance COMMAND IrisWaterPluginGpuTests
+            DEPENDS IrisWaterPluginGpuTests COMMENT "Validating water grid ownership and transactional replacement on real GL")
+    endif()
+    foreach(pluginTestTarget IrisRenderPluginRegistryTests IrisRenderPluginContractTests IrisRenderPluginConfigurationTests IrisRenderPluginPanelTests IrisRenderPluginGpuTests IrisPostProcessPluginGpuTests IrisStoredPluginGpuTests IrisRenderPluginParameterTests IrisWaterPluginGpuTests)
         if(TARGET ${pluginTestTarget})
             if(MSVC)
                 target_compile_options(${pluginTestTarget} PRIVATE /W4 /permissive- /utf-8)
