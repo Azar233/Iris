@@ -10,4 +10,6 @@ cmake 选项：IRIS_ENABLE_WATER_PLUGIN，默认 ON；plugins-off preset 为 OFF
 
 网格通过 prepareReplacement 先准备候选、验证成功后发布。失败或取消会销毁候选并保留旧实例；准备过程恢复调用者 GL 绑定。借用在实例替换/销毁时失效，不能跨帧缓存。固定网格不随 viewport resize 重建。
 
+迁移验收保留精确图像、Draw/资源量与 CPU P95 原预算。跨运行历史 GPU P95 门槛因未改动 W1 负对照也反复误报而撤弃；GPU 时间继续记录为诊断，既有失败证据与基线保留。这不表示 GPU 性能认证通过，也不影响其他 Shader/性能专项。
+
 复现：water-plugin-gpu-acceptance（真实 GL 所有权/候选/绑定）；tools/WaterPluginAcceptance.ps1（两窗口实际参数、释放/重启内存与生命周期），tools/WaterJobAcceptance.ps1（GUI/Job 或 WaterOff 拒绝），tools/WaterMigrationAcceptance.ps1（真正旧程序的 before 与新版 after，禁止重拍 before 通过）。本地阶段证据见 docs/a4w1-water-shading-extension.md 与 docs/a4w2a-water-grid-ownership.md。

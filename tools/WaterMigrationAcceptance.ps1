@@ -52,16 +52,17 @@ try {
             if($cost) {
                 $old=Get-Content ([IO.Path]::ChangeExtension($before,'.json')) -Raw | ConvertFrom-Json
                 $new=Get-Content (Join-Path $out ($name+'.json')) -Raw | ConvertFrom-Json
+                # Cross-run GPU P95 also rejects the unchanged W1 control under
+                # device clock variation. Keep GPU timings as diagnostics only.
                 if($new.drawCalls -ne $old.drawCalls -or $new.renderMemoryBytes -ne $old.renderMemoryBytes -or
-                    $new.cpuFrameP95Ms -gt [Math]::Max($old.cpuFrameP95Ms*1.25,$old.cpuFrameP95Ms+.5) -or
-                    $new.gpuFrameP95Ms -gt [Math]::Max($old.gpuFrameP95Ms*1.25,$old.gpuFrameP95Ms+.1)) {
-                    throw "Water migration exceeded fixed resource/cost budget: $name"
+                    $new.cpuFrameP95Ms -gt [Math]::Max($old.cpuFrameP95Ms*1.25,$old.cpuFrameP95Ms+.5)) {
+                    throw "Water migration exceeded fixed resource/CPU budget: $name"
                 }
             }
         }
     }
     if($captured -eq 0){throw 'No water migration cases executed'}
-    Write-Output "Water $Phase fixed Forward/Deferred Low/High/optics/underwater and cost capture PASS: $out"
+    Write-Output "Water $Phase fixed images/resources/CPU capture PASS (GPU timings diagnostic only): $out"
 }finally {
     Get-ChildItem Env: | Where-Object {$_.Name -like 'IRIS_*' -or $_.Name -like 'MYRENDERER_*'} | ForEach-Object {Remove-Item -LiteralPath ('Env:'+$_.Name)}
     foreach($key in $saved.Keys){Set-Item -LiteralPath ('Env:'+$key) -Value $saved[$key]}
