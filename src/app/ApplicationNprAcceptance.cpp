@@ -12,7 +12,8 @@
 void Application::interactNprParameters(const std::vector<iris::PluginControlBounds>& controls) {
     if(!std::getenv("IRIS_NPR_UI_TEST") || ++nprUiFrames_<5 || nprUiPhase_>=3)return;
     auto& io=ImGui::GetIO();
-    for(const auto& control:controls)if(control.id==std::string(iris::nprPluginId)+"/stylizedRimIntensity") {
+    const char* parameterId=std::getenv("IRIS_NPR_SCREEN_TEST") ? "/stylizedDitherStrength" : "/stylizedRimIntensity";
+    for(const auto& control:controls)if(control.id==std::string(iris::nprPluginId)+parameterId) {
         const auto pos=ImGui::GetWindowPos(),size=ImGui::GetWindowSize();
         if(nprUiPhase_==0) {
             if(control.y<pos.y+70 || control.y>pos.y+size.y-20){ImGui::SetScrollFromPosY(control.y-pos.y,.5f);return;}
@@ -29,7 +30,7 @@ bool Application::nprRegression() {
         const auto directory=std::filesystem::u8path(std::getenv("IRIS_NPR_ACCEPTANCE_DIRECTORY"));
         std::filesystem::create_directories(directory);
         const bool available=iris::builtinRenderPlugins().contains(iris::nprPluginId);
-        if(std::getenv("IRIS_NPR_UI_TEST"))check(nprUiPhase_==3 && rendererSettings_.stylizedRimIntensity!=nprUiInitialRim_,"Real NPR parameter drag did not apply");
+        if(std::getenv("IRIS_NPR_UI_TEST"))check(nprUiPhase_==3 && (std::getenv("IRIS_NPR_SCREEN_TEST") ? rendererSettings_.stylizedDitherStrength : rendererSettings_.stylizedRimIntensity)!=nprUiInitialValue_,"Real NPR parameter drag did not apply");
         const auto authored=rendererSettings_;
         rendererSettings_.shaderHotReloadEnabled=false;rendererSettings_.temporalAaEnabled=false;rendererSettings_.water.timeSeconds=0;
         rendererSettings_.renderPath=RenderPath::Forward;rendererSettings_.shadingMode=ShadingMode::PhysicallyBased;
@@ -49,12 +50,52 @@ bool Application::nprRegression() {
             std::cout<<"NPR OFF ordinary scene / shading command / render rejection preserved state PASS\n";
         }else {
             mode(ShadingMode::Stylized);draw();check(renderer_->hasRenderPluginInstance(iris::nprPluginId),"NPR instance not created");
-            const auto initial=pixels();parameter(2.0f);draw();const auto edited=pixels();
+            const auto initial=pixels();parameter(2.0f);draw();auto edited=pixels();
             check(initial!=edited && rendererSettings_.stylizedRimIntensity==2.0f && rendererSettings_.renderPluginValues.empty(),"NPR edit lost contribution or created parallel values");
+            std::string error;
+            if (std::getenv("IRIS_NPR_SCREEN_TEST")) {
+                const auto editScreen=[&](const char* id, bool on) {
+                    EditorCommand edit{EditorCommandType::SetRenderPluginParameter};
+                    edit.text=iris::nprPluginId; edit.pluginParameterId=id;
+                    edit.moduleParameter.type=static_cast<int>(ModuleParameterType::Bool); edit.moduleParameter.boolean=on;
+                    command(std::move(edit));
+                };
+                const char* effects[]={"stylizedOutlineEnabled","stylizedDitherEnabled","stylizedHeightFogEnabled","stylizedColorGradingEnabled"};
+                rendererSettings_.stylizedHeightFogDensity=.55f;
+                rendererSettings_.stylizedColorGradingLut=StylizedColorGradingLut::NightAurora;
+                for (auto path : {RenderPath::Forward,RenderPath::Deferred}) {
+                    rendererSettings_.renderPath=path;
+                    for (const char* effect : effects) editScreen(effect,false);
+                    draw(); const auto without=pixels();
+                    for (const char* effect : effects) {
+                        const auto before=renderer_->historyInvalidationRevision(); editScreen(effect,true);
+                        check(renderer_->historyInvalidationRevision()>before,"Screen edit did not invalidate history");
+                        draw();const auto with=pixels(); check(with!=without,"Screen effect had no GPU contribution");
+                        check(renderer_->saveScreenshot(directory/(std::string(effect)+"-"+std::to_string(static_cast<int>(path))+".png"),error),"Cannot save screen effect");
+                        // Legacy field writes and the typed command consume the same value.
+                        if (std::string(effect)=="stylizedDitherEnabled") rendererSettings_.stylizedDitherEnabled=false;
+                        else if (std::string(effect)=="stylizedOutlineEnabled") rendererSettings_.stylizedOutlineEnabled=false;
+                        else if (std::string(effect)=="stylizedHeightFogEnabled") rendererSettings_.stylizedHeightFogEnabled=false;
+                        else rendererSettings_.stylizedColorGradingEnabled=false;
+                        draw(); check(pixels()==without,"Screen legacy fields diverged from command");
+                        editScreen(effect,true);draw();check(pixels()==with,"Screen reenable changed fixed pixels");
+                        const auto retained=renderer_->historyInvalidationRevision();
+                        EditorCommand bad{EditorCommandType::SetRenderPluginParameter};bad.text=iris::nprPluginId;
+                        bad.pluginParameterId="stylizedDitherStrength";bad.moduleParameter.type=static_cast<int>(ModuleParameterType::Float);
+                        bad.moduleParameter.number=std::numeric_limits<float>::quiet_NaN();command(std::move(bad));
+                        draw();check(pixels()==with && renderer_->historyInvalidationRevision()==retained,"Invalid screen command changed pixels/history");
+                        editScreen(effect,false);draw();check(pixels()==without,"Screen disable did not restore pixels");
+                    }
+                }
+                rendererSettings_.renderPath=RenderPath::Forward;
+                for (const char* effect : effects) editScreen(effect,true);
+                draw(); edited=pixels();
+                std::cout<<"NPR screen effects both paths / contribution / legacy parity / history / rejection PASS\n";
+            }
             const auto history=renderer_->historyInvalidationRevision();parameter(std::numeric_limits<float>::quiet_NaN());enabled(false);draw();
             check(rendererSettings_.stylizedRimIntensity==2.0f && iris::pluginEnabled(rendererSettings_.renderPlugins,iris::nprPluginId)
                 && renderer_->historyInvalidationRevision()==history && pixels()==edited,"Rejected NPR parameter/disable changed state");
-            std::string error;check(renderer_->saveScreenshot(directory/"edited.png",error),"Cannot save NPR output");
+            check(renderer_->saveScreenshot(directory/"edited.png",error),"Cannot save NPR output");
             const auto saved=directory/"saved.myscene";check(saveSceneTo(saved),"NPR Scene save failed");
             parameter(.1f);check(openScene(saved),"NPR Scene reopen failed");processEditorCommands();draw();
             check(rendererSettings_.stylizedRimIntensity==2.0f && pixels()==edited,"NPR Scene roundtrip changed pixels");

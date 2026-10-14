@@ -277,7 +277,6 @@ const std::vector<RenderPluginParameterSchema>& builtinRenderPluginParameterSche
         NPR_FLOAT(stylizedRimWidth, "Rim width");
         NPR_FLOAT(stylizedRimSoftness, "Rim softness");
         NPR_FLOAT(stylizedRimIntensity, "Rim intensity");
-#undef NPR_FLOAT
         npr.metadata.registerInt("stylizedBandCount", "Bands", RendererSettings{}.stylizedBandCount,
             std::numeric_limits<int>::min(), std::numeric_limits<int>::max());
         npr.bindings.push_back({"stylizedBandCount", [](const RendererSettings& s) { ModuleParameterValue v; v.type=ModuleParameterType::Int; v.integer=s.stylizedBandCount; return v; },
@@ -294,6 +293,29 @@ const std::vector<RenderPluginParameterSchema>& builtinRenderPluginParameterSche
         };
         color("stylizedShadowTint", "Shadow tint", &RendererSettings::stylizedShadowTint);
         color("stylizedRimColor", "Rim color", &RendererSettings::stylizedRimColor);
+#define NPR_BOOL(field, label) addBool(npr, #field, label, [](const auto& s) { return s.field; }, [](auto& s, bool v) { s.field = v; }, true)
+        NPR_BOOL(stylizedOutlineEnabled, "Screen-space outline");
+        NPR_FLOAT(stylizedOutlineWidth, "Outline width");
+        NPR_FLOAT(stylizedOutlineDepthThreshold, "Outline depth threshold");
+        NPR_FLOAT(stylizedOutlineNormalThreshold, "Outline normal threshold");
+        color("stylizedOutlineColor", "Outline color", &RendererSettings::stylizedOutlineColor);
+        NPR_BOOL(stylizedDitherEnabled, "Ordered dither");
+        NPR_FLOAT(stylizedDitherStrength, "Dither strength");
+        NPR_BOOL(stylizedHeightFogEnabled, "Height fog");
+        NPR_FLOAT(stylizedHeightFogDensity, "Fog density");
+        NPR_FLOAT(stylizedHeightFogBaseHeight, "Fog base height");
+        NPR_FLOAT(stylizedHeightFogFalloff, "Fog height falloff");
+        color("stylizedHeightFogColor", "Fog color", &RendererSettings::stylizedHeightFogColor);
+        NPR_BOOL(stylizedColorGradingEnabled, "Color grading LUT");
+        // Keep unknown legacy LUT integers portable; PostProcess retains its
+        // existing clamp when selecting the generated LUT texture.
+        npr.metadata.registerInt("stylizedColorGradingLut", "Color LUT (0-2)", static_cast<int>(RendererSettings{}.stylizedColorGradingLut),
+            std::numeric_limits<int>::min(), std::numeric_limits<int>::max());
+        npr.bindings.push_back({"stylizedColorGradingLut", [](const RendererSettings& s) { ModuleParameterValue v; v.type=ModuleParameterType::Int; v.integer=static_cast<int>(s.stylizedColorGradingLut); return v; },
+            [](RendererSettings& s, const ModuleParameterValue& v) { s.stylizedColorGradingLut=static_cast<StylizedColorGradingLut>(v.integer); }, true});
+        NPR_FLOAT(stylizedColorGradingStrength, "LUT strength");
+#undef NPR_FLOAT
+#undef NPR_BOOL
         post.validate(); ocean.validate(); npr.validate();
         return std::vector<RenderPluginParameterSchema>{std::move(post), std::move(ocean), std::move(npr)};
     }();

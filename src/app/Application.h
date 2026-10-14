@@ -310,7 +310,7 @@ private:
     int shaderMaterialWorkspacePhase_{0};
     int nprUiPhase_{0};
     int nprUiFrames_{0};
-    float nprUiInitialRim_{0.0f};
+    float nprUiInitialValue_{0.0f};
     std::filesystem::path shaderMaterialWorkspaceDirectory_;
     std::size_t shaderMaterialWorkspaceEntityCount_{0};
     int shaderMaterialUiFrames_{0};

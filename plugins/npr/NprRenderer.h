@@ -7,6 +7,7 @@ namespace iris {
 class NprRenderer final : public RenderPlugin {
 public:
     void renderFrame(const RenderPluginFrame& frame) override;
+    void applyPostProcessSettings(const RendererSettings& settings, PostProcessSettings& post) const override;
     void invalidateHistory() override {}
     RenderPluginFrameInfo frameInfo() const override { return {}; }
 };

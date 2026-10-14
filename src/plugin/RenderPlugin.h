@@ -59,6 +59,9 @@ class RenderPlugin {
 public:
     virtual ~RenderPlugin() = default;
     virtual void renderFrame(const RenderPluginFrame& frame) = 0;
+    // CPU-only adaptation of borrowed settings. The backend supplies attachments
+    // and debug gating; PostProcess owns execution, resources and history.
+    virtual void applyPostProcessSettings(const RendererSettings&, PostProcessSettings&) const {}
     // Context thread only. Allocate/validate private resources without rendering
     // into borrowed targets. A failed candidate is destroyed before publication.
     virtual void prepareResources(const RendererSettings&, int, int) {}

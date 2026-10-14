@@ -26,7 +26,7 @@
 
 A1 是可行性实验，不代表通用插件平台完成。首次迁移不修改 Shader 算法，保留 `.myscene` 旧 Enscape 开关/参数，仍借用 RendererSettings；跨插件配置、通用服务依赖图、动态 UI 与材质扩展在 A2/A3 才实现。只有 A2 证明第二种能力可接入后，才扩展全面迁移。
 
-2026-10-13 A3 全屏 ShaderScene 子集已由 S1-A～F 验收并完成 Windows Runtime 交付：v1/v2/v3、mainImage、多 Pass/反馈/纹理、统一时间/Camera/鼠标输入、文件与参数工作台、完整包事务重载、schema 4 序列 Job 和输入报告均已接通。新增随包 `10_mouse_shader_sequence.renderjob`，与 08/09 共用同一序列合同；离线鼠标固定零输入。S1-E 的 MSVC/GCC 各 37/37 与真实 GPU 专项作为渲染合同证据；S1-F 补独立目录验收，并修复 Queue 默认 Job 错用源码根的问题。模型材质 Shader 的 A3-M1 最小纵向切片已完成：Entity 绑定、Forward 静态不透明模型、参数、Scene 事务及原生 Raster Job。两编译器 CPU 各 37/37，最终报告合同各 1/1，真实 GPU/双窗口/两帧 Job/63 图及 Label Capture 通过；其他路径明确拒绝。A3-M2 接通模型包的关联文件、include 原行诊断与完整包重编译。选择模型包只浏览，显式绑定到选中模型；未选择模型时禁用。独立 Runtime 模型 Job 的输入身份、资源与许可通过专项检查；当前支持范围保持全屏 ShaderScene v1/v2/v3 与模型 ShaderMaterial v1。交付 ZIP 与远端状态按本次完成记录核对；A4-N1 的 NPR 参数/着色绑定已验收，下一工作包为 A4-N2 屏幕效果设置适配，随后按 A4 → P1 → M3 推进。当前支持范围与模板见 [ShaderScene 说明](assets/shader-scenes/README.md)与[模型材质说明](assets/shader-materials/checker/README.md)。
+2026-10-13 A3 全屏 ShaderScene 子集已由 S1-A～F 验收并完成 Windows Runtime 交付：v1/v2/v3、mainImage、多 Pass/反馈/纹理、统一时间/Camera/鼠标输入、文件与参数工作台、完整包事务重载、schema 4 序列 Job 和输入报告均已接通。新增随包 `10_mouse_shader_sequence.renderjob`，与 08/09 共用同一序列合同；离线鼠标固定零输入。S1-E 的 MSVC/GCC 各 37/37 与真实 GPU 专项作为渲染合同证据；S1-F 补独立目录验收，并修复 Queue 默认 Job 错用源码根的问题。模型材质 Shader 的 A3-M1 最小纵向切片已完成：Entity 绑定、Forward 静态不透明模型、参数、Scene 事务及原生 Raster Job。两编译器 CPU 各 37/37，最终报告合同各 1/1，真实 GPU/双窗口/两帧 Job/63 图及 Label Capture 通过；其他路径明确拒绝。A3-M2 接通模型包的关联文件、include 原行诊断与完整包重编译。选择模型包只浏览，显式绑定到选中模型；未选择模型时禁用。独立 Runtime 模型 Job 的输入身份、资源与许可通过专项检查；当前支持范围保持全屏 ShaderScene v1/v2/v3 与模型 ShaderMaterial v1。交付 ZIP 与远端状态按本次完成记录核对；A4-N1 的 NPR 参数/着色绑定已验收，A4-N2 屏幕效果设置适配已验收，下一入口为 A4 后续迁移分包调查，随后按 A4 → P1 → M3 推进。当前支持范围与模板见 [ShaderScene 说明](assets/shader-scenes/README.md)与[模型材质说明](assets/shader-materials/checker/README.md)。
 
 2026-10-11 A3 首个单 Image 切片已验收：严格 `.shaderscene` v1、包内有界 float 初始值、项目 Camera/时间/分辨率、单 Pass display 输出和 Orbit 模板，通过现有打开/拖入/Scene 相对引用/PNG 捕获运行。双编译器最终 CTest 各 33/33、真实 GL 失败保留/恢复/resize/discard 清零、双尺寸应用往返和重复输出、既有十套图像/Stylized/PT 与带 ShaderScene Image Label 的 RDC 通过；未改基线。后续多 Pass、反馈、mainImage 和纹理见下条；A3 父项仍未完成，运行参数覆盖 UI、文件工作台、Job 和模型材质 Shader 按后续切片推进，当前 Job 明确拒绝且无输出。
 
@@ -109,10 +109,17 @@ A4-N1 先迁移 NPR 的公开参数与 Forward/Deferred 着色绑定边界。开
 
 验收：MSVC/GCC 领域检查，共享合同变化才 Integration；相关 ON/OFF 构建，插件缺失请求明确拒绝且普通场景可运行；Forward/Deferred 同输入旧/新 NPR 图、历史/resize/释放与 GUI/Job；固定 CPU/GPU P50/P95 及资源预算；支持矩阵、失败案例和阶段文档。A4-N1 当前已验收：可选 iris.npr、十个共享参数和材质 Shader 借用，两编译器各 37/37、双窗口 GPU/失败保留/保存/生命周期、NPR OFF、GUI/Job、各八张旧/新固定图、Stylized/Deferred/GPU smoke 与固定成本通过。没有改 Shader 算法或基线，没有新 ZIP；NPR 屏幕效果设置仍由后续切片迁移。
 
-## A4-N2 下一工作包（范围冻结）
+## A4-N2 屏幕效果设置适配（2026-10-14 本地验收完成）
 
-迁移 NPR 的 Outline/Dither/Height fog/Color grading 设置适配与公开 schema。先调查 Renderer 中派生 PostProcessSettings 的 NPR 字段与现有 PostProcess 参数绑定，复用共享 RendererSettings 和 Frame/候选事务；保持后处理 Shader、FBO、纹理、历史和 Pass 调度由 PostProcess 拥有，不开发新效果，不同时迁移云水/PBR，不增加通用反射或 Render Graph。验收包括两条路径、Preset/Debug/尺寸/TAA/透明边界的同输入图，GUI/Scene/Job/失败保留，能力依赖与 ON/OFF、资源/成本预算及文档。当前只冻结范围，未实施。
+迁移 NPR 的 Outline/Dither/Height fog/Color grading 设置适配与公开 schema。先调查 Renderer 中派生 PostProcessSettings 的 NPR 字段与现有 PostProcess 参数绑定，复用共享 RendererSettings 和 Frame/候选事务；保持后处理 Shader、FBO、纹理、历史和 Pass 调度由 PostProcess 拥有，不开发新效果，不同时迁移云水/PBR，不增加通用反射或 Render Graph。验收包括两条路径、Preset/Debug/尺寸/TAA/透明边界的同输入图，GUI/Scene/Job/失败保留，能力依赖与 ON/OFF、资源/成本预算及文档。当前已实现并完成本地验收，提交与远端检查独立核对。
 
 ## 2026-10-14 插件界面整理
 
 插件页改为图标、名称与启用开关，参数与资源重建按插件分组移至渲染设置；关闭隐藏参数但保留值，当前管线必需项保持锁定。双编译器应用构建、MSVC Focused plugins 5/5、GCC 控件 1/1、两尺寸真实参数和资源恢复、独立 schema GPU UI 及中文/英文截图通过。无 Shader、持久化/API 或基线修改；未打包。A4-N1 的 CI 38432069907 已核对 completed/success，head c18433c；下一主线为 A4-N2。
+
+
+A4-N2 将 15 个屏幕效果参数纳入 iris.npr 的 CPU schema（共 25 项），由 CPU-only applyPostProcessSettings 填写借用设置，保持 PostProcess 的 Shader/FBO/LUT/历史/Pass 所有权。旧 Scene、稀疏 N1 schema、Preset 与 RendererSettings 单一值源保留；参数页仍在 Render settings，Plugins 只做启停。
+
+最终双编译器 Integration 各 37/37、两窗口真实屏幕参数/四种效果双路径贡献/拒绝和历史/Scene/生命周期、GUI 与两帧 Job、NPR OFF 2/2 与两路径 Job 66/无产物通过。两编译器各八张迁移图、MSVC Stylized 33 张不同 PNG 精确一致；GPU smoke、Deferred、screen-space 回归通过。120 帧预热/900 样本的四组成本满足原预算；Forward 27 Draw/167826616 bytes、Deferred 28/173817016 bytes 不变，不宣称性能加速。没有修改 Shader、阈值、基线或标准安装包；详细说明与截图保留在本地 docs/a4n2-npr-screen-settings.md。
+
+插件 UI 的 1181b14 已推送且 CI 38544449866 completed/success，远端 SHA 一致。A4-N2 交付提交和 CI 按本次最终记录核对。下一入口是 A4 后续迁移分包调查（云水/PBR）；A4 父项和 P1/M3 保持未完成，不自动进入新研发方向。

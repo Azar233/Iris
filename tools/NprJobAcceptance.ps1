@@ -27,7 +27,11 @@ try {
         $job=Get-Content (Join-Path $root 'assets/renderjobs/11_shader_material.renderjob') -Raw | ConvertFrom-Json
         $job.scene=$scenePath;$job.output.path=Join-Path $case 'frame_{frame:04}'
         $jobPath=Join-Path $case 'npr.renderjob';$job | ConvertTo-Json -Depth 15 | Set-Content -Encoding UTF8 $jobPath
-        & $exe raster-sequence $jobPath *> (Join-Path $case 'raster.log');$exit=$LASTEXITCODE
+        # Windows PowerShell surfaces native stderr as NativeCommandError;
+        # the OFF case intentionally returns 66 and must reach its assertions.
+        if($NprOff){$ErrorActionPreference='Continue'}
+        try { & $exe raster-sequence $jobPath *> (Join-Path $case 'raster.log');$exit=$LASTEXITCODE }
+        finally { $ErrorActionPreference='Stop' }
         if($NprOff) {
             if($exit -ne 66 -or @(Get-ChildItem -LiteralPath $case -File -Filter 'frame_*').Count -ne 0 -or
                 (Get-Content (Join-Path $case 'raster.log') -Raw) -notmatch 'iris.npr'){throw 'Missing NPR Job silently fell back or wrote output'}

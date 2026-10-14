@@ -1664,26 +1664,9 @@ deferredLightingShader_->setVec3("uCameraPosition", camera.position());
         postSettings.temporalHistoryWeight = settings.temporalHistoryWeight;
         postSettings.depthTexture = renderTarget_->refractiveDepthTexture();
         postSettings.objectMotionTexture = deferredActive ? gBuffer_->motionTexture() : 0U;
-        postSettings.outline = settings.shadingMode == ShadingMode::Stylized
-            && settings.stylizedOutlineEnabled
-            && !gBufferDebugActive;
         postSettings.outlineNormalAvailable = deferredActive;
-        postSettings.outlineWidth = settings.stylizedOutlineWidth;
-        postSettings.outlineDepthThreshold = settings.stylizedOutlineDepthThreshold;
-        postSettings.outlineNormalThreshold = settings.stylizedOutlineNormalThreshold;
-        postSettings.outlineColor = settings.stylizedOutlineColor;
         postSettings.outlineNormalTexture = deferredActive ? gBuffer_->normalTexture() : 0U;
-        postSettings.dither = settings.shadingMode == ShadingMode::Stylized
-            && settings.stylizedDitherEnabled
-            && !gBufferDebugActive;
-        postSettings.ditherStrength = settings.stylizedDitherStrength;
-        postSettings.heightFog = settings.shadingMode == ShadingMode::Stylized
-            && settings.stylizedHeightFogEnabled
-            && !gBufferDebugActive;
-        postSettings.heightFogDensity = settings.stylizedHeightFogDensity;
-        postSettings.heightFogBaseHeight = settings.stylizedHeightFogBaseHeight;
-        postSettings.heightFogFalloff = settings.stylizedHeightFogFalloff;
-        postSettings.heightFogColor = settings.stylizedHeightFogColor;
+        if (nprRenderer_ && !gBufferDebugActive) nprRenderer_->applyPostProcessSettings(settings, postSettings);
         // Aerial perspective is the analytic sky's own air, integrated between the camera and each
         // surface in the composite pass. It needs no extra render target and no depth of its own --
         // it reconstructs the segment from the scene depth the compositor already samples -- and
@@ -1717,15 +1700,6 @@ deferredLightingShader_->setVec3("uCameraPosition", camera.position());
         postSettings.waterSurfaceOptics = settings.water.enabled && settings.water.surfaceOptics;
         postSettings.waterSurfaceHeight = cameraSurfaceHeight;
         postSettings.opaqueDepthTexture = renderTarget_->sceneDepthTexture();
-        postSettings.colorGrading = settings.shadingMode == ShadingMode::Stylized
-            && settings.stylizedColorGradingEnabled
-            && !gBufferDebugActive;
-        postSettings.colorGradingLut = static_cast<int>(settings.stylizedColorGradingLut);
-        postSettings.colorGradingStrength = settings.stylizedColorGradingStrength;
-        postSettings.stylizedDebugView = settings.shadingMode == ShadingMode::Stylized
-            && !gBufferDebugActive
-            ? static_cast<int>(settings.stylizedDebugView)
-            : static_cast<int>(StylizedDebugView::Final);
         postSettings.cameraPosition = camera.position();
         postSettings.inverseProjection = glm::inverse(projection);
         postSettings.inverseCurrentViewProjection = glm::inverse(currentViewProjection);

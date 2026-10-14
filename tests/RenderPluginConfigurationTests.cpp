@@ -30,6 +30,9 @@ int main(){try{
     require(!iris::validateRendererPluginConfiguration(shading,settings,error) && error.find(iris::nprPluginId)!=std::string::npos,"Missing NPR accepted");
     shading.add({iris::nprPluginId,iris::renderPluginApiVersion,{iris::openGlShadingService},"MIT",{iris::PluginStage::MaterialShading,{},{}}},factory);
     require(iris::validateRendererPluginConfiguration(shading,settings,error),"NPR service rejected");
+    settings.renderPlugins={{iris::postProcessPluginId,false}};
+    require(!iris::validateRendererPluginConfiguration(shading,settings,error)
+        && error.find(iris::postProcessPluginId)!=std::string::npos,"NPR screen effects accepted a disabled PostProcess executor");
     settings.renderPlugins={{iris::nprPluginId,false}};
     require(!iris::validateRendererPluginConfiguration(shading,settings,error),"Active disabled NPR accepted");
     settings.shadingMode=ShadingMode::PhysicallyBased;

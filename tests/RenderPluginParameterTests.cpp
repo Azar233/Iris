@@ -29,7 +29,7 @@ int main() {
         RendererSettings settings;
         bool history = false; std::string error;
         const auto* npr=iris::builtinRenderPluginParameterSchema(iris::nprPluginId);
-        require(npr && npr->metadata.descriptors().size()==10, "NPR shading schema missing");
+        require(npr && npr->metadata.descriptors().size()==25, "NPR shading schema missing");
         require(npr->apply(settings,{number("stylizedRimIntensity",1.25f)},history,error),"NPR float binding rejected");
         require(settings.stylizedRimIntensity==1.25f && history && settings.renderPluginValues.empty(),"NPR created a second value source or lost history");
         auto legacyNpr=settings;legacyNpr.stylizedBandCount=1;legacyNpr.stylizedDebugView=static_cast<StylizedDebugView>(99);
@@ -41,6 +41,23 @@ int main() {
         const auto beforeNpr=settings;
         require(!npr->apply(settings,{number("stylizedRimIntensity",std::numeric_limits<float>::quiet_NaN())},history,error)
             && settings.stylizedRimIntensity==beforeNpr.stylizedRimIntensity,"Non-finite NPR edit committed");
+        auto screenValues=npr->capture(RendererSettings{});
+        for (auto& entry : screenValues) {
+            if (entry.value.type==ModuleParameterType::Bool) entry.value.boolean=true;
+            else if (entry.value.type==ModuleParameterType::Float) entry.value.number=.4f;
+            else if (entry.value.type==ModuleParameterType::Color) entry.value.color=glm::vec3(-.25f,2.f,.5f);
+            else if (entry.id=="stylizedColorGradingLut") entry.value.integer=99;
+        }
+        require(npr->apply(settings,screenValues,history,error) && history && settings.renderPluginValues.empty()
+            && settings.stylizedOutlineEnabled && settings.stylizedDitherEnabled && settings.stylizedHeightFogEnabled
+            && settings.stylizedColorGradingEnabled && settings.stylizedOutlineWidth==.4f && settings.stylizedDitherStrength==.4f
+            && settings.stylizedHeightFogDensity==.4f && settings.stylizedColorGradingStrength==.4f
+            && static_cast<int>(settings.stylizedColorGradingLut)==99, "Screen effect binding or legacy domain lost");
+        const auto preservedScreen=settings;
+        auto nonfinite=screenValues; nonfinite.back().value.number=std::numeric_limits<float>::quiet_NaN();
+        require(!npr->apply(settings,nonfinite,history,error) && !history
+            && settings.stylizedOutlineWidth==preservedScreen.stylizedOutlineWidth,
+            "Invalid screen transaction partially applied");
         settings=RendererSettings{};
         bool noContextRejected=false;
         try { registry.prepareReplacement(iris::postProcessPluginId,{}, {},settings,320,180); }
@@ -110,6 +127,19 @@ int main() {
         SceneDocument restored;
         require(loadSceneDocument(saved, restored, error) && restored.renderer.exposure == 2.1f
             && restored.renderer.enscapeCube.waveHeight == 0.9f, "Parameter round trip failed");
+        SceneDocument screenScene; screenScene.renderer=preservedScreen;
+        const auto screenPath=directory/"screen.myscene";
+        require(saveSceneDocument(screenPath,screenScene,error), "Screen Scene save failed");
+        SceneDocument screenRestored; require(loadSceneDocument(screenPath,screenRestored,error)
+            && screenRestored.renderer.stylizedHeightFogColor==preservedScreen.stylizedHeightFogColor
+            && screenRestored.renderer.stylizedDitherStrength==.4f
+            && static_cast<int>(screenRestored.renderer.stylizedColorGradingLut)==99,
+            "Screen Scene roundtrip lost values");
+        const auto oldPath=directory/"npr-v1.myscene";
+        { std::ofstream stream(oldPath); stream << R"({"format":"MyRendererScene","version":2,"entities":[],"renderer":{"stylizedDitherEnabled":true,"stylizedDitherStrength":0.8,"renderPluginParameters":{"version":1,"entries":[{"id":"iris.npr","schemaVersion":1,"values":[{"id":"stylizedRimIntensity","type":2,"value":1.5}]}]}}})"; }
+        require(loadSceneDocument(oldPath,screenRestored,error) && screenRestored.renderer.stylizedRimIntensity==1.5f
+            && screenRestored.renderer.stylizedDitherEnabled && screenRestored.renderer.stylizedDitherStrength==.8f,
+            "Sparse N1 schema overwrote legacy screen fields");
         const auto repeated = directory / "repeated.myscene";
         require(saveSceneDocument(repeated, restored, error), error.c_str());
         auto bytes = [](const auto& path) { std::ifstream stream(path, std::ios::binary); return std::string(std::istreambuf_iterator<char>(stream), {}); };

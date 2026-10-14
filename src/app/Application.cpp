@@ -1155,7 +1155,7 @@ int Application::run(const std::filesystem::path& initialModel) {
     if(const char* directory=std::getenv("IRIS_SHADER_HISTORY_ACCEPTANCE_DIRECTORY"))runShaderHistoryAcceptance(std::filesystem::u8path(directory));
     if(const char* directory=std::getenv("IRIS_SHADER_MATERIAL_WORKSPACE_DIRECTORY"))runShaderMaterialWorkspaceAcceptance(std::filesystem::u8path(directory));
     if(std::getenv("IRIS_NPR_ACCEPTANCE_DIRECTORY"))focusRendererTab_=true;
-    if(std::getenv("IRIS_NPR_UI_TEST"))nprUiInitialRim_=rendererSettings_.stylizedRimIntensity;
+    if(std::getenv("IRIS_NPR_UI_TEST"))nprUiInitialValue_=std::getenv("IRIS_NPR_SCREEN_TEST") ? rendererSettings_.stylizedDitherStrength : rendererSettings_.stylizedRimIntensity;
     if(const char* directory=std::getenv("IRIS_SHADER_MATERIAL_ACCEPTANCE_DIRECTORY"))runShaderMaterialAcceptance(std::filesystem::u8path(directory));
     if(const char* directory=std::getenv("IRIS_SHADER_SEQUENCE_ACCEPTANCE_DIRECTORY"))runShaderSequenceAcceptance(std::filesystem::u8path(directory));
     if (std::getenv("IRIS_SHADER_WORKSPACE_UI_BAD") && std::getenv("MYRENDERER_SMOKE_TEST")
@@ -2268,92 +2268,6 @@ void Application::drawInspectorPanel() {
                             stylizedPresetNames, 4
                         )) {
                         applyStylizedPreset(static_cast<StylizedPreset>(stylizedPreset));
-                    }
-                    EditorUi::Checkbox(
-                        "Screen-space outline",
-                        &rendererSettings_.stylizedOutlineEnabled
-                    );
-                    if (rendererSettings_.stylizedOutlineEnabled) {
-                        EditorUi::SliderFloat(
-                            "Outline width", &rendererSettings_.stylizedOutlineWidth,
-                            0.5f, 6.0f, "%.1f px"
-                        );
-                        EditorUi::SliderFloat(
-                            "Outline depth threshold",
-                            &rendererSettings_.stylizedOutlineDepthThreshold,
-                            0.001f, 0.12f, "%.3f"
-                        );
-                        EditorUi::SliderFloat(
-                            "Outline normal threshold",
-                            &rendererSettings_.stylizedOutlineNormalThreshold,
-                            0.02f, 0.8f, "%.2f"
-                        );
-                        EditorUi::ColorEdit3(
-                            "Outline color", &rendererSettings_.stylizedOutlineColor.x
-                        );
-                    }
-                    EditorUi::Checkbox(
-                        "Ordered dither", &rendererSettings_.stylizedDitherEnabled
-                    );
-                    if (rendererSettings_.stylizedDitherEnabled) {
-                        EditorUi::SliderFloat(
-                            "Dither strength", &rendererSettings_.stylizedDitherStrength,
-                            0.0f, 1.0f, "%.2f"
-                        );
-                    }
-                    EditorUi::Checkbox(
-                        "Height fog", &rendererSettings_.stylizedHeightFogEnabled
-                    );
-                    if (rendererSettings_.stylizedHeightFogEnabled) {
-                        EditorUi::SliderFloat(
-                            "Fog density", &rendererSettings_.stylizedHeightFogDensity,
-                            0.0f, 2.0f, "%.2f"
-                        );
-                        EditorUi::SliderFloat(
-                            "Fog base height", &rendererSettings_.stylizedHeightFogBaseHeight,
-                            -10.0f, 10.0f, "%.2f"
-                        );
-                        EditorUi::SliderFloat(
-                            "Fog height falloff", &rendererSettings_.stylizedHeightFogFalloff,
-                            0.01f, 4.0f, "%.2f"
-                        );
-                        EditorUi::ColorEdit3(
-                            "Fog color", &rendererSettings_.stylizedHeightFogColor.x
-                        );
-                    }
-                    EditorUi::Checkbox(
-                        "Color grading LUT",
-                        &rendererSettings_.stylizedColorGradingEnabled
-                    );
-                    if (rendererSettings_.stylizedColorGradingEnabled) {
-                        int lut = static_cast<int>(
-                            rendererSettings_.stylizedColorGradingLut
-                        );
-                        const char* lutNames[] = {
-                            "Clean Toon", "Painterly", "Night Aurora"
-                        };
-                        if (EditorUi::Combo("Color LUT", &lut, lutNames, 3)) {
-                            rendererSettings_.stylizedColorGradingLut =
-                                static_cast<StylizedColorGradingLut>(lut);
-                        }
-                        EditorUi::SliderFloat(
-                            "LUT strength",
-                            &rendererSettings_.stylizedColorGradingStrength,
-                            0.0f, 1.0f, "%.2f"
-                        );
-                    }
-                    int stylizedDebug = static_cast<int>(
-                        rendererSettings_.stylizedDebugView
-                    );
-                    const char* stylizedDebugViews[] = {
-                        "Final output", "Lighting bands", "Rim factor",
-                        "Outline edges", "Dither pattern", "Fog factor", "LUT delta"
-                    };
-                    if (EditorUi::Combo(
-                            "Stylized debug", &stylizedDebug, stylizedDebugViews, 7
-                        )) {
-                        rendererSettings_.stylizedDebugView =
-                            static_cast<StylizedDebugView>(stylizedDebug);
                     }
                 }
                 int renderPath = static_cast<int>(rendererSettings_.renderPath);

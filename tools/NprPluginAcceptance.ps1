@@ -1,4 +1,5 @@
 param([string]$BuildDirectory='build-ci-msvc',[switch]$NprOff,
+    [switch]$ScreenEffects,
     [string]$OutputDirectory='.local/verification/a4n1')
 $ErrorActionPreference='Stop'
 $root=Split-Path $PSScriptRoot -Parent
@@ -15,6 +16,7 @@ try {
     $env:MYRENDERER_STYLIZED=if($NprOff){'0'}else{'1'}
     $env:MYRENDERER_EDITOR_SCREENSHOT_WARMUP=if($NprOff){'4'}else{'56'}
     if(-not $NprOff){$env:IRIS_NPR_UI_TEST='1'}
+    if($ScreenEffects){$env:IRIS_NPR_SCREEN_TEST='1'}
     $widths=if($NprOff){@(1440)}else{@(1440,1100)}
     foreach($width in $widths) {
         $case=Join-Path $out ([string]$width)
@@ -27,6 +29,7 @@ try {
         & $exe (Join-Path $root 'assets/scenes/fixtures/14_polyhaven_material_gallery.myscene') *> (Join-Path $out ($width.ToString()+'.log'))
         $log=Get-Content (Join-Path $out ($width.ToString()+'.log')) -Raw
         $expected=if($NprOff){'NPR OFF ordinary scene / shading command / render rejection preserved state PASS'}else{'NPR real parameter UI / both paths / legacy parity / history / failure retention / Scene / resize / replacement / disable-enable PASS'}
+        if($ScreenEffects -and -not $NprOff -and -not $log.Contains("NPR screen effects both paths / contribution / legacy parity / history / rejection PASS")){throw "Screen effect application acceptance failed: $width"}
         if($LASTEXITCODE -ne 0 -or -not $log.Contains($expected) -or -not(Test-Path $env:MYRENDERER_EDITOR_SCREENSHOT)){throw "NPR application acceptance failed: $width"}
     }
     Write-Output "NPR application UI / capability / state / lifecycle PASS: $out"
