@@ -417,8 +417,6 @@ private:
     std::unique_ptr<iris::RenderPlugin> waterRenderer_;
     std::unique_ptr<RenderTarget> renderTarget_;
     std::unique_ptr<TextureCache> textureCache_;
-    std::unique_ptr<Shader> waterForwardShader_;
-    std::unique_ptr<Shader> waterGBufferShader_;
     float previousWaterTime_{0.0f};
     bool previousWaterValid_{false};
     bool previousWaterMediumValid_{false};

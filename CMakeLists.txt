@@ -549,9 +549,11 @@ if(BUILD_TESTING)
         target_include_directories(IrisWaterPluginGpuTests PRIVATE src
             ${assimp_SOURCE_DIR}/contrib/zlib ${assimp_BINARY_DIR}/contrib/zlib)
         target_link_libraries(IrisWaterPluginGpuTests PRIVATE IrisRenderPluginHost IrisWaterPlugin glad_gl_core_33 glfw glm::glm zlibstatic)
-        target_compile_definitions(IrisWaterPluginGpuTests PRIVATE GLFW_INCLUDE_NONE)
+        target_compile_definitions(IrisWaterPluginGpuTests PRIVATE GLFW_INCLUDE_NONE
+            MYRENDERER_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}"
+            IRIS_WATER_TEST_DIRECTORY="${CMAKE_CURRENT_SOURCE_DIR}/.local/verification/water-plugin-gpu")
         add_custom_target(water-plugin-gpu-acceptance COMMAND IrisWaterPluginGpuTests
-            DEPENDS IrisWaterPluginGpuTests COMMENT "Validating water grid ownership and transactional replacement on real GL")
+            DEPENDS IrisWaterPluginGpuTests COMMENT "Validating water grids, shaders and transactional replacement on real GL")
     endif()
     foreach(pluginTestTarget IrisRenderPluginRegistryTests IrisRenderPluginContractTests IrisRenderPluginConfigurationTests IrisRenderPluginPanelTests IrisRenderPluginGpuTests IrisPostProcessPluginGpuTests IrisStoredPluginGpuTests IrisRenderPluginParameterTests IrisWaterPluginGpuTests)
         if(TARGET ${pluginTestTarget})

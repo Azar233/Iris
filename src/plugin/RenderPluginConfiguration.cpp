@@ -48,7 +48,7 @@ bool validatePluginConfiguration(const RenderPluginRegistry& registry,
         const auto* descriptor=registry.descriptor(entry.id);
         if(!descriptor){error="Render plugin unavailable: "+entry.id;return false;}
         for(const auto& service:descriptor->requiredServices)
-            if(service!=openGlFullscreenService && service!=openGlShadingService && service!=openGlIndexedGeometryService){error="Render plugin service unavailable: "+service;return false;}
+            if(service!=openGlFullscreenService && service!=openGlShadingService && service!=openGlIndexedGeometryService && service!=openGlShaderBorrowService){error="Render plugin service unavailable: "+service;return false;}
     }
     if(!required.empty()&&(!registry.contains(required)||!pluginEnabled(config,required))){
         error="Current pipeline requires enabled render plugin: "+required;return false;

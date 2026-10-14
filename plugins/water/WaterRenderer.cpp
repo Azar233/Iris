@@ -4,14 +4,25 @@
 #include "render/WaterSurface.h"
 #include <stdexcept>
 namespace iris {
-WaterRenderer::WaterRenderer() = default;
+WaterRenderer::WaterRenderer(std::filesystem::path shaderDirectory) : shaderDirectory_(std::move(shaderDirectory)) {}
 WaterRenderer::~WaterRenderer() = default;
 void WaterRenderer::prepareResources(const RendererSettings&, int, int) {
-    if (high_ && low_) return;
+    if (high_ && low_ && forwardShader_ && deferredShader_) return;
+    auto forward = std::make_unique<Shader>(shaderDirectory_ / "water.vert", shaderDirectory_ / "water_forward.frag");
+    auto deferred = std::make_unique<Shader>(shaderDirectory_ / "water.vert", shaderDirectory_ / "water_gbuffer.frag");
     auto high = std::make_unique<WaterSurface>(water::gridResolution);
     auto low = std::make_unique<WaterSurface>(water::lowGridResolution);
+    if (!forward->sourcesCurrent() || !deferred->sourcesCurrent())
+        throw std::runtime_error("Water shader sources changed during preparation");
+    forwardShader_ = std::move(forward);
+    deferredShader_ = std::move(deferred);
     high_ = std::move(high);
     low_ = std::move(low);
+}
+Shader* WaterRenderer::borrowShadingShader(bool deferred) const {
+    auto* shader = deferred ? deferredShader_.get() : forwardShader_.get();
+    if (!shader) throw std::runtime_error("Water shader has not been prepared");
+    return shader;
 }
 IndexedTriangleGeometry WaterRenderer::borrowIndexedGeometry(const RendererSettings& settings) const {
     const auto* surface = settings.water.quality == WaterQuality::Low ? low_.get() : high_.get();
@@ -22,7 +33,8 @@ std::size_t WaterRenderer::estimatedBytes() const {
     return (high_ ? high_->estimatedBytes() : 0) + (low_ ? low_->estimatedBytes() : 0);
 }
 void WaterRenderer::renderFrame(const RenderPluginFrame& frame) {
-    if (!frame.shadingShader) throw std::invalid_argument("Water requires a bound water shader");
+    if (!frame.shadingShader || (frame.shadingShader != forwardShader_.get() && frame.shadingShader != deferredShader_.get()))
+        throw std::invalid_argument("Water requires its borrowed, bound water shader");
     auto& shader=*frame.shadingShader;
     const auto& settings=frame.settings.water;
     shader.setFloat("uExtent",settings.extent);

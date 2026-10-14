@@ -40,7 +40,7 @@ int main(){try{
     settings.water.enabled=true;
     require(!iris::validateRendererPluginConfiguration(shading,settings,error)
         && error.find(iris::waterPluginId)!=std::string::npos,"Missing water capability accepted");
-    shading.add({iris::waterPluginId,iris::renderPluginApiVersion,{iris::openGlShadingService,iris::openGlIndexedGeometryService},"MIT",{iris::PluginStage::MaterialShading,{},{}}},factory);
+    shading.add({iris::waterPluginId,iris::renderPluginApiVersion,{iris::openGlShadingService,iris::openGlIndexedGeometryService,iris::openGlShaderBorrowService},"MIT",{iris::PluginStage::MaterialShading,{},{}}},factory);
     require(iris::validateRendererPluginConfiguration(shading,settings,error),"Water shading service rejected");
     settings.renderPlugins={{iris::waterPluginId,false}};
     require(!iris::validateRendererPluginConfiguration(shading,settings,error),"Active disabled water accepted");

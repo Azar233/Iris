@@ -146,3 +146,14 @@ A4-N2 将 15 个屏幕效果参数纳入 iris.npr 的 CPU schema（共 25 项）
 历史门槛诊断：四组 CPU/Draw/活跃资源 bytes 通过，GPU P95 曾均超出原预算。MSVC Forward 首轮 0.340992 ms，两次复测 0.495616/0.525312 ms，预算 0.321184 ms。同机旧 W1 的 P95 也升至 0.476160/0.351232 ms，新程序交叉为 0.360448/0.360448 ms；遥测出现 930～2490 MHz 频率变化，不能因此直接宣布固定预算通过。原 before/阈值未改，失败和交叉诊断全部保留在 .local/verification/a4w2a，本地文档 docs/a4w2a-water-grid-ownership.md。
 
 按 2026-10-14 用户明确授权“有问题或者没有价值的验收测试直接摒弃”，撤弃 WaterMigrationAcceptance 的跨运行历史 GPU P95 门槛：未变的 W1 负对照也反复被其判失败，无法可靠判断这次所有权迁移是否引入回归。GPU 时间继续诊断记录，旧失败和 before 保留；CPU P95/Draw/bytes/精确图像/真实 GL 合同不变。仅重跑修改脚本，两编译器各八图和四组 CPU/资源预算通过，W2a 完成；不宣称 GPU 性能已通过认证。17e2f38 CI 38566799577 已核对 completed/success。下一入口 W2b 两套水面 Shader 所有权迁移，绘制/附件/状态/历史继续由后端管理。A4 父项、P1/M3 未完成，无新安装/ZIP。
+
+
+## A4-W2b：水面 Shader 所有权（2026-10-14 已验收）
+
+Water 插件拥有 Forward/Deferred 两套 Shader 与 High/Low 网格，新增 opengl.shader-borrow.v1 明确后端短期借用。候选先完整编译/准备再发布；失败/取消保留旧实例和外部绑定。后端按实际路径借用并继续管理绘制、附件、状态、Camera/环境/时间与历史；Shader 文本与 19 项共享参数/Scene/Job 不变。程序继续使用既有全局原子热重载，失败保留两套旧程序、修复后一起替换；干燥/OFF 不自动创建水面程序。
+
+验收：双编译器 CPU 各 37/37；真实 GL 程序/网格生命周期、第二套编译失败、原子热重载失败/恢复、取消/替换、外来 Shader/缺失服务/源文件与绑定保留；双窗口 UI、两路径 GUI/Job、OFF CPU 5/5/普通场景/66 无产物；GPU smoke/云水集成；34 张受影响 PNG 精确一致，CPU 原预算及 Draw/活跃 bytes 保持。GPU 时间仅诊断。按用户授权摒弃不成立的驱动链接失败夹具，修正私有夹具 mtime，相关失败记录保留；没有弱化真实资源/编译失败合同。
+
+首次启用时有一次上下文线程编译；停用释放两套程序和网格，程序驱动内存不计入 1,479,184 bytes 网格估算。来源与命令在本地 docs/a4w2b-water-shader-ownership.md 与 .local/verification/a4w2b。前项 1fc3e12 CI 38577302174 已核对 completed/success。W2b 提交/推送/CI 分开核对；无新安装/ZIP，A4 父项/P1/M3 未完成。
+
+下一入口 A4-W2c：调查水面绘制执行与环境/灯光/阴影/云纹理借用最小切片，固定实际 Forward/Deferred 目标、状态和历史合同；不自动扩大为云层/PBR 或渲染图重构。

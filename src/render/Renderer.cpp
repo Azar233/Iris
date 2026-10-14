@@ -129,13 +129,7 @@ Renderer::Renderer(
         vertexShaderPath.parent_path() / "deferred_lighting.frag"
     )),
     renderTarget_(std::make_unique<RenderTarget>()),
-    textureCache_(std::make_unique<TextureCache>()),
-    waterForwardShader_(std::make_unique<Shader>(
-        vertexShaderPath.parent_path() / "water.vert",
-        vertexShaderPath.parent_path() / "water_forward.frag")),
-    waterGBufferShader_(std::make_unique<Shader>(
-        vertexShaderPath.parent_path() / "water.vert",
-        vertexShaderPath.parent_path() / "water_gbuffer.frag")) {
+    textureCache_(std::make_unique<TextureCache>()) {
     shaderDirectory_ = vertexShaderPath.parent_path();
     glGenQueries(static_cast<GLsizei>(timingQueries_.size()), timingQueries_.data());
     glGenQueries(static_cast<GLsizei>(beamStartQueries_.size()), beamStartQueries_.data());
@@ -219,7 +213,7 @@ void Renderer::render(
         {iris::openGlShadingService},shaderDirectory_);
     if (!iris::waterRequired(settings)) waterRenderer_.reset();
     else if (!waterRenderer_) waterRenderer_=iris::builtinRenderPlugins().prepareReplacement(iris::waterPluginId,
-        {iris::openGlShadingService,iris::openGlIndexedGeometryService},shaderDirectory_,settings,
+        {iris::openGlShadingService,iris::openGlIndexedGeometryService,iris::openGlShaderBorrowService},shaderDirectory_,settings,
         std::max(width,1),std::max(height,1));
     if (!iris::pluginEnabled(settings.renderPlugins,iris::enscapePluginId)) enscapeCubeRenderer_.reset();
     if (!iris::pluginEnabled(settings.renderPlugins,iris::postProcessPluginId)) postProcessor_.reset();
@@ -826,7 +820,9 @@ shader_->setMat4("uView", view);
         if (!settings.water.enabled) return;
         const auto geometry = waterRenderer_->borrowIndexedGeometry(settings);
         iris::validateIndexedTriangleGeometry(geometry);
-        Shader& waterShader = deferred ? *waterGBufferShader_ : *waterForwardShader_;
+        auto* borrowedShader = waterRenderer_->borrowShadingShader(deferred);
+        if (!borrowedShader) throw std::runtime_error("Water plugin supplied no shading shader");
+        Shader& waterShader = *borrowedShader;
         waterShader.use();
         waterShader.setMat4("uCurrentViewProjection", currentViewProjection);
         waterShader.setMat4("uPreviousViewProjection",
@@ -1883,7 +1879,7 @@ bool Renderer::rebuildPluginResources(const std::string& id, const RendererSetti
         auto* owner = id == iris::enscapePluginId ? &enscapeCubeRenderer_ : id == iris::postProcessPluginId ? &postProcessor_
             : id == iris::nprPluginId ? &nprRenderer_ : id == iris::waterPluginId ? &waterRenderer_ : nullptr;
         if (!owner) throw std::runtime_error("Unknown plugin: " + id);
-        auto candidate = iris::builtinRenderPlugins().prepareReplacement(id, {iris::openGlFullscreenService,iris::openGlShadingService,iris::openGlIndexedGeometryService}, shaderDirectory_,
+        auto candidate = iris::builtinRenderPlugins().prepareReplacement(id, {iris::openGlFullscreenService,iris::openGlShadingService,iris::openGlIndexedGeometryService,iris::openGlShaderBorrowService}, shaderDirectory_,
             settings, std::max(renderTarget_->width(), 1), std::max(renderTarget_->height(), 1));
         auto success = "Plugin resources committed: " + id;
         owner->swap(candidate);

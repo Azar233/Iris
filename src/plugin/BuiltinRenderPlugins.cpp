@@ -20,7 +20,7 @@ const std::vector<RenderPluginDescriptor>& builtinRenderPluginCatalog() {
         {enscapePluginId,renderPluginApiVersion,{openGlFullscreenService},"CC BY-NC-SA-3.0 (third-party shaders)",enscapeContract(),builtinRenderPluginParameterSchema(enscapePluginId)},
         {postProcessPluginId,renderPluginApiVersion,{openGlFullscreenService},"MIT",postProcessContract(),builtinRenderPluginParameterSchema(postProcessPluginId)},
         {nprPluginId,renderPluginApiVersion,{openGlShadingService},"MIT",{PluginStage::MaterialShading,{},{}},builtinRenderPluginParameterSchema(nprPluginId)},
-        {waterPluginId,renderPluginApiVersion,{openGlShadingService,openGlIndexedGeometryService},"MIT",{PluginStage::MaterialShading,{},{}},builtinRenderPluginParameterSchema(waterPluginId)}};
+        {waterPluginId,renderPluginApiVersion,{openGlShadingService,openGlIndexedGeometryService,openGlShaderBorrowService},"MIT",{PluginStage::MaterialShading,{},{}},builtinRenderPluginParameterSchema(waterPluginId)}};
     return catalog;
 }
 
@@ -39,8 +39,8 @@ const RenderPluginRegistry& builtinRenderPlugins() {
         });
 #endif
 #if IRIS_ENABLE_WATER_PLUGIN
-        result.add(builtinRenderPluginCatalog()[3], [](const std::filesystem::path&) {
-            return std::make_unique<WaterRenderer>();
+        result.add(builtinRenderPluginCatalog()[3], [](const std::filesystem::path& directory) {
+            return std::make_unique<WaterRenderer>(directory);
         });
 #endif
 #if IRIS_ENABLE_POSTPROCESS_PLUGIN
