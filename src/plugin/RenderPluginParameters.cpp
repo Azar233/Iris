@@ -316,8 +316,36 @@ const std::vector<RenderPluginParameterSchema>& builtinRenderPluginParameterSche
         NPR_FLOAT(stylizedColorGradingStrength, "LUT strength");
 #undef NPR_FLOAT
 #undef NPR_BOOL
+        RenderPluginParameterSchema waterSchema;
+        waterSchema.pluginId=waterPluginId;
+#define WATER_BOOL(field, label) addBool(waterSchema, #field, label, [](const auto& s) { return s.water.field; }, [](auto& s, bool v) { s.water.field=v; }, true)
+#define WATER_FLOAT(field, label, low, high) addFloat(waterSchema, #field, label, low, high, [](const auto& s) { return s.water.field; }, [](auto& s, float v) { s.water.field=v; }, true)
+        WATER_BOOL(enabled, "Enable water");
+        waterSchema.metadata.registerInt("quality","Quality (0: Low, 1: High)",static_cast<int>(RendererSettings{}.water.quality),0,1);
+        waterSchema.bindings.push_back({"quality",[](const RendererSettings& s) { ModuleParameterValue v;v.type=ModuleParameterType::Int;v.integer=static_cast<int>(s.water.quality);return v; },
+            [](RendererSettings& s,const ModuleParameterValue& v) { s.water.quality=static_cast<WaterQuality>(v.integer); },true});
+        WATER_FLOAT(level, "Water level", -10.f, 10.f);
+        WATER_FLOAT(extent, "Water extent", 20.f, 2000.f);
+        WATER_FLOAT(amplitude, "Wave amplitude", 0.f, 2.f);
+        WATER_FLOAT(speed, "Wave speed", 0.f, 5.f);
+        WATER_FLOAT(steepness, "Wave steepness", 0.f, .9f);
+        WATER_FLOAT(foamStrength, "Foam strength", 0.f, 1.f);
+        WATER_FLOAT(roughness, "Roughness", .02f, .8f);
+        WATER_FLOAT(reflectionStrength, "Reflection", 0.f, 2.f);
+        WATER_FLOAT(rippleStrength, "Fine ripples", 0.f, 1.f);
+        WATER_FLOAT(sunGlintStrength, "Sun glint", 0.f, 2.f);
+        WATER_FLOAT(deepWaterStrength, "Deep water", 0.f, 1.f);
+        WATER_FLOAT(waveDiversity, "Wave diversity", 0.f, 1.f);
+        WATER_FLOAT(nearMeshFocus, "Near mesh focus", 0.f, 1.f);
+        WATER_BOOL(surfaceOptics, "Surface optics");
+        WATER_FLOAT(cloudReflectionStrength, "Cloud reflection", 0.f, 1.f);
+        addFloat(waterSchema,"windX","Wind east",-1.f,1.f,[](const auto& s) { return s.water.windDirection.x; },[](auto& s,float v) { s.water.windDirection.x=v; },true);
+        addFloat(waterSchema,"windZ","Wind north",-1.f,1.f,[](const auto& s) { return s.water.windDirection.y; },[](auto& s,float v) { s.water.windDirection.y=v; },true);
+#undef WATER_FLOAT
+#undef WATER_BOOL
+        waterSchema.validate();
         post.validate(); ocean.validate(); npr.validate();
-        return std::vector<RenderPluginParameterSchema>{std::move(post), std::move(ocean), std::move(npr)};
+        return std::vector<RenderPluginParameterSchema>{std::move(post), std::move(ocean), std::move(npr), std::move(waterSchema)};
     }();
     return schemas;
 }

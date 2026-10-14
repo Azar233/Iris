@@ -123,3 +123,16 @@ A4-N2 将 15 个屏幕效果参数纳入 iris.npr 的 CPU schema（共 25 项）
 最终双编译器 Integration 各 37/37、两窗口真实屏幕参数/四种效果双路径贡献/拒绝和历史/Scene/生命周期、GUI 与两帧 Job、NPR OFF 2/2 与两路径 Job 66/无产物通过。两编译器各八张迁移图、MSVC Stylized 33 张不同 PNG 精确一致；GPU smoke、Deferred、screen-space 回归通过。120 帧预热/900 样本的四组成本满足原预算；Forward 27 Draw/167826616 bytes、Deferred 28/173817016 bytes 不变，不宣称性能加速。没有修改 Shader、阈值、基线或标准安装包；详细说明与截图保留在本地 docs/a4n2-npr-screen-settings.md。
 
 插件 UI 的 1181b14 已推送且 CI 38544449866 completed/success，远端 SHA 一致。A4-N2 交付提交和 CI 按本次最终记录核对。下一入口是 A4 后续迁移分包调查（云水/PBR）；A4 父项和 P1/M3 保持未完成，不自动进入新研发方向。
+
+
+## A4-W1：原生水面参数与着色适配（2026-10-14 本地验收完成）
+
+调查选择水面为下一纵向切片：其共享 WaterSettings、纯 CPU Wave 函数和已绑定的 Forward/Deferred 水面 Shader 可复用 MaterialShading 合同。范围为可选静态 iris.water、19 项 schema 和 settings-only Uniform 适配，保留网格/Shader/纹理/附件/绘制/历史与云水环境的后端所有权，不迁移云层/PBR 或重写算法。
+
+原生水面活动时依赖 Water 与 PostProcess，缺失能力在 Scene/Job/旧命令/直接 render 改变状态前拒绝；干燥/全屏场景不要求 Water。旧字段、Preset/手动编辑 Custom、共享值和两个时间输入保持。参数位于渲染设置，插件页仅做启停；Water OFF 保留 CPU schema，后端仍保留原水面资源，不宣称移除即可释放全部显存。
+
+双编译器完整 CPU 各 37/37、两窗口真实 UI/参数贡献/拒绝/历史/保存/resize/重建/启停与两路径 GUI/Job、Water OFF 2/2/普通场景/两路径 Job 66 无产物通过。两编译器各八张迁移图及既有水面 18 张 PNG 精确一致，GPU smoke、Water mesh/medium contracts 与云水接水几何/两路径/云影贡献通过。
+
+成本为 120 预热/900 帧、640×360、MSAA1/time0：Draw/资源不变，Forward 19/167826616 bytes、Deferred 20/173817016 bytes。首轮 MSVC Deferred GPU P95 0.479232 超出原 0.424608 ms 预算，失败保留；相同协议两次复测 0.419840/0.377856 通过。其他三组满足原 CPU/GPU 门槛；不放宽阈值、不宣称零开销或加速。详细证据在本地 docs/a4w1-water-shading-extension.md 与 .local/verification/a4w1。
+
+前项 A4-N2 655d057 的 CI 38546907506 completed/success、head 一致。W1 提交/推送/CI 按最终交付记录核对；无新安装/ZIP。下一入口 A4-W2：先调查水面 GPU 资源与执行所有权的最小切片并固定合同。A4 父项、P1/M3 保持未完成。

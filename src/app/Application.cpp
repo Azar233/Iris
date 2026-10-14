@@ -1107,7 +1107,7 @@ int Application::run(const std::filesystem::path& initialModel) {
     if (std::getenv("IRIS_SHADER_MOUSE_UI_TEST")) smokeTestFrames = 32;
     if (std::getenv("IRIS_SHADER_MATERIAL_UI_TEST")) smokeTestFrames = 32;
     if (std::getenv("IRIS_SHADER_MATERIAL_WORKSPACE_DIRECTORY")) smokeTestFrames = 48;
-    if (std::getenv("IRIS_NPR_UI_TEST")) smokeTestFrames = 64;
+    if (std::getenv("IRIS_NPR_UI_TEST") || std::getenv("IRIS_WATER_UI_TEST")) smokeTestFrames = 64;
     const auto cpuPreviewSmokeDeadline = std::chrono::steady_clock::now()
         + std::chrono::seconds(30);
     const auto thumbnailDeadline = std::chrono::steady_clock::now() + std::chrono::seconds(30);
@@ -1154,6 +1154,7 @@ int Application::run(const std::filesystem::path& initialModel) {
     if(const char* directory=std::getenv("IRIS_SHADER_PACKAGE_RELOAD_ACCEPTANCE_DIRECTORY"))runShaderPackageReloadAcceptance(std::filesystem::u8path(directory));
     if(const char* directory=std::getenv("IRIS_SHADER_HISTORY_ACCEPTANCE_DIRECTORY"))runShaderHistoryAcceptance(std::filesystem::u8path(directory));
     if(const char* directory=std::getenv("IRIS_SHADER_MATERIAL_WORKSPACE_DIRECTORY"))runShaderMaterialWorkspaceAcceptance(std::filesystem::u8path(directory));
+    if(std::getenv("IRIS_WATER_ACCEPTANCE_DIRECTORY")){focusRendererTab_=true;waterUiInitialAmplitude_=rendererSettings_.water.amplitude;}
     if(std::getenv("IRIS_NPR_ACCEPTANCE_DIRECTORY"))focusRendererTab_=true;
     if(std::getenv("IRIS_NPR_UI_TEST"))nprUiInitialValue_=std::getenv("IRIS_NPR_SCREEN_TEST") ? rendererSettings_.stylizedDitherStrength : rendererSettings_.stylizedRimIntensity;
     if(const char* directory=std::getenv("IRIS_SHADER_MATERIAL_ACCEPTANCE_DIRECTORY"))runShaderMaterialAcceptance(std::filesystem::u8path(directory));
@@ -1507,6 +1508,7 @@ int Application::run(const std::filesystem::path& initialModel) {
         if (shaderHistoryUiPassed_) shaderHistoryUiPassed_ = historyDirectory && saveSceneTo(std::filesystem::u8path(historyDirectory)/"ui-saved.myscene");
     }
     const bool materialWorkspacePassed = finishShaderMaterialWorkspaceAcceptance();
+    const bool waterPluginPassed=!std::getenv("IRIS_WATER_ACCEPTANCE_DIRECTORY") || waterPluginRegression();
     const bool nprPassed=!std::getenv("IRIS_NPR_ACCEPTANCE_DIRECTORY") || nprRegression();
     const bool materialUiPassed = !std::getenv("IRIS_SHADER_MATERIAL_UI_TEST")
         || (shaderMaterialUiPhase_ == 8 && shaderMaterialUiEdited_ && shaderMaterialUiCleared_
@@ -1516,7 +1518,7 @@ int Application::run(const std::filesystem::path& initialModel) {
     if (std::getenv("IRIS_SHADER_PARAMETER_UI_TEST")) std::cout << "ShaderScene real Float+Bool controls: " << (shaderParameterUiPassed ? "PASS" : "FAIL") << '\n';
     if (std::getenv("IRIS_SHADER_MATERIAL_UI_TEST")) std::cout << "ShaderMaterial real slider/clear/bind/recompile: " << (materialUiPassed ? "PASS" : "FAIL") << " phase=" << shaderMaterialUiPhase_
         << " edited=" << shaderMaterialUiEdited_ << " cleared=" << shaderMaterialUiCleared_ << '\n';
-    return nprPassed && materialWorkspacePassed && materialUiPassed && (!std::getenv("IRIS_SHADER_MOUSE_UI_TEST") || shaderMouseUiPhase_ == 8)
+    return waterPluginPassed && nprPassed && materialWorkspacePassed && materialUiPassed && (!std::getenv("IRIS_SHADER_MOUSE_UI_TEST") || shaderMouseUiPhase_ == 8)
         && shaderParameterUiPassed && diagnosticUiPassed && workspaceUiPassed && shaderBrowserPassed && recoveryPassed && appendPassed && interactionsPassed && pluginsPassed && pluginParametersPassed
         && (shaderTransactionSources_.empty() || (shaderTransactionDone && shaderTransactionPassed))
         && (!std::getenv("MYRENDERER_SHADER_TRANSACTION_UI_RETRY") || shaderRetryInteractionComplete_)
@@ -2141,8 +2143,9 @@ void Application::drawInspectorPanel() {
             std::vector<iris::PluginControlBounds> resourceControls, nprControls;
             const bool resourceUiTest=std::getenv("MYRENDERER_PLUGIN_RESOURCE_UI_TEST") != nullptr;
             if (auto change=iris::drawRenderPluginSettings(iris::builtinRenderPlugins(),iris::builtinRenderPluginCatalog(),
-                rendererSettings_, std::getenv("IRIS_NPR_UI_TEST")?&nprControls:nullptr, &resourceControls)) editorSession_.request(*change);
+                rendererSettings_, (std::getenv("IRIS_NPR_UI_TEST") || std::getenv("IRIS_WATER_UI_TEST"))?&nprControls:nullptr, &resourceControls)) editorSession_.request(*change);
             interactNprParameters(nprControls);
+            interactWaterParameters(nprControls);
             if (renderer_ && !renderer_->pluginResourceStatus().empty())
                 ImGui::TextWrapped("%s", renderer_->pluginResourceStatus().c_str());
             if(resourceUiTest && shaderRetryInteractionPhase_ < 4) {
@@ -2438,74 +2441,20 @@ void Application::drawInspectorPanel() {
             }
             }
             ImGui::BeginDisabled(rendererSettings_.enscapeCubeShaderEnabled);
-            if (EditorUi::section("Water surface")) {
-                auto waterSettings = EditorDomain::captureWaterSettings(rendererSettings_);
-                bool changed = EditorUi::Checkbox(EditorUi::label("Enable water"), &waterSettings.enabled);
-                const char* seaStates[] = {"Custom", "Calm", "Windy", "Storm"};
-                if (EditorUi::Combo(EditorUi::label("Sea state"),
-                        &waterSettings.preset, seaStates, 4)) {
-                    WaterSettings presetSettings;
-                    water::applyPreset(presetSettings,
-                        static_cast<WaterPreset>(waterSettings.preset));
-                    waterSettings.amplitude = presetSettings.amplitude;
-                    waterSettings.speed = presetSettings.speed;
-                    waterSettings.steepness = presetSettings.steepness;
-                    waterSettings.foamStrength = presetSettings.foamStrength;
-                    waterSettings.windX = presetSettings.windDirection.x;
-                    waterSettings.windZ = presetSettings.windDirection.y;
-                    changed = true;
-                }
-                const char* waterQualities[] = {"Low (96 x 96)", "High (192 x 192)"};
-                changed |= EditorUi::Combo(EditorUi::label("Water quality"),
-                    &waterSettings.quality, waterQualities, 2);
-                bool parametersChanged = false;
-                changed |= EditorUi::SliderFloat(EditorUi::label("Water level"),
-                    &waterSettings.level, -10.0f, 10.0f, "%.2f");
-                changed |= EditorUi::SliderFloat(EditorUi::label("Water extent"),
-                    &waterSettings.extent, 20.0f, 2000.0f, "%.0f");
-                parametersChanged |= EditorUi::SliderFloat(EditorUi::label("Wave amplitude"),
-                    &waterSettings.amplitude, 0.0f, 2.0f, "%.2f");
-                parametersChanged |= EditorUi::SliderFloat(EditorUi::label("Wave speed"),
-                    &waterSettings.speed, 0.0f, 5.0f, "%.2f");
-                parametersChanged |= EditorUi::SliderFloat(EditorUi::label("Wave steepness"),
-                    &waterSettings.steepness, 0.0f, 0.9f, "%.2f");
-                parametersChanged |= EditorUi::SliderFloat(EditorUi::label("Foam strength"),
-                    &waterSettings.foamStrength, 0.0f, 1.0f, "%.2f");
-                changed |= EditorUi::SliderFloat(EditorUi::label("Surface roughness"),
-                    &waterSettings.roughness, 0.02f, 0.8f, "%.2f");
-                changed |= EditorUi::SliderFloat(EditorUi::label("Sky reflection"),
-                    &waterSettings.reflectionStrength, 0.0f, 2.0f, "%.2f");
-                changed |= EditorUi::SliderFloat(EditorUi::label("Fine ripples"),
-                    &waterSettings.rippleStrength, 0.0f, 1.0f, "%.2f");
-                changed |= EditorUi::SliderFloat(EditorUi::label("Sun glint"),
-                    &waterSettings.sunGlintStrength, 0.0f, 2.0f, "%.2f");
-                changed |= EditorUi::SliderFloat("Deep water", &waterSettings.deepWaterStrength,
-                    0.0f, 1.0f, "%.2f");
-                parametersChanged |= EditorUi::SliderFloat(EditorUi::label("Wave diversity"), &waterSettings.waveDiversity,
-                    0.0f, 1.0f, "%.2f");
-                EditorUi::tooltip("Wave diversity");
-                parametersChanged |= EditorUi::SliderFloat(EditorUi::label("Near mesh focus"),
-                    &waterSettings.nearMeshFocus, 0.0f, 1.0f, "%.2f");
-                EditorUi::tooltip("Near mesh focus");
-                parametersChanged |= EditorUi::Checkbox(EditorUi::label("Filtered surface optics"),
-                    &waterSettings.surfaceOptics);
-                parametersChanged |= EditorUi::SliderFloat(EditorUi::label("Cloud reflection"),
-                    &waterSettings.cloudReflectionStrength, 0.0f, 1.0f, "%.2f");
-                parametersChanged |= EditorUi::SliderFloat(EditorUi::label("Wind east"),
-                    &waterSettings.windX, -1.0f, 1.0f, "%.2f");
-                parametersChanged |= EditorUi::SliderFloat(EditorUi::label("Wind north"),
-                    &waterSettings.windZ, -1.0f, 1.0f, "%.2f");
-                if (parametersChanged) waterSettings.preset = 0;
-                changed |= parametersChanged;
-                const int waveCount = waterSettings.quality == 0 && !waterSettings.surfaceOptics ? 2
-                    : waterSettings.waveDiversity > 0.0f ? 8 : 4;
-                ImGui::TextDisabled("Wave Synthesis | %d waves | %d x %d grid", waveCount,
-                    waterSettings.quality == 0 ? water::lowGridResolution : water::gridResolution,
-                    waterSettings.quality == 0 ? water::lowGridResolution : water::gridResolution);
-                if (changed) {
+            if (iris::builtinRenderPlugins().contains(iris::waterPluginId)
+                && iris::pluginEnabled(rendererSettings_.renderPlugins,iris::waterPluginId)
+                && EditorUi::section("Water surface")) {
+                auto waterSettings=EditorDomain::captureWaterSettings(rendererSettings_);
+                const char* seaStates[]={"Custom","Calm","Windy","Storm"};
+                if (EditorUi::Combo(EditorUi::label("Sea state"),&waterSettings.preset,seaStates,4)) {
+                    auto candidate=rendererSettings_.water;
+                    WaterSettings selected;water::applyPreset(selected,static_cast<WaterPreset>(waterSettings.preset));
+                    candidate.preset=selected.preset;candidate.amplitude=selected.amplitude;candidate.speed=selected.speed;
+                    candidate.steepness=selected.steepness;candidate.foamStrength=selected.foamStrength;
+                    candidate.windDirection=selected.windDirection;
+                    auto settings=rendererSettings_;settings.water=candidate;
                     EditorCommand command{EditorCommandType::SetWaterSettings};
-                    command.water = waterSettings;
-                    editorSession_.request(std::move(command));
+                    command.water=EditorDomain::captureWaterSettings(settings);editorSession_.request(std::move(command));
                 }
             }
             if (EditorUi::section("Cloud layer")) {

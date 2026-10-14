@@ -8,6 +8,9 @@ bool nprRequired(const RendererSettings& settings) {
     return settings.shadingMode==ShadingMode::Stylized && !settings.enscapeCubeShaderEnabled
         && shaderSceneResourceFor(settings).empty();
 }
+bool waterRequired(const RendererSettings& settings) {
+    return settings.water.enabled && !settings.enscapeCubeShaderEnabled && shaderSceneResourceFor(settings).empty();
+}
 bool validateRendererPluginConfiguration(const RenderPluginRegistry& registry,
     const RendererSettings& settings, std::string& error) {
     if(!settings.shaderSceneResource.empty() && settings.enscapeCubeShaderEnabled) {
@@ -17,6 +20,9 @@ bool validateRendererPluginConfiguration(const RenderPluginRegistry& registry,
     if(!validatePluginConfiguration(registry,settings.renderPlugins,required,error))return false;
     if(nprRequired(settings) && (!registry.contains(nprPluginId) || !pluginEnabled(settings.renderPlugins,nprPluginId))) {
         error="Current pipeline requires enabled render plugin: "+std::string(nprPluginId);return false;
+    }
+    if(waterRequired(settings) && (!registry.contains(waterPluginId) || !pluginEnabled(settings.renderPlugins,waterPluginId))) {
+        error="Current pipeline requires enabled render plugin: "+std::string(waterPluginId);return false;
     }
     error.clear();return true;
 }
@@ -28,7 +34,11 @@ bool setPluginParameter(const RenderPluginRegistry& registry, RendererSettings& 
         error = "Plugin parameters unavailable or plugin disabled: " + id;
         return false;
     }
-    return descriptor->parameters->apply(settings, {parameter}, affectsHistory, error);
+    if (!descriptor->parameters->apply(settings, {parameter}, affectsHistory, error)) return false;
+    if (id==waterPluginId && (parameter.id=="amplitude" || parameter.id=="speed" || parameter.id=="steepness"
+        || parameter.id=="waveDiversity" || parameter.id=="nearMeshFocus" || parameter.id=="windX" || parameter.id=="windZ"))
+        settings.water.preset=WaterPreset::Custom;
+    return true;
 }
 bool validatePluginConfiguration(const RenderPluginRegistry& registry,
     const RenderPluginConfiguration& config,const std::string& required,std::string& error){

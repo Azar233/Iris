@@ -277,6 +277,7 @@ endif()
 option(IRIS_ENABLE_ENSCAPE_PLUGIN "Build the optional Enscape render plugin" ON)
 option(IRIS_ENABLE_POSTPROCESS_PLUGIN "Build the native pipeline postprocess plugin" ON)
 option(IRIS_ENABLE_NPR_PLUGIN "Build the native material NPR shading extension" ON)
+option(IRIS_ENABLE_WATER_PLUGIN "Build the native water shading extension" ON)
 add_library(IrisRenderPluginHost STATIC
     src/render/ShaderMaterialRuntime.cpp
     src/plugin/RenderPluginRegistry.cpp src/plugin/BuiltinRenderPlugins.cpp
@@ -287,7 +288,8 @@ target_link_libraries(IrisRenderPluginHost PUBLIC IrisParameters PRIVATE glm::gl
 target_compile_definitions(IrisRenderPluginHost PRIVATE
     IRIS_ENABLE_ENSCAPE_PLUGIN=$<BOOL:${IRIS_ENABLE_ENSCAPE_PLUGIN}>
     IRIS_ENABLE_POSTPROCESS_PLUGIN=$<BOOL:${IRIS_ENABLE_POSTPROCESS_PLUGIN}>
-    IRIS_ENABLE_NPR_PLUGIN=$<BOOL:${IRIS_ENABLE_NPR_PLUGIN}>)
+    IRIS_ENABLE_NPR_PLUGIN=$<BOOL:${IRIS_ENABLE_NPR_PLUGIN}>
+    IRIS_ENABLE_WATER_PLUGIN=$<BOOL:${IRIS_ENABLE_WATER_PLUGIN}>)
 if(IRIS_ENABLE_ENSCAPE_PLUGIN)
     add_library(IrisEnscapePlugin STATIC plugins/enscape/EnscapeCubeRenderer.cpp)
     target_include_directories(IrisEnscapePlugin PUBLIC plugins/enscape PRIVATE src)
@@ -306,7 +308,13 @@ if(IRIS_ENABLE_NPR_PLUGIN)
     target_link_libraries(IrisNprPlugin PUBLIC glm::glm PRIVATE glad_gl_core_33)
     target_link_libraries(IrisRenderPluginHost PRIVATE IrisNprPlugin)
 endif()
-foreach(pluginTarget IrisRenderPluginHost IrisEnscapePlugin IrisPostProcessPlugin IrisNprPlugin)
+if(IRIS_ENABLE_WATER_PLUGIN)
+    add_library(IrisWaterPlugin STATIC plugins/water/WaterRenderer.cpp src/render/WaterWaves.cpp)
+    target_include_directories(IrisWaterPlugin PUBLIC plugins/water PRIVATE src)
+    target_link_libraries(IrisWaterPlugin PUBLIC glm::glm PRIVATE glad_gl_core_33)
+    target_link_libraries(IrisRenderPluginHost PRIVATE IrisWaterPlugin)
+endif()
+foreach(pluginTarget IrisRenderPluginHost IrisEnscapePlugin IrisPostProcessPlugin IrisNprPlugin IrisWaterPlugin)
     if(TARGET ${pluginTarget})
         if(MSVC)
             target_compile_options(${pluginTarget} PRIVATE /W4 /permissive- /utf-8)
@@ -324,6 +332,7 @@ add_executable(MyRenderer
     src/app/ApplicationScene.cpp
     src/app/ApplicationShaderSequenceAcceptance.cpp
     src/app/ApplicationShaderMaterialAcceptance.cpp
+    src/app/ApplicationWaterAcceptance.cpp
     src/app/ApplicationNprAcceptance.cpp
     src/app/RenderPluginPanel.cpp
     src/app/EditorSession.cpp

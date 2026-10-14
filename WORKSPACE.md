@@ -44,3 +44,5 @@ cmake --install build-ci-msvc --config Release --component Runtime --prefix .loc
 普通开发分支 CI 保留构建和完整 CPU 检查，不再每次生成发布 ZIP。`v*` 标签或手动工作流的 `package=true` 执行 CPack/上传；手动入口依赖工作流进入默认分支。并发新提交取消同一分支的旧 CI。GPU 检查仍在本地完成，CI CPU 通过不代表 GPU 通过。
 
 A4-N1 的 NPR 移除专项使用 cmake --preset plugins-off -DIRIS_ENABLE_POSTPROCESS_PLUGIN=ON，保留普通原生 Raster 依赖的 PostProcess，关闭 Enscape/NPR；默认 preset 仍关闭全部可选插件。复用当前 build-stored-off 前核对这些实际开关，不能把该专项称作全插件 OFF。标准安装/ZIP 仍是 A3-M2，A4-N1 开发程序位于 build-ci-msvc/Release/Iris.exe；本切片未打包。
+
+A4-W1 新增 IRIS_ENABLE_WATER_PLUGIN，msvc/gcc presets 为 ON、plugins-off 为 OFF。水面移除专项仍使用 cmake --preset plugins-off -DIRIS_ENABLE_POSTPROCESS_PLUGIN=ON，关闭 Enscape/NPR/Water，保留普通原生管线必需的 PostProcess；CPU schema 始终编译。Build ID 纳入 Water 开关，三套暖缓存继续复用。

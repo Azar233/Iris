@@ -743,25 +743,31 @@ void Application::processEditorCommands() {
                     statusMessage_ = "Inspector rejected invalid water settings.";
                     break;
                 }
-                rendererSettings_.water.enabled = water.enabled;
-                rendererSettings_.water.preset = static_cast<WaterPreset>(water.preset);
-                rendererSettings_.water.quality = static_cast<WaterQuality>(water.quality);
-                rendererSettings_.water.level = water.level;
-                rendererSettings_.water.extent = water.extent;
-                rendererSettings_.water.amplitude = water.amplitude;
-                rendererSettings_.water.speed = water.speed;
-                rendererSettings_.water.steepness = water.steepness;
-                rendererSettings_.water.foamStrength = water.foamStrength;
-                rendererSettings_.water.roughness = water.roughness;
-                rendererSettings_.water.reflectionStrength = water.reflectionStrength;
-                rendererSettings_.water.rippleStrength = water.rippleStrength;
-                rendererSettings_.water.sunGlintStrength = water.sunGlintStrength;
-                rendererSettings_.water.deepWaterStrength = water.deepWaterStrength;
-                rendererSettings_.water.waveDiversity = water.waveDiversity;
-                rendererSettings_.water.nearMeshFocus = water.nearMeshFocus;
-                rendererSettings_.water.surfaceOptics = water.surfaceOptics;
-                rendererSettings_.water.cloudReflectionStrength = water.cloudReflectionStrength;
-                rendererSettings_.water.windDirection = glm::vec2(water.windX, water.windZ);
+                auto candidate=rendererSettings_;
+                candidate.water.enabled = water.enabled;
+                candidate.water.preset = static_cast<WaterPreset>(water.preset);
+                candidate.water.quality = static_cast<WaterQuality>(water.quality);
+                candidate.water.level = water.level;
+                candidate.water.extent = water.extent;
+                candidate.water.amplitude = water.amplitude;
+                candidate.water.speed = water.speed;
+                candidate.water.steepness = water.steepness;
+                candidate.water.foamStrength = water.foamStrength;
+                candidate.water.roughness = water.roughness;
+                candidate.water.reflectionStrength = water.reflectionStrength;
+                candidate.water.rippleStrength = water.rippleStrength;
+                candidate.water.sunGlintStrength = water.sunGlintStrength;
+                candidate.water.deepWaterStrength = water.deepWaterStrength;
+                candidate.water.waveDiversity = water.waveDiversity;
+                candidate.water.nearMeshFocus = water.nearMeshFocus;
+                candidate.water.surfaceOptics = water.surfaceOptics;
+                candidate.water.cloudReflectionStrength = water.cloudReflectionStrength;
+                candidate.water.windDirection = glm::vec2(water.windX, water.windZ);
+                std::string error;
+                if (!iris::validateRendererPluginConfiguration(iris::builtinRenderPlugins(),candidate,error)) {
+                    statusMessage_="Water change rejected: "+error;break;
+                }
+                rendererSettings_.water=candidate.water;
                 if (renderer_ != nullptr) renderer_->invalidateTemporalHistory();
                 break;
             }

@@ -37,6 +37,14 @@ int main(){try{
     require(!iris::validateRendererPluginConfiguration(shading,settings,error),"Active disabled NPR accepted");
     settings.shadingMode=ShadingMode::PhysicallyBased;
     require(iris::validateRendererPluginConfiguration(shading,settings,error),"Inactive NPR cannot be disabled");
+    settings.water.enabled=true;
+    require(!iris::validateRendererPluginConfiguration(shading,settings,error)
+        && error.find(iris::waterPluginId)!=std::string::npos,"Missing water capability accepted");
+    shading.add({iris::waterPluginId,iris::renderPluginApiVersion,{iris::openGlShadingService},"MIT",{iris::PluginStage::MaterialShading,{},{}}},factory);
+    require(iris::validateRendererPluginConfiguration(shading,settings,error),"Water shading service rejected");
+    settings.renderPlugins={{iris::waterPluginId,false}};
+    require(!iris::validateRendererPluginConfiguration(shading,settings,error),"Active disabled water accepted");
+    settings.water.enabled=false;require(iris::validateRendererPluginConfiguration(shading,settings,error),"Dry scene requires water");
     settings.shadingMode=ShadingMode::Stylized;settings.shaderSceneResource="package.shaderscene";
     require(iris::validateRendererPluginConfiguration(shading,settings,error),"Fullscreen scene requires native NPR");
     settings.enscapeCubeShaderEnabled=true;

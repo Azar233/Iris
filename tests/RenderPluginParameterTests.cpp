@@ -58,6 +58,25 @@ int main() {
         require(!npr->apply(settings,nonfinite,history,error) && !history
             && settings.stylizedOutlineWidth==preservedScreen.stylizedOutlineWidth,
             "Invalid screen transaction partially applied");
+        const auto* waterSchema=iris::builtinRenderPluginParameterSchema(iris::waterPluginId);
+        require(waterSchema && waterSchema->metadata.size()==19,"Water CPU schema missing");
+        iris::RenderPluginRegistry waterRegistry;
+        waterRegistry.add({iris::waterPluginId,iris::renderPluginApiVersion,{},"test",{},waterSchema},factory);
+        RendererSettings waterSettings;waterSettings.water.preset=WaterPreset::Storm;
+        require(iris::setPluginParameter(waterRegistry,waterSettings,iris::waterPluginId,number("amplitude",.8f),history,error)
+            && history && waterSettings.water.amplitude==.8f && waterSettings.water.preset==WaterPreset::Custom
+            && waterSettings.renderPluginValues.empty(),"Water edit lost canonical values/preset/history");
+        auto badWater=waterSchema->capture(waterSettings);
+        badWater[2].value.number=1.f;badWater.back().value.number=std::numeric_limits<float>::quiet_NaN();
+        require(!waterSchema->apply(waterSettings,badWater,history,error) && !history
+            && waterSettings.water.level==RendererSettings{}.water.level,"Invalid water transaction partially applied");
+        require(!iris::setPluginParameter(waterRegistry,waterSettings,iris::waterPluginId,number("roughness",1.f),history,error),"Water range validation lost");
+        SceneDocument waterScene;waterScene.renderer=waterSettings;
+        const auto waterPath=std::filesystem::temp_directory_path()/"IrisWaterParameterRoundtrip.myscene";
+        require(saveSceneDocument(waterPath,waterScene,error),"Water parameter Scene save failed");
+        SceneDocument waterRestored;require(loadSceneDocument(waterPath,waterRestored,error)
+            && waterRestored.renderer.water.amplitude==.8f && waterRestored.renderer.water.preset==WaterPreset::Custom,
+            "Water parameter Scene roundtrip changed values");
         settings=RendererSettings{};
         bool noContextRejected=false;
         try { registry.prepareReplacement(iris::postProcessPluginId,{}, {},settings,320,180); }

@@ -220,6 +220,9 @@ void Renderer::render(
     if (!iris::nprRequired(settings)) nprRenderer_.reset();
     else if (!nprRenderer_) nprRenderer_=iris::builtinRenderPlugins().create(iris::nprPluginId,
         {iris::openGlShadingService},shaderDirectory_);
+    if (!iris::waterRequired(settings)) waterRenderer_.reset();
+    else if (!waterRenderer_) waterRenderer_=iris::builtinRenderPlugins().create(iris::waterPluginId,
+        {iris::openGlShadingService},shaderDirectory_);
     if (!iris::pluginEnabled(settings.renderPlugins,iris::enscapePluginId)) enscapeCubeRenderer_.reset();
     if (!iris::pluginEnabled(settings.renderPlugins,iris::postProcessPluginId)) postProcessor_.reset();
     renderedWaterSettings_ = settings.water;
@@ -832,26 +835,9 @@ shader_->setMat4("uView", view);
         waterShader.setFloat("uTime", settings.water.timeSeconds);
         waterShader.setFloat("uPreviousTime",
             previousWaterValid_ ? previousWaterTime_ : settings.water.timeSeconds);
-        waterShader.setFloat("uExtent", settings.water.extent);
-        waterShader.setFloat("uNearMeshFocus", settings.water.nearMeshFocus);
-        waterShader.setFloat("uGridResolution", static_cast<float>(
-            settings.water.quality == WaterQuality::Low
-                ? water::lowGridResolution : water::gridResolution));
-        waterShader.setFloat("uLevel", settings.water.level);
-        waterShader.setFloat("uSpeed", settings.water.speed);
-        waterShader.setFloat("uSteepness", settings.water.steepness);
-        waterShader.setFloat("uFoamStrength", settings.water.foamStrength);
-        waterShader.setFloat("uRoughness", settings.water.roughness);
-        waterShader.setFloat("uReflectionStrength", settings.water.reflectionStrength);
-        waterShader.setFloat("uRippleStrength", settings.water.rippleStrength);
-        waterShader.setFloat("uSunGlintStrength", settings.water.sunGlintStrength);
-        waterShader.setFloat("uDeepWaterStrength", settings.water.deepWaterStrength);
-        waterShader.setBool("uSurfaceOptics", settings.water.surfaceOptics);
-        waterShader.setFloat("uCameraSurfaceHeight", cameraSurfaceHeight);
-        waterShader.setFloat("uWaveDiversity", settings.water.waveDiversity);
-        const auto waves = water::components(settings.water);
-        waterShader.setVec4Array("uWaves[0]", waves.data(), waves.size());
-        waterShader.setInt("uWaveCount", water::activeComponentCount(settings.water));
+        waterRenderer_->renderFrame({*renderTarget_,camera,settings,width,height,settings.water.timeSeconds,
+            fullscreenVertexArray_,nullptr,&waterShader});
+        waterShader.setFloat("uCameraSurfaceHeight",cameraSurfaceHeight);
         waterShader.setBool("uMotionHistoryValid", previousWaterValid_
             && !resetTemporalHistory
             && std::abs(settings.water.timeSeconds - previousWaterTime_) < 0.2f);
@@ -888,7 +874,6 @@ shader_->setMat4("uView", view);
                 && settings.water.cloudReflectionStrength > 0.0f
                 && settings.atmosphere.cloudsEnabled && cloudLayer_->lastFrameActive();
             waterShader.setBool("uCloudReflectionEnabled", reflectCloud);
-            waterShader.setFloat("uCloudReflectionStrength", settings.water.cloudReflectionStrength);
             glActiveTexture(GL_TEXTURE7);
             glBindTexture(GL_TEXTURE_2D, reflectCloud ? cloudLayer_->radianceTexture() : 0U);
             waterShader.setFloat("uInverseViewportWidth", 1.0f / static_cast<float>(width));
@@ -897,7 +882,6 @@ shader_->setMat4("uView", view);
             waterShader.setFloat("uCameraFarPlane", camera.farPlane());
             waterShader.setMat4("uInverseCurrentViewProjection",
                 glm::inverse(currentViewProjection));
-            waterShader.setBool("uHighQuality", settings.water.quality == WaterQuality::High);
             if (settings.water.surfaceOptics) environmentMap_->bindWaterPrefiltered(0U);
             else environmentMap_->bindPrefiltered(0U);
             environmentMap_->bindIrradiance(1U);
@@ -1818,7 +1802,8 @@ deferredLightingShader_->setVec3("uCameraPosition", camera.position());
 bool Renderer::hasRenderPluginInstance(const std::string& id) const {
     return id == iris::enscapePluginId ? enscapeCubeRenderer_ != nullptr
         : id == iris::postProcessPluginId ? postProcessor_ != nullptr
-        : id == iris::nprPluginId && nprRenderer_ != nullptr;
+        : id == iris::nprPluginId ? nprRenderer_ != nullptr
+        : id == iris::waterPluginId && waterRenderer_ != nullptr;
 }
 
 unsigned int Renderer::colorTexture() const {
@@ -1894,7 +1879,7 @@ bool Renderer::rebuildPluginResources(const std::string& id, const RendererSetti
     try {
         if (!iris::pluginEnabled(settings.renderPlugins, id)) throw std::runtime_error("Plugin disabled: " + id);
         auto* owner = id == iris::enscapePluginId ? &enscapeCubeRenderer_ : id == iris::postProcessPluginId ? &postProcessor_
-            : id == iris::nprPluginId ? &nprRenderer_ : nullptr;
+            : id == iris::nprPluginId ? &nprRenderer_ : id == iris::waterPluginId ? &waterRenderer_ : nullptr;
         if (!owner) throw std::runtime_error("Unknown plugin: " + id);
         auto candidate = iris::builtinRenderPlugins().prepareReplacement(id, {iris::openGlFullscreenService,iris::openGlShadingService}, shaderDirectory_,
             settings, std::max(renderTarget_->width(), 1), std::max(renderTarget_->height(), 1));

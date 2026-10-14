@@ -8,6 +8,7 @@ const char* pluginName(const std::string& id) {
     if (id == enscapePluginId) return EditorUi::chinese ? "Enscape 场景" : "Enscape scene";
     if (id == postProcessPluginId) return EditorUi::chinese ? "后期处理" : "Post processing";
     if (id == nprPluginId) return EditorUi::chinese ? "NPR 风格化" : "NPR stylized";
+    if (id == waterPluginId) return EditorUi::chinese ? "原生海面" : "Native water";
     return id.c_str();
 }
 void pluginIcon() {
@@ -33,7 +34,8 @@ std::optional<EditorCommand> drawRenderPluginPanel(const RenderPluginRegistry& r
         ImGui::PushID(descriptor.id.c_str());
         ImGui::Separator();
         const bool available = registry.contains(descriptor.id);
-        const bool needed = required == descriptor.id || (settings && descriptor.id == nprPluginId && nprRequired(*settings));
+        const bool needed = required == descriptor.id || (settings && ((descriptor.id == nprPluginId && nprRequired(*settings))
+            || (descriptor.id == waterPluginId && waterRequired(*settings))));
         bool enabled = available && pluginEnabled(config, descriptor.id);
         pluginIcon();
         ImGui::BeginDisabled(!available || needed);
@@ -78,7 +80,8 @@ std::optional<EditorCommand> drawRenderPluginSettings(const RenderPluginRegistry
         ImGui::PushID(descriptor.id.c_str());
         const bool active = descriptor.id == enscapePluginId ? settings.enscapeCubeShaderEnabled
             : descriptor.id == postProcessPluginId ? !settings.enscapeCubeShaderEnabled
-            : descriptor.id == nprPluginId ? nprRequired(settings) : true;
+            : descriptor.id == nprPluginId ? nprRequired(settings)
+            : descriptor.id == waterPluginId ? waterRequired(settings) : true;
         if (ImGui::CollapsingHeader(pluginName(descriptor.id), active ? ImGuiTreeNodeFlags_DefaultOpen : ImGuiTreeNodeFlags_None)) {
             const auto values = descriptor.parameters ? descriptor.parameters->capture(settings) : std::vector<ModuleParameterOverride>{};
             for (const auto& entry : values) {

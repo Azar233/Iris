@@ -93,6 +93,8 @@ private:
     bool editorInteractionRegression();
     bool pluginActivationRegression();
     bool pluginParameterRegression();
+    bool waterPluginRegression();
+    void interactWaterParameters(const std::vector<iris::PluginControlBounds>& controls);
     bool nprRegression();
     void interactNprParameters(const std::vector<iris::PluginControlBounds>& controls);
     bool shaderTransactionAcceptance();
@@ -308,6 +310,9 @@ private:
     std::array<char, 4096> shaderMaterialPathBuffer_{};
     SceneEntityId shaderMaterialInspectorEntity_{invalidSceneEntityId};
     int shaderMaterialWorkspacePhase_{0};
+    int waterUiPhase_{0};
+    int waterUiFrames_{0};
+    float waterUiInitialAmplitude_{0.f};
     int nprUiPhase_{0};
     int nprUiFrames_{0};
     float nprUiInitialValue_{0.0f};

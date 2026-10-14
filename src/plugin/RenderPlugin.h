@@ -19,6 +19,7 @@ inline constexpr int renderPluginApiVersion = 2;
 inline constexpr const char* enscapePluginId = "iris.enscape-study";
 inline constexpr const char* postProcessPluginId = "iris.postprocess";
 inline constexpr const char* nprPluginId = "iris.npr";
+inline constexpr const char* waterPluginId = "iris.water";
 inline constexpr const char* openGlFullscreenService = "opengl.fullscreen.v1";
 inline constexpr const char* openGlShadingService = "opengl.material-shading.v1";
 

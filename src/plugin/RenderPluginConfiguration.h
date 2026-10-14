@@ -31,6 +31,7 @@ inline bool validPluginConfigurationShape(const RenderPluginConfiguration& confi
 }
 class RenderPluginRegistry;
 bool nprRequired(const RendererSettings& settings);
+bool waterRequired(const RendererSettings& settings);
 bool validateRendererPluginConfiguration(const RenderPluginRegistry& registry,
     const RendererSettings& settings, std::string& error);
 bool validatePluginConfiguration(const RenderPluginRegistry& registry,

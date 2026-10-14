@@ -2,9 +2,9 @@
   "version": 2,
   "cmakeMinimumRequired": {"major": 3, "minor": 20, "patch": 0},
   "configurePresets": [
-    {"name": "msvc", "displayName": "Iris MSVC Release", "generator": "Visual Studio 17 2022", "architecture": "x64", "binaryDir": "${sourceDir}/build-ci-msvc", "cacheVariables": {"BUILD_TESTING": "ON", "IRIS_ENABLE_ENSCAPE_PLUGIN": "ON", "IRIS_ENABLE_POSTPROCESS_PLUGIN": "ON", "IRIS_ENABLE_NPR_PLUGIN": "ON"}},
-    {"name": "gcc", "displayName": "Iris GCC Release", "generator": "MinGW Makefiles", "binaryDir": "${sourceDir}/build-mingw", "cacheVariables": {"CMAKE_BUILD_TYPE": "Release", "BUILD_TESTING": "ON", "IRIS_ENABLE_ENSCAPE_PLUGIN": "ON", "IRIS_ENABLE_POSTPROCESS_PLUGIN": "ON", "IRIS_ENABLE_NPR_PLUGIN": "ON"}},
-    {"name": "plugins-off", "inherits": "msvc", "displayName": "Iris optional plugins OFF", "binaryDir": "${sourceDir}/build-stored-off", "cacheVariables": {"IRIS_ENABLE_ENSCAPE_PLUGIN": "OFF", "IRIS_ENABLE_POSTPROCESS_PLUGIN": "OFF", "IRIS_ENABLE_NPR_PLUGIN": "OFF"}}
+    {"name": "msvc", "displayName": "Iris MSVC Release", "generator": "Visual Studio 17 2022", "architecture": "x64", "binaryDir": "${sourceDir}/build-ci-msvc", "cacheVariables": {"BUILD_TESTING": "ON", "IRIS_ENABLE_ENSCAPE_PLUGIN": "ON", "IRIS_ENABLE_POSTPROCESS_PLUGIN": "ON", "IRIS_ENABLE_NPR_PLUGIN": "ON", "IRIS_ENABLE_WATER_PLUGIN": "ON"}},
+    {"name": "gcc", "displayName": "Iris GCC Release", "generator": "MinGW Makefiles", "binaryDir": "${sourceDir}/build-mingw", "cacheVariables": {"CMAKE_BUILD_TYPE": "Release", "BUILD_TESTING": "ON", "IRIS_ENABLE_ENSCAPE_PLUGIN": "ON", "IRIS_ENABLE_POSTPROCESS_PLUGIN": "ON", "IRIS_ENABLE_NPR_PLUGIN": "ON", "IRIS_ENABLE_WATER_PLUGIN": "ON"}},
+    {"name": "plugins-off", "inherits": "msvc", "displayName": "Iris optional plugins OFF", "binaryDir": "${sourceDir}/build-stored-off", "cacheVariables": {"IRIS_ENABLE_ENSCAPE_PLUGIN": "OFF", "IRIS_ENABLE_POSTPROCESS_PLUGIN": "OFF", "IRIS_ENABLE_NPR_PLUGIN": "OFF", "IRIS_ENABLE_WATER_PLUGIN": "OFF"}}
   ],
   "buildPresets": [
     {"name": "msvc", "configurePreset": "msvc", "configuration": "Release"},
