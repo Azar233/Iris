@@ -112,3 +112,7 @@ A4-N1 先迁移 NPR 的公开参数与 Forward/Deferred 着色绑定边界。开
 ## A4-N2 下一工作包（范围冻结）
 
 迁移 NPR 的 Outline/Dither/Height fog/Color grading 设置适配与公开 schema。先调查 Renderer 中派生 PostProcessSettings 的 NPR 字段与现有 PostProcess 参数绑定，复用共享 RendererSettings 和 Frame/候选事务；保持后处理 Shader、FBO、纹理、历史和 Pass 调度由 PostProcess 拥有，不开发新效果，不同时迁移云水/PBR，不增加通用反射或 Render Graph。验收包括两条路径、Preset/Debug/尺寸/TAA/透明边界的同输入图，GUI/Scene/Job/失败保留，能力依赖与 ON/OFF、资源/成本预算及文档。当前只冻结范围，未实施。
+
+## 2026-10-14 插件界面整理
+
+插件页改为图标、名称与启用开关，参数与资源重建按插件分组移至渲染设置；关闭隐藏参数但保留值，当前管线必需项保持锁定。双编译器应用构建、MSVC Focused plugins 5/5、GCC 控件 1/1、两尺寸真实参数和资源恢复、独立 schema GPU UI 及中文/英文截图通过。无 Shader、持久化/API 或基线修改；未打包。A4-N1 的 CI 38432069907 已核对 completed/success，head c18433c；下一主线为 A4-N2。

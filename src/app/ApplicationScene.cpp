@@ -4131,7 +4131,7 @@ bool Application::shaderTransactionAcceptance() {
         if(std::getenv("MYRENDERER_PLUGIN_RESOURCE_UI_TEST")) {
             write(blur,"#version 330 core\ninvalid candidate resource\n");
             check(!renderer_->rebuildPluginResources(iris::postProcessPluginId,settings),"Resource UI failure fixture accepted");
-            focusPluginsTab_=true;
+            focusRendererTab_=true;
         }
         std::cout<<"Real plugin resource prepare / retained pixels-history / recovery: PASS\n";
         if (std::getenv("MYRENDERER_SHADER_TRANSACTION_UI_RETRY")) {

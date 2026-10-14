@@ -112,8 +112,7 @@ int main() {
             ImGui::SetNextWindowPos(ImVec2(12, 12)); ImGui::SetNextWindowSize(ImVec2(260, static_cast<float>(height-24)));
             ImGui::Begin("Registered plugin parameters", nullptr, ImGuiWindowFlags_NoSavedSettings);
             iris::RenderPluginRegistry missing;
-            auto command = iris::drawRenderPluginPanel(available ? registry : missing, descriptors, settings.renderPlugins,
-                schema->pluginId, nullptr, &settings, &controls);
+            auto command = iris::drawRenderPluginSettings(available ? registry : missing, descriptors, settings, &controls);
             ImGui::TextWrapped("%s", status.c_str());
             ImGui::End(); ImGui::Render(); target.unbind();
             glViewport(0, 0, framebufferWidth, framebufferHeight); glClearColor(0.08f, 0.09f, 0.1f, 1);
@@ -150,9 +149,7 @@ int main() {
             status=error; ui(); screenshot("error-"+std::to_string(width)+".png");
             status="Scene roundtrip and GPU output retained"; ui(); screenshot("stored-"+std::to_string(width)+".png");
             ui(false); ui(false); screenshot("unavailable-"+std::to_string(width)+".png");
-            const auto unavailable=controls.front();
-            io.AddMousePosEvent(unavailable.x,unavailable.y); io.AddMouseButtonEvent(0,true); ui(false);
-            io.AddMouseButtonEvent(0,false); require(!ui(false),"Unavailable stored control was interactive");
+            require(controls.empty(), "Unavailable plugin settings remained visible");
             edit.value.boolean=true;
             require(iris::setPluginParameter(registry,settings,schema->pluginId,edit,history,error)
                 && pixels()==baseline,"Restoring schema default changed GPU output");

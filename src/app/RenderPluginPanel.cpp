@@ -1,43 +1,86 @@
 #include "app/RenderPluginPanel.h"
 #include "app/EditorUi.h"
+#include "render/Renderer.h"
 #include <algorithm>
 namespace iris {
+namespace {
+const char* pluginName(const std::string& id) {
+    if (id == enscapePluginId) return EditorUi::chinese ? "Enscape 场景" : "Enscape scene";
+    if (id == postProcessPluginId) return EditorUi::chinese ? "后期处理" : "Post processing";
+    if (id == nprPluginId) return EditorUi::chinese ? "NPR 风格化" : "NPR stylized";
+    return id.c_str();
+}
+void pluginIcon() {
+    const float size = ImGui::GetFrameHeight();
+    const auto pos = ImGui::GetCursorScreenPos();
+    const ImU32 color = ImGui::GetColorU32(ImGuiCol_TextDisabled);
+    auto* draw = ImGui::GetWindowDrawList();
+    draw->AddRect(ImVec2(pos.x+4, pos.y+5), ImVec2(pos.x+size-4, pos.y+size-5), color, 3.0f);
+    draw->AddLine(ImVec2(pos.x+size*.4f, pos.y+2), ImVec2(pos.x+size*.4f, pos.y+5), color);
+    draw->AddLine(ImVec2(pos.x+size*.6f, pos.y+2), ImVec2(pos.x+size*.6f, pos.y+5), color);
+    ImGui::Dummy(ImVec2(size, size));
+    ImGui::SameLine();
+}
+}
 std::optional<EditorCommand> drawRenderPluginPanel(const RenderPluginRegistry& registry,
     const std::vector<RenderPluginDescriptor>& catalog,const RenderPluginConfiguration& config,
     const std::string& required,std::vector<PluginControlBounds>* controls,
-    const RendererSettings* settings, std::vector<PluginControlBounds>* parameterControls,
-    std::vector<PluginControlBounds>* resourceControls){
+    const RendererSettings* settings) {
     std::optional<EditorCommand> change;
-    if(controls)controls->clear();
-    if(parameterControls)parameterControls->clear();
-    if(resourceControls)resourceControls->clear();
-    ImGui::TextWrapped("%s",EditorUi::chinese?"当前场景插件配置，随场景保存。":"Plugin configuration is saved with this scene.");
-    for(const auto& descriptor:catalog){
-        ImGui::PushID(descriptor.id.c_str());ImGui::Separator();
-        ImGui::TextWrapped("%s",descriptor.id.c_str());
-        const bool available=registry.contains(descriptor.id);
-        const bool needed=required==descriptor.id || (settings && descriptor.id==nprPluginId && nprRequired(*settings));
-        bool enabled=available&&pluginEnabled(config,descriptor.id);
-        ImGui::TextWrapped("%s",!available?(EditorUi::chinese?"未编译，无法启用":"Not built / unavailable"):
-            needed?(EditorUi::chinese?"当前管线正在使用":"In use by current pipeline"):
-            (EditorUi::chinese?"当前管线未使用":"Not used by current pipeline"));
-        ImGui::BeginDisabled(!available||needed);
-        const bool toggled=EditorUi::propertyRow(EditorUi::chinese?"启用":"Enabled",[&](const char* id){
-            const bool clicked=ImGui::Checkbox(id,&enabled);
-            if(controls){const auto a=ImGui::GetItemRectMin();const auto b=ImGui::GetItemRectMax();controls->push_back({descriptor.id,(a.x+b.x)*.5f,(a.y+b.y)*.5f});}
+    if (controls) controls->clear();
+    ImGui::TextWrapped("%s", EditorUi::chinese ? "启用后在渲染设置中调整参数" : "Configure enabled plugins in Render settings");
+    for (const auto& descriptor : catalog) {
+        ImGui::PushID(descriptor.id.c_str());
+        ImGui::Separator();
+        const bool available = registry.contains(descriptor.id);
+        const bool needed = required == descriptor.id || (settings && descriptor.id == nprPluginId && nprRequired(*settings));
+        bool enabled = available && pluginEnabled(config, descriptor.id);
+        pluginIcon();
+        ImGui::BeginDisabled(!available || needed);
+        const bool toggled = EditorUi::propertyRow(pluginName(descriptor.id), [&](const char* id) {
+            const bool clicked = ImGui::Checkbox(id, &enabled);
+            if (controls) {
+                const auto a = ImGui::GetItemRectMin(), b = ImGui::GetItemRectMax();
+                controls->push_back({descriptor.id, (a.x+b.x)*.5f, (a.y+b.y)*.5f});
+            }
             return clicked;
         });
-        if(toggled){
-            change=EditorCommand{EditorCommandType::SetRenderPluginEnabled};change->text=descriptor.id;change->flag=enabled;
-        }
         ImGui::EndDisabled();
-        if(needed)ImGui::TextWrapped("%s",EditorUi::chinese?"此项为当前管线必需。切换管线后可停用。":"Required by this pipeline. Switch pipelines before disabling.");
-        ImGui::TextWrapped("API %d | %s",descriptor.apiVersion,descriptor.license.c_str());
-        for(const auto& service:descriptor.requiredServices)ImGui::TextWrapped("%s: %s",EditorUi::chinese?"依赖":"Requires",service.c_str());
-        if (settings && descriptor.parameters && ImGui::CollapsingHeader("Parameters",
-                needed ? ImGuiTreeNodeFlags_DefaultOpen : ImGuiTreeNodeFlags_None)) {
-            ImGui::BeginDisabled(!available || !enabled);
-            const auto values = descriptor.parameters->capture(*settings);
+        if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
+            ImGui::BeginTooltip();
+            ImGui::TextUnformatted(descriptor.id.c_str());
+            if (!available) ImGui::TextUnformatted(EditorUi::chinese ? "未编译，无法启用" : "Not built / unavailable");
+            else if (needed) ImGui::TextUnformatted(EditorUi::chinese ? "当前管线必需，切换管线后可停用" : "Required by this pipeline; switch pipelines before disabling");
+            ImGui::Text("API %d | %s", descriptor.apiVersion, descriptor.license.c_str());
+            for (const auto& service : descriptor.requiredServices) ImGui::Text("%s", service.c_str());
+            ImGui::EndTooltip();
+        }
+        if (toggled) {
+            change = EditorCommand{EditorCommandType::SetRenderPluginEnabled};
+            change->text = descriptor.id; change->flag = enabled;
+        }
+        if (!available || needed) {
+            ImGui::TextDisabled("%s", !available ? (EditorUi::chinese ? "不可用" : "Unavailable")
+                : (EditorUi::chinese ? "当前管线必需" : "Required by pipeline"));
+        }
+        ImGui::PopID();
+    }
+    return change;
+}
+std::optional<EditorCommand> drawRenderPluginSettings(const RenderPluginRegistry& registry,
+    const std::vector<RenderPluginDescriptor>& catalog, const RendererSettings& settings,
+    std::vector<PluginControlBounds>* parameterControls, std::vector<PluginControlBounds>* resourceControls) {
+    std::optional<EditorCommand> change;
+    if (parameterControls) parameterControls->clear();
+    if (resourceControls) resourceControls->clear();
+    for (const auto& descriptor : catalog) {
+        if (!registry.contains(descriptor.id) || !pluginEnabled(settings.renderPlugins, descriptor.id)) continue;
+        ImGui::PushID(descriptor.id.c_str());
+        const bool active = descriptor.id == enscapePluginId ? settings.enscapeCubeShaderEnabled
+            : descriptor.id == postProcessPluginId ? !settings.enscapeCubeShaderEnabled
+            : descriptor.id == nprPluginId ? nprRequired(settings) : true;
+        if (ImGui::CollapsingHeader(pluginName(descriptor.id), active ? ImGuiTreeNodeFlags_DefaultOpen : ImGuiTreeNodeFlags_None)) {
+            const auto values = descriptor.parameters ? descriptor.parameters->capture(settings) : std::vector<ModuleParameterOverride>{};
             for (const auto& entry : values) {
                 const auto* metadata = descriptor.parameters->metadata.descriptor(entry.id);
                 if (!metadata) continue;
@@ -91,18 +134,15 @@ std::optional<EditorCommand> drawRenderPluginPanel(const RenderPluginRegistry& r
                 }
                 ImGui::PopID();
             }
-            ImGui::EndDisabled();
+            if (ImGui::Button(EditorUi::chinese ? "重建插件资源" : "Rebuild plugin resources")) {
+                change = EditorCommand{EditorCommandType::RebuildRenderPluginResources};
+                change->text = descriptor.id;
+            }
+            if (resourceControls) {
+                const auto a=ImGui::GetItemRectMin(), b=ImGui::GetItemRectMax();
+                resourceControls->push_back({descriptor.id,(a.x+b.x)*0.5f,(a.y+b.y)*0.5f});
+            }
         }
-        ImGui::BeginDisabled(!available || !enabled);
-        if (ImGui::Button(EditorUi::chinese ? "重建插件资源" : "Rebuild plugin resources")) {
-            change = EditorCommand{EditorCommandType::RebuildRenderPluginResources};
-            change->text = descriptor.id;
-        }
-        if (resourceControls) {
-            const auto a=ImGui::GetItemRectMin(), b=ImGui::GetItemRectMax();
-            resourceControls->push_back({descriptor.id,(a.x+b.x)*0.5f,(a.y+b.y)*0.5f});
-        }
-        ImGui::EndDisabled();
         ImGui::PopID();
     }
     return change;

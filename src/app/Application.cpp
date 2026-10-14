@@ -1154,7 +1154,7 @@ int Application::run(const std::filesystem::path& initialModel) {
     if(const char* directory=std::getenv("IRIS_SHADER_PACKAGE_RELOAD_ACCEPTANCE_DIRECTORY"))runShaderPackageReloadAcceptance(std::filesystem::u8path(directory));
     if(const char* directory=std::getenv("IRIS_SHADER_HISTORY_ACCEPTANCE_DIRECTORY"))runShaderHistoryAcceptance(std::filesystem::u8path(directory));
     if(const char* directory=std::getenv("IRIS_SHADER_MATERIAL_WORKSPACE_DIRECTORY"))runShaderMaterialWorkspaceAcceptance(std::filesystem::u8path(directory));
-    if(std::getenv("IRIS_NPR_ACCEPTANCE_DIRECTORY"))focusPluginsTab_=true;
+    if(std::getenv("IRIS_NPR_ACCEPTANCE_DIRECTORY"))focusRendererTab_=true;
     if(std::getenv("IRIS_NPR_UI_TEST"))nprUiInitialRim_=rendererSettings_.stylizedRimIntensity;
     if(const char* directory=std::getenv("IRIS_SHADER_MATERIAL_ACCEPTANCE_DIRECTORY"))runShaderMaterialAcceptance(std::filesystem::u8path(directory));
     if(const char* directory=std::getenv("IRIS_SHADER_SEQUENCE_ACCEPTANCE_DIRECTORY"))runShaderSequenceAcceptance(std::filesystem::u8path(directory));
@@ -2121,12 +2121,27 @@ void Application::drawInspectorPanel() {
 
         const bool showPlugins=focusPluginsTab_;focusPluginsTab_=false;
         if(ImGui::BeginTabItem(EditorUi::chinese?"插件###RenderPlugins":"Plugins###RenderPlugins",nullptr,showPlugins?ImGuiTabItemFlags_SetSelected:0)){
-            std::vector<iris::PluginControlBounds> resourceControls;
-            std::vector<iris::PluginControlBounds> nprControls;
-            const bool resourceUiTest=std::getenv("MYRENDERER_PLUGIN_RESOURCE_UI_TEST") != nullptr;
-            if(auto change=iris::drawRenderPluginPanel(iris::builtinRenderPlugins(),iris::builtinRenderPluginCatalog(),
+            if (auto change=iris::drawRenderPluginPanel(iris::builtinRenderPlugins(),iris::builtinRenderPluginCatalog(),
                 rendererSettings_.renderPlugins,rendererSettings_.enscapeCubeShaderEnabled?iris::enscapePluginId:iris::postProcessPluginId,
-                nullptr, resourceUiTest ? nullptr : &rendererSettings_, std::getenv("IRIS_NPR_UI_TEST")?&nprControls:nullptr, &resourceControls))editorSession_.request(*change);
+                nullptr, &rendererSettings_)) editorSession_.request(*change);
+            ImGui::EndTabItem();
+        }
+
+        const bool showRenderer = focusRendererTab_;
+        focusRendererTab_ = false;
+        if (ImGui::BeginTabItem(
+                EditorUi::label("Renderer"),
+                nullptr,
+                showRenderer ? ImGuiTabItemFlags_SetSelected : 0
+            )) {
+            if (rendererSettings_.enscapeCubeShaderEnabled && pendingGlslControlsScrollFrames_ > 0) {
+                ImGui::SetScrollY(0.0f);
+                --pendingGlslControlsScrollFrames_;
+            }
+            std::vector<iris::PluginControlBounds> resourceControls, nprControls;
+            const bool resourceUiTest=std::getenv("MYRENDERER_PLUGIN_RESOURCE_UI_TEST") != nullptr;
+            if (auto change=iris::drawRenderPluginSettings(iris::builtinRenderPlugins(),iris::builtinRenderPluginCatalog(),
+                rendererSettings_, std::getenv("IRIS_NPR_UI_TEST")?&nprControls:nullptr, &resourceControls)) editorSession_.request(*change);
             interactNprParameters(nprControls);
             if (renderer_ && !renderer_->pluginResourceStatus().empty())
                 ImGui::TextWrapped("%s", renderer_->pluginResourceStatus().c_str());
@@ -2140,16 +2155,6 @@ void Application::drawInspectorPanel() {
                     }
                 } else { io.AddMouseButtonEvent(0,false); ++shaderRetryInteractionPhase_; }
             }
-            ImGui::EndTabItem();
-        }
-
-        const bool showRenderer = focusRendererTab_;
-        focusRendererTab_ = false;
-        if (ImGui::BeginTabItem(
-                EditorUi::label("Renderer"),
-                nullptr,
-                showRenderer ? ImGuiTabItemFlags_SetSelected : 0
-            )) {
             if (!shaderTransactionSources_.empty()) ImGui::SetNextItemOpen(false, ImGuiCond_Always);
             if (EditorUi::section("Stage", true)) {
                 EditorUi::Checkbox(EditorUi::label("Ground receiver"), &showGroundPlane_);
@@ -2264,39 +2269,6 @@ void Application::drawInspectorPanel() {
                         )) {
                         applyStylizedPreset(static_cast<StylizedPreset>(stylizedPreset));
                     }
-                    EditorUi::SliderInt(
-                        "Lighting bands", &rendererSettings_.stylizedBandCount, 2, 8
-                    );
-                    EditorUi::SliderFloat(
-                        "Band softness", &rendererSettings_.stylizedBandSoftness,
-                        0.0f, 0.25f, "%.3f"
-                    );
-                    EditorUi::SliderFloat(
-                        "Specular size", &rendererSettings_.stylizedSpecularSize,
-                        0.02f, 0.8f, "%.2f"
-                    );
-                    EditorUi::SliderFloat(
-                        "Specular softness", &rendererSettings_.stylizedSpecularSoftness,
-                        0.0f, 0.2f, "%.3f"
-                    );
-                    EditorUi::SliderFloat(
-                        "Rim width", &rendererSettings_.stylizedRimWidth,
-                        0.02f, 0.9f, "%.2f"
-                    );
-                    EditorUi::SliderFloat(
-                        "Rim softness", &rendererSettings_.stylizedRimSoftness,
-                        0.0f, 0.3f, "%.3f"
-                    );
-                    EditorUi::SliderFloat(
-                        "Rim intensity", &rendererSettings_.stylizedRimIntensity,
-                        0.0f, 3.0f, "%.2f"
-                    );
-                    EditorUi::ColorEdit3(
-                        "Shadow tint", &rendererSettings_.stylizedShadowTint.x
-                    );
-                    EditorUi::ColorEdit3(
-                        "Rim color", &rendererSettings_.stylizedRimColor.x
-                    );
                     EditorUi::Checkbox(
                         "Screen-space outline",
                         &rendererSettings_.stylizedOutlineEnabled
@@ -2474,40 +2446,6 @@ void Application::drawInspectorPanel() {
             }
             if (!shaderTransactionSources_.empty()) ImGui::SetNextItemOpen(false, ImGuiCond_Always);
             if (EditorUi::section("Lighting & environment", true)) {
-            if (rendererSettings_.enscapeCubeShaderEnabled) {
-                // Tab activation and dock layout settle over the first few frames.
-                if (pendingGlslControlsScrollFrames_ > 0) {
-                    ImGui::SetScrollHereY(0.0f);
-                    --pendingGlslControlsScrollFrames_;
-                }
-                auto& ocean = rendererSettings_.enscapeCube;
-                ImGui::SeparatorText(EditorUi::chinese ? "GLSL 海面参数" : "GLSL ocean controls");
-                // Keep compatibility sliders readable without per-column clipping.
-                const auto oceanSlider = [](const char* name, float* value, float low, float high, const char* format) {
-                    ImGui::PushID(name);
-                    ImGui::TextWrapped("%s", EditorUi::label(name));
-                    ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x);
-                    const bool edited = ImGui::SliderFloat("##OceanValue", value, low, high, format);
-                    EditorUi::tooltip(name); ImGui::PopID(); return edited;
-                };
-                bool changed = EditorUi::Checkbox(EditorUi::chinese ? "显示研究方块" : "Show study cube", &ocean.cubeEnabled);
-                changed |= EditorUi::Checkbox(EditorUi::chinese ? "稳定反射 / 减少噪点" : "Stable reflections / reduce noise", &ocean.noiseReduction);
-                changed |= oceanSlider("GLSL wave height", &ocean.waveHeight, 0.05f, 1.5f, "%.2f");
-                changed |= oceanSlider("GLSL wave frequency", &ocean.waveFrequency, 0.04f, 0.5f, "%.3f");
-                changed |= oceanSlider("GLSL choppiness", &ocean.waveChoppiness, 1.0f, 8.0f, "%.2f");
-                changed |= oceanSlider("GLSL wave speed", &ocean.waveSpeed, 0.0f, 2.0f, "%.2f");
-                changed |= oceanSlider("GLSL cloud coverage", &ocean.cloudCoverage, 0.0f, 2.0f, "%.2f");
-                changed |= oceanSlider("GLSL reflection", &ocean.reflectionStrength, 0.0f, 2.0f, "%.2f");
-                changed |= oceanSlider("GLSL underwater clarity", &ocean.underwaterClarity, 0.25f, 3.0f, "%.2f");
-                changed |= oceanSlider("GLSL sun azimuth", &ocean.sunAzimuthDegrees, -180.0f, 180.0f, "%.0f deg");
-                changed |= oceanSlider("GLSL sun elevation", &ocean.sunElevationDegrees, 1.0f, 85.0f, "%.0f deg");
-                changed |= oceanSlider("GLSL bloom", &ocean.bloomStrength, 0.0f, 3.0f, "%.2f");
-                changed |= oceanSlider("GLSL exposure", &ocean.exposure, 0.25f, 3.0f, "%.2f");
-                if (changed) renderer_->invalidateTemporalHistory();
-                ImGui::TextWrapped("%s", EditorUi::chinese
-                    ? "此模式使用 GLSL 内部光照；普通 SSAO 参数不适用。"
-                    : "This mode uses GLSL lighting; regular SSAO controls do not apply.");
-            }
             EditorUi::Checkbox("Metallic-roughness PBR", &rendererSettings_.pbrEnabled);
             EditorUi::Checkbox("Image-based lighting", &rendererSettings_.iblEnabled);
             EditorUi::Checkbox(EditorUi::label("Skybox"), &rendererSettings_.skyboxEnabled);
@@ -3084,13 +3022,6 @@ void Application::drawInspectorPanel() {
                 temporalDebugViews,
                 3
                 );
-                ImGui::EndDisabled();
-                EditorUi::Checkbox("ACES tone mapping", &rendererSettings_.toneMapping);
-                EditorUi::Checkbox("Bloom", &rendererSettings_.bloom);
-                EditorUi::SliderFloat("Exposure", &rendererSettings_.exposure, 0.1f, 4.0f, "%.2f", ImGuiSliderFlags_Logarithmic);
-                ImGui::BeginDisabled(!rendererSettings_.bloom);
-                EditorUi::SliderFloat("Bloom threshold", &rendererSettings_.bloomThreshold, 0.1f, 4.0f, "%.2f");
-                EditorUi::SliderFloat("Bloom intensity", &rendererSettings_.bloomIntensity, 0.0f, 1.0f, "%.2f");
                 ImGui::EndDisabled();
             }
 

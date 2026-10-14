@@ -51,8 +51,7 @@ int main(){
         const auto parameterFrame = [&]() -> std::optional<EditorCommand> {
             ImGui::NewFrame(); ImGui::SetNextWindowPos(ImVec2(10,10)); ImGui::SetNextWindowSize(ImVec2(260,650));
             ImGui::Begin("Parameters",nullptr,ImGuiWindowFlags_NoSavedSettings);
-            auto change = iris::drawRenderPluginPanel(parameterRegistry, parameterCatalog, settings.renderPlugins,
-                "native", nullptr, &settings, &parameters);
+            auto change = iris::drawRenderPluginSettings(parameterRegistry, parameterCatalog, settings, &parameters);
             ImGui::End(); ImGui::Render(); return change;
         };
         parameterFrame(); parameterFrame();
@@ -76,20 +75,18 @@ int main(){
         require(command && command->pluginParameterId == "exposure" && command->moduleParameter.number > 1.0f,
             "Real generated Float drag did not emit a value change");
         io.AddMouseButtonEvent(0,false); parameterFrame();
-        // Not-built parameters remain visible but disabled, including their label.
-        parameterCatalog[1].parameters = &schema;
+        require(iris::setPluginEnabled(parameterRegistry, settings.renderPlugins, "optional", "native", false, error),
+            "Disabling optional settings fixture failed");
+        parameterFrame(); require(parameters.empty(), "Disabled plugin settings remained visible");
+        require(iris::setPluginEnabled(parameterRegistry, settings.renderPlugins, "optional", "native", true, error),
+            "Reenabling settings fixture failed");
+        parameterFrame(); require(parameters.size() == 5U && !settings.toneMapping,
+            "Reenabling did not restore controls and retain values");
         iris::RenderPluginRegistry missingRegistry;
-        const auto unavailableFrame = [&]() -> std::optional<EditorCommand> {
-            ImGui::NewFrame(); ImGui::SetNextWindowPos(ImVec2(10,10)); ImGui::SetNextWindowSize(ImVec2(260,650));
-            ImGui::Begin("Parameters",nullptr,ImGuiWindowFlags_NoSavedSettings);
-            auto change = iris::drawRenderPluginPanel(missingRegistry, parameterCatalog, settings.renderPlugins,
-                "native", nullptr, &settings, &parameters);
-            ImGui::End(); ImGui::Render(); return change;
-        };
-        unavailableFrame();
-        const auto unavailable = parameters.front();
-        io.AddMousePosEvent(unavailable.x, unavailable.y); io.AddMouseButtonEvent(0,true); unavailableFrame();
-        io.AddMouseButtonEvent(0,false); require(!unavailableFrame(), "Unavailable plugin parameter was interactive");
+        ImGui::NewFrame(); ImGui::Begin("Missing", nullptr, ImGuiWindowFlags_NoSavedSettings);
+        require(!iris::drawRenderPluginSettings(missingRegistry, parameterCatalog, settings, &parameters)
+            && parameters.empty(), "Unavailable plugin settings remained visible");
+        ImGui::End(); ImGui::Render();
         std::cout<<"Plugin GUI checkbox/locked/unavailable controls: PASS\n";
     }catch(const std::exception& error){std::cerr<<error.what()<<'\n';result=1;}
     ImGui::DestroyContext();return result;
