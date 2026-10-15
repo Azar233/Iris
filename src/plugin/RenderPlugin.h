@@ -7,6 +7,7 @@
 #include <glm/vec3.hpp>
 #include "plugin/RenderPluginContract.h"
 #include "module/ParameterRegistry.h"
+#include "render/ShadowCascade.h"
 
 class Camera;
 class Shader;
@@ -47,6 +48,14 @@ struct WaterLightingInputs {
     float twilightFactor{1.0f};
 };
 
+// Resolved cascade metadata only. Fitting and texture ownership stay in the backend.
+struct WaterShadowInputs {
+    bool shadowsEnabled{false};
+    int cascadeCount{1};
+    std::array<glm::mat4, shadow::maximumCascadeCount> lightViewProjections{};
+    std::array<float, shadow::maximumCascadeCount> cascadeSplits{};
+};
+
 // Borrowed frame inputs. The caller owns the context, target and scheduling.
 // RendererSettings is a compatibility bridge for this first migration, not a
 // frozen public material/plugin schema or a cross-backend GPU ABI.
@@ -55,7 +64,8 @@ struct RenderPluginFrame {
         int width, int height, float timeSeconds, unsigned int fullscreenVertexArray,
         const PostProcessSettings* postProcessSettings = nullptr, Shader* shadingShader = nullptr,
         const WaterFrameInputs* waterInputs = nullptr,
-        const WaterLightingInputs* waterLightingInputs = nullptr);
+        const WaterLightingInputs* waterLightingInputs = nullptr,
+        const WaterShadowInputs* waterShadowInputs = nullptr);
     RenderTarget& target;
     const Camera& camera;
     const RendererSettings& settings;
@@ -71,6 +81,7 @@ struct RenderPluginFrame {
     const WaterFrameInputs* waterInputs;
     // Optional synchronous borrow for the water color program only.
     const WaterLightingInputs* waterLightingInputs;
+    const WaterShadowInputs* waterShadowInputs;
     std::vector<RenderTextureBinding> textures;
     unsigned int texture(const std::string& name) const;
     std::vector<ModuleParameterOverride> parameterValues(const RenderPluginParameterSchema& schema) const;

@@ -49,6 +49,20 @@ void WaterRenderer::renderFrame(const RenderPluginFrame& frame) {
         throw std::invalid_argument("Water requires its borrowed, bound water shader");
     auto& shader=*frame.shadingShader;
     const auto& settings=frame.settings.water;
+    // Validate the entire color packet before writing any uniforms. Motion-only
+    // calls do not consume shadow inputs, including their validation contract.
+    if (frame.waterShadowInputs && frame.shadingShader == forwardShader_.get()) {
+        const auto& shadow=*frame.waterShadowInputs;
+        if(shadow.cascadeCount<1 || shadow.cascadeCount>static_cast<int>(shadow::maximumCascadeCount))
+            throw std::invalid_argument("Water shadow cascade count must be between one and four");
+        for(std::size_t index=0;index<shadow::maximumCascadeCount;++index) {
+            if(!std::isfinite(shadow.cascadeSplits[index]))
+                throw std::invalid_argument("Water shadow splits must be finite");
+            for(int column=0;column<4;++column)for(int row=0;row<4;++row)
+                if(!std::isfinite(shadow.lightViewProjections[index][column][row]))
+                    throw std::invalid_argument("Water shadow matrices must be finite");
+        }
+    }
     // Deferred also uses this program for water color; only its motion subpass
     // uses deferredShader_. Select by the actual borrowed program, not settings.
     if (frame.waterInputs && frame.shadingShader == forwardShader_.get()) {
@@ -75,6 +89,13 @@ void WaterRenderer::renderFrame(const RenderPluginFrame& frame) {
         shader.setFloat("uEnvironmentIntensity",frame.settings.environmentIntensity);
         shader.setFloat("uEnvironmentMaxMip",light.environmentMaxMip);
         shader.setFloat("uTwilightFactor",light.twilightFactor);
+    }
+    if (frame.waterShadowInputs && frame.shadingShader == forwardShader_.get()) {
+        const auto& shadow=*frame.waterShadowInputs;
+        shader.setBool("uShadowsEnabled",shadow.shadowsEnabled);
+        shader.setInt("uShadowCascadeCount",shadow.cascadeCount);
+        shader.setMat4Array("uLightViewProjection[0]",shadow.lightViewProjections.data(),shadow.lightViewProjections.size());
+        shader.setFloatArray("uCascadeSplits[0]",shadow.cascadeSplits.data(),shadow.cascadeSplits.size());
     }
     if (frame.waterInputs) {
         const auto& input=*frame.waterInputs;

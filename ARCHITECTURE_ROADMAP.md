@@ -219,3 +219,11 @@ RenderPluginFrame 末尾增加默认空 WaterLightingInputs，同步借用后端
 下一包冻结为 W2c-2e：四字段 WaterShadowInputs 默认空同步借用，插件仅为实际自有颜色程序适配 shadowsEnabled、cascadeCount、四矩阵、四 splits；旧调用不覆盖，非法直接输入在所有 Uniform 写入前拒绝。后端保持 caster/拟合/填充及阴影纹理、云/环境/折射资源、附件/状态/调度/历史。本次没有实际添加 API 或运行时代码。
 
 完整审计与未执行的下一包验收门槛见本地 docs/a4w2c2d-water-shadow-texture-boundary.md；本次只作源码/路径/合同静态检查，复用并实际查看上一包的说明图，没有新 CPU/GPU/图像/性能成绩或基线修改。A4/W2 父项、P1/M3 保持未完成，无新安装/ZIP；提交/推送/CI 单独记录。
+
+## A4-W2c-2e：水面级联阴影 Uniform 适配（2026-10-15 已验收）
+
+RenderPluginFrame 末尾增加独立默认空 WaterShadowInputs，同步借用实际开关/count/四矩阵/四 splits，插件仅为实际自有颜色程序适配四项 Uniform，兼容 Deferred 颜色。旧 Settings-only/frame-only/lighting-only 调用不覆盖阴影；运动程序不消费。count 越界或任一槽非有限在所有 Uniform 写入前拒绝。后端保留 caster 判定、级联拟合、未使用矩阵重复最后有效槽与 clampedFar 分割填充，其他消费者和水面共享同一数组；纹理比较采样、云影/云反射、八个纹理槽、附件/状态/调度/历史不变。
+
+双编译器 Integration 各 37/37，OFF plugins 5/5/普通场景/含水 Job 66 无帧输出，真实 GPU 四槽/count1…4/旧调用/每套 18 个非法输入无部分写入、运动/状态/资源事务通过；两窗口真实后端历史/GUI-Job、云水集成与 GPU smoke 通过。50 对固定 PNG 精确一致，四组原 CPU P95/Draw/bytes 预算首轮通过，GPU 时间仅诊断。无新验收失败、撤弃测试、阈值/基线修改；不重复无关夜间灯光专项或完整图像套件。
+
+本地记录 docs/a4w2c2e-water-shadow-uniforms.md 与 .local/verification/a4w2c2e。前项 37b208f 的 CI 38670674104 completed/success，head 一致；本项源码和本地验收完成，提交/推送/CI 单独核对。无新安装/ZIP，A4/W2 父项及 P1/M3 未完成。下一入口 W2c-2f：云影 metadata 与纹理同步借用合同调查，先核对同次 metadata、active/cache 与禁用绑定，再冻结实现包。

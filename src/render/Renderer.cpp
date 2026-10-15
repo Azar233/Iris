@@ -710,17 +710,17 @@ void Renderer::render(
         && settings.atmosphere.cloudShadowsEnabled
         && atmosphere::sunDirection(settings.atmosphere).y > 0.02f
         && glm::dot(-lightDirection, atmosphere::sunDirection(settings.atmosphere)) > 0.999f;
+    std::array<glm::mat4, shadow::maximumCascadeCount> cascadeMatrices{};
+    for (std::size_t index = 0U; index < shadow::maximumCascadeCount; ++index) {
+        // Unused layers repeat the last fitted cascade rather than staying identity: a shader that
+        // read one by mistake would then project into a real box instead of a degenerate one, which
+        // is far harder to notice.
+        cascadeMatrices[index] = index < cascadeCount
+            ? cascades[index].lightViewProjection
+            : cascades[cascadeCount - 1U].lightViewProjection;
+    }
     const auto bindCascadeSettings = [&](Shader& targetShader) {
         targetShader.setMat4("uOpticsLightViewProjection", lightViewProjection);
-        std::array<glm::mat4, shadow::maximumCascadeCount> cascadeMatrices{};
-        for (std::size_t index = 0U; index < shadow::maximumCascadeCount; ++index) {
-            // Unused layers repeat the last fitted cascade rather than staying identity: a shader that
-            // read one by mistake would then project into a real box instead of a degenerate one, which
-            // is far harder to notice.
-            cascadeMatrices[index] = index < cascadeCount
-                ? cascades[index].lightViewProjection
-                : cascades[cascadeCount - 1U].lightViewProjection;
-        }
         targetShader.setMat4Array(
             "uLightViewProjection[0]", cascadeMatrices.data(), cascadeMatrices.size()
         );
@@ -825,7 +825,9 @@ shader_->setMat4("uView", view);
     const auto drawWater = [&](bool deferred) {
         if (!settings.water.enabled) return;
         iris::WaterLightingInputs waterLightingInputs;
+        iris::WaterShadowInputs waterShadowInputs;
         if (!deferred) {
+            waterShadowInputs = {objectShadowsActive, static_cast<int>(cascadeCount), cascadeMatrices, cascadeSplits};
             const float solarTwilight = settings.atmosphere.enabled
                 ? 0.03f + 0.97f * std::clamp(
                     (settings.atmosphere.sunElevationDegrees + 8.0f) / 12.0f, 0.0f, 1.0f)
@@ -841,10 +843,9 @@ shader_->setMat4("uView", view);
         Shader& waterShader = *borrowedShader;
         waterShader.use();
         waterRenderer_->renderFrame({*renderTarget_,camera,settings,width,height,settings.water.timeSeconds,
-            fullscreenVertexArray_,nullptr,&waterShader,&waterFrameInputs_,deferred ? nullptr : &waterLightingInputs});
+            fullscreenVertexArray_,nullptr,&waterShader,&waterFrameInputs_,deferred ? nullptr : &waterLightingInputs,
+            deferred ? nullptr : &waterShadowInputs});
         if (!deferred) {
-            waterShader.setBool("uShadowsEnabled", objectShadowsActive);
-            bindCascadeSettings(waterShader);
             cloudShadow_->bind(waterShader, 5U, cloudShadowEnabled);
             waterShader.setInt("uPrefilteredEnvironmentMap", 0);
             waterShader.setInt("uIrradianceMap", 1);
