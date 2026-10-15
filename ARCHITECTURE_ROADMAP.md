@@ -177,3 +177,13 @@ Water 改用独立 Surface stage 和 opengl.indexed-draw.v1，插件选择 High/
 四组 CPU/Draw/活跃资源 bytes 原预算通过。MSVC Forward 初次 CPU P95 3.8884 ms 和首次复测 3.3290 ms 超过原 3.3245 ms 上限，全部保留；随后固定两次同协议结果 2.0105/1.7402 ms 均通过，未改阈值或基线，不宣称性能提升。GPU P50/P95 仍仅诊断。PolygonMode 夹具不再假定查询必定写回两个值，改为比较调用前后的实际状态；纯 CPU 注册表测试的无关 GL include 已撤回，拒绝断言放到现有 GPU 夹具。失败日志保留，本地阶段说明为 docs/a4w2c1-water-indexed-draw.md，证据为 .local/verification/a4w2c1。
 
 前项调查提交 5ef02fd 的 CI 38664009109 completed/success，head 一致。本项源码和本地验收完成，提交/推送/CI 独立核对；未安装/打包，A4/W2 父项和 P1/M3 保持未完成。下一入口 A4-W2c-2：调查水面逐帧 Uniform 适配的最小切片，固定相机/时间/历史与环境依赖后再实施。
+
+## A4-W2c-2：逐帧 Uniform 边界调查（2026-10-15 已完成）
+
+基于 5c9ffba 追踪水面七项公共输入：当前/前帧 VP、CameraPosition、当前/前帧水面时间、CameraSurfaceHeight 与 MotionHistoryValid。当前 VP 已带后端 TAA jitter，不能从 Camera 重新计算；前帧 VP 与前帧时间各按不同 valid 标志回退，运动有效性保留 resetTemporalHistory 和 abs(time-prev)<0.2 s。帧末历史推进仍由后端统一管理，两次子调用共享同一帧解析结果。
+
+下一实施包 **W2c-2a：七项公共逐帧 Uniform 适配**。以只读 WaterFrameInputs 短期借用传入五字段：两个 VP 矩阵、已解析前帧时间、相机水面高度、运动有效标志；Camera 与当前 WaterSettings 时间复用 RenderPluginFrame 现有来源。现有 Frame 构造函数末尾追加默认 nullptr 参数，保持旧 Settings-only 调用；生产水面调用显式传入，WaterRenderer::renderFrame 执行七项写入。无需新增 virtual、服务或第二份历史。Forward 专用相机/逆投影参数、环境/灯光/级联/云影/纹理仍由后端绑定。
+
+下一项门槛：双编译器共享 Frame Integration、旧调用兼容；真实 Uniform 与带 jitter 矩阵/时间一致、运动有效/重置像素、后端回退和阈值的真实路径验证、既有状态/附件隔离/资源事务；相关 GUI/Job/TAA/Resize/水面介质与 OFF、34 张受影响固定图、gpu-smoke 和原 CPU/Draw/bytes 门槛。云水集成仅在环境绑定变化或疑点时补跑，不机械扩大到所有历史专项；GPU 时间仍诊断，无新基线或 ZIP。
+
+本次只完成源码审计和合同冻结，无运行时代码/测试变更，不重复构建/GPU。详细本地记录：docs/a4w2c2-water-frame-uniform-boundary.md。W2c-2a 尚未实施，A4/W2 父项、P1/M3 未完成；上一项 5c9ffba 的 CI 在本次开始核对时仍 in_progress，结论单独等待。
