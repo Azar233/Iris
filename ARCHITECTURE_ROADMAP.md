@@ -263,3 +263,13 @@ Frame 末尾新增默认空 WaterSamplingInputs，独立同步借用反射 enabl
 原 CPU P95 门槛在 MSVC 首轮及限定复测失败，未选较好复测宣称通过。追加预先固定两次×两路径的未修改旧程序负对照，旧 Deferred P95=2.3477/2.6199 ms 仍超原 2.2128 ms，图像/Draw/bytes 不变，证明跨运行判定误拒绝旧程序。按用户既有授权仅从本包验收剔除此项，所有计时/失败、原脚本和阈值保留；不称原成本套件通过或 CPU 无回退。临时对照后当前源码逐字节及 Build ID 恢复并重新构建。完整本地记录 docs/a4w2c2i-water-sampling-uniforms.md、.local/verification/a4w2c2i。
 
 功能与调整后的本地验收完成，提交/推送/CI 单独记录；上一包 6c3456b 的 CI 38702791943 completed/success。无安装/ZIP，A4/W2 父项及 P1/M3 未完成。下一入口 W2c-2j：水面 Uniform 迁移收口核对，只审计剩余责任、共享资源/调度/历史边界和父项验收缺口。
+
+## A4-W2c-2j：水面 Uniform 迁移收口核对（2026-10-15 已完成）
+
+基于 43a8d46 静态核对三个水面 Shader 与云影 include：58 个去重 Uniform 名称全部在插件适配，遗漏/额外均为 0，Renderer 直接 waterShader.set 调用为 0。18 个原设置上传名称加 40 个逐帧/相机/灯光/阴影/云影/采样输入名称均已覆盖；静态声明数不等于两套程序的活动 Uniform 数，也不等于 19 项公开 schema。
+
+网格、两套程序、Uniform 与索引绘制已由 Water 插件负责。宿主继续管理八单元共享纹理、环境回退、opaque/scene 附件隔离、Deferred 运动附件3、GL 状态与透明物体衔接、云 Pass 时序和统一历史；水下合成保留 PostProcess 所有权。Surface 合同明确不接受逻辑 resources/passes，不为减少 Renderer 行数扩大到共享资源迁移或新增渲染图。现有几何/Shader 借用 API 保留兼容。
+
+下一包冻结为 A4-W2d：水面迁移阶段集成验收与支持矩阵。复用最终源码已有 CPU/GPU/OFF/GUI-Job/受影响图像证据，只补阶段十套 renderer-regression-suite、当前水面 Label Capture 与父项支持/证据归属缺口；不自动复制全套 GCC 图像或 benchmark，不把 W2c-2i 已证实误拒绝旧程序的 CPU 跨运行门槛恢复为验收。满足 W2 门槛后才收口，A4/P1/M3 不联动完成；不新增安装/ZIP。
+
+本次仅调查/文档与静态核对，没有运行时代码、新构建/CPU/GPU/图像/成本验收。完整本地记录 docs/a4w2c2j-water-uniform-closure.md、.local/verification/a4w2c2j；插图明确引用 W2c-2i 历史实拍。前项 43a8d46 的 CI 38708359880 已核对 completed/success，head 一致。本次提交/推送/CI 单独记录。

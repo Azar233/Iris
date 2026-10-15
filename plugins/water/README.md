@@ -27,3 +27,5 @@ W2c-2e 增加独立可选 WaterShadowInputs，同步借用实际阴影开关、�
 W2c-2g 通过独立可选 CloudShadowInputs 同步借用同次解析的云影开关、投影轴/中心/extent/base 和纹理 ID。插件仅为实际颜色程序适配六项 metadata 与 sampler=5，后端在原位置绑定同一快照的 unit5 纹理；云影生成、缓存和所有权保持。缓存命中仍可启用，宿主关闭时快照禁用且 ID 为 0。旧空调用不覆盖云影，运动程序不消费；非有限 metadata、非正 extent 或启用/ID 不匹配在所有 Uniform 写入前拒绝。插件不绑定纹理或保留借用；云反射及其余纹理、状态、附件和历史仍由后端管理。
 
 W2c-2i 增加独立可选 WaterSamplingInputs，借用当前云 Pass 后解析的反射开关与实际 raw/resolved 纹理 ID；插件为实际颜色程序适配剩余 sampler 0/1/2/3/4/6/7 与反射开关。后端在原位置绑定同一快照的 unit7，保留其余 typed 纹理绑定与环境回退。旧空调用保留任意预置 sampler/开关，运动不消费；启用-ID 不一致在所有 Uniform 写入前拒绝。插件不绑定纹理、保留 ID 或新增历史，Scene/Job 与 19 项 schema 不变。
+
+W2c-2j 静态收口核对：三个水面 Shader 与云影 include 的 58 个去重 Uniform 名称均已在插件适配，后端无直接水面 Uniform 上传。Surface 仍借用宿主准备的目标、八单元纹理和绘制状态，不声明逻辑资源或调度 pass；统一时域历史、云/环境/阴影资源、水下 PostProcess 与透明物体衔接继续由原所有者管理。此结论不扩大为跨后端 ABI，也不代表 W2 阶段集成验收已完成。
