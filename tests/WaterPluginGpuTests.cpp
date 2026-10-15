@@ -91,6 +91,16 @@ std::vector<std::array<float,16>> uniformSnapshot(GLuint program) {
     }
     return values;
 }
+std::array<GLint,25> textureSnapshot() {
+    std::array<GLint,25> state{}; glGetIntegerv(GL_ACTIVE_TEXTURE,&state[0]);
+    for(int unit=0;unit<8;++unit) {
+        glActiveTexture(GL_TEXTURE0+unit);
+        glGetIntegerv(GL_TEXTURE_BINDING_2D,&state[1+unit*3]);
+        glGetIntegerv(GL_TEXTURE_BINDING_CUBE_MAP,&state[2+unit*3]);
+        glGetIntegerv(GL_TEXTURE_BINDING_2D_ARRAY,&state[3+unit*3]);
+    }
+    glActiveTexture(state[0]); return state;
+}
 void checkFrameUniforms(GLuint program, const iris::WaterFrameInputs& input,
     const Camera& camera, float time, bool forward, int width=64, int height=64) {
     const auto check = [&](const char* name, const float* expected, int count, bool required) {
@@ -251,17 +261,7 @@ void checkCloudShadows(iris::RenderPlugin& plugin, RendererSettings settings) {
     GLuint texture=0; glGenTextures(1,&texture); glBindTexture(GL_TEXTURE_2D,texture);
     glTexImage2D(GL_TEXTURE_2D,0,GL_R16F,4,4,0,GL_RED,GL_FLOAT,nullptr);
     glActiveTexture(GL_TEXTURE3);
-    const auto textureState=[] {
-        std::array<GLint,25> state{}; glGetIntegerv(GL_ACTIVE_TEXTURE,&state[0]);
-        for(int unit=0;unit<8;++unit) {
-            glActiveTexture(GL_TEXTURE0+unit);
-            glGetIntegerv(GL_TEXTURE_BINDING_2D,&state[1+unit*3]);
-            glGetIntegerv(GL_TEXTURE_BINDING_CUBE_MAP,&state[2+unit*3]);
-            glGetIntegerv(GL_TEXTURE_BINDING_2D_ARRAY,&state[3+unit*3]);
-        }
-        glActiveTexture(state[0]); return state;
-    };
-    const auto bindings=textureState();
+    const auto bindings=textureSnapshot();
     auto* shader=plugin.borrowShadingShader(false); shader->use();
     GLint program=0; glGetIntegerv(GL_CURRENT_PROGRAM,&program);
     CloudShadowInputs input{true,{0.7f,0.1f,0.2f},{0.2f,0.6f,0.3f},{13,-27},83,42,texture};
@@ -280,7 +280,7 @@ void checkCloudShadows(iris::RenderPlugin& plugin, RendererSettings settings) {
         check("uCloudShadowAxisX",&input.axisX[0],3); check("uCloudShadowAxisY",&input.axisY[0],3);
         check("uCloudShadowCenter",&input.center[0],2); check("uCloudShadowExtent",&input.extent,1);
         check("uCloudShadowBase",&input.base,1);
-        require(textureState()==bindings,"Water cloud adapter changed borrowed textures");
+        require(textureSnapshot()==bindings,"Water cloud adapter changed borrowed textures");
     };
     for(const bool enabled : {false,true}) {
         input.enabled=enabled; input.texture=enabled ? texture : 0U;
@@ -299,7 +299,7 @@ void checkCloudShadows(iris::RenderPlugin& plugin, RendererSettings settings) {
     const auto reject=[&](const CloudShadowInputs& invalid) {
         rejects([&]{plugin.renderFrame({target,camera,changed,128,72,0,0,nullptr,shader,&frame,&light,&shadow,&invalid});},
             "Invalid cloud shadow packet accepted");
-        require(uniformSnapshot(program)==previous && textureState()==bindings,"Rejected cloud packet changed GPU state");
+        require(uniformSnapshot(program)==previous && textureSnapshot()==bindings,"Rejected cloud packet changed GPU state");
     };
     for(const float value : {std::numeric_limits<float>::quiet_NaN(),std::numeric_limits<float>::infinity()})
         for(int field=0;field<10;++field) {
@@ -314,10 +314,74 @@ void checkCloudShadows(iris::RenderPlugin& plugin, RendererSettings settings) {
     auto* motion=plugin.borrowShadingShader(true); motion->use();
     plugin.renderFrame({target,camera,settings,64,64,0,0,nullptr,motion,&frame,&light,&shadow,&invalid});
     GLint motionProgram=0; glGetIntegerv(GL_CURRENT_PROGRAM,&motionProgram);
-    require(glGetUniformLocation(motionProgram,"uCloudShadowEnabled")<0 && textureState()==bindings,"Motion consumed cloud shadow");
+    require(glGetUniformLocation(motionProgram,"uCloudShadowEnabled")<0 && textureSnapshot()==bindings,"Motion consumed cloud shadow");
     glActiveTexture(GL_TEXTURE5); glBindTexture(GL_TEXTURE_2D,oldTexture); glDeleteTextures(1,&texture);
     glActiveTexture(oldActive);
     require(glGetError()==GL_NO_ERROR,"Cloud shadow adaptation GL error");
+}
+void checkSampling(iris::RenderPlugin& plugin, RendererSettings settings) {
+    Camera camera; RenderTarget target;
+    iris::WaterFrameInputs frame; iris::WaterLightingInputs light; iris::WaterShadowInputs shadow;
+    for(auto& matrix : shadow.lightViewProjections) matrix=glm::mat4(1);
+    shadow.cascadeSplits.fill(100);
+    CloudShadowInputs cloud;
+    GLint oldActive=0,oldTexture=0; glGetIntegerv(GL_ACTIVE_TEXTURE,&oldActive);
+    glActiveTexture(GL_TEXTURE7); glGetIntegerv(GL_TEXTURE_BINDING_2D,&oldTexture);
+    GLuint texture=0; glGenTextures(1,&texture); glBindTexture(GL_TEXTURE_2D,texture);
+    glTexImage2D(GL_TEXTURE_2D,0,GL_RGBA16F,1,1,0,GL_RGBA,GL_FLOAT,nullptr);
+    glActiveTexture(GL_TEXTURE3); const auto bindings=textureSnapshot();
+    auto* shader=plugin.borrowShadingShader(false); shader->use();
+    GLint program=0; glGetIntegerv(GL_CURRENT_PROGRAM,&program);
+    const std::array<const char*,7> names{"uPrefilteredEnvironmentMap","uIrradianceMap","uShadowMap",
+        "uOpaqueSceneColor","uOpaqueSceneDepth","uWaterBrdfLut","uCloudReflection"};
+    const std::array<int,7> units{0,1,2,3,4,6,7};
+    const auto verify=[&](bool canonical,bool enabled) {
+        for(std::size_t i=0;i<names.size();++i) {
+            const auto location=glGetUniformLocation(program,names[i]); require(location>=0,"Missing water sampler");
+            GLint value=0; glGetUniformiv(program,location,&value);
+            require(value==(canonical ? units[i] : static_cast<int>(i)+8),"Water sampler unit mismatch");
+        }
+        const auto location=glGetUniformLocation(program,"uCloudReflectionEnabled"); require(location>=0,"Missing reflection flag");
+        GLint value=0; glGetUniformiv(program,location,&value);
+        require(bool(value)==enabled && textureSnapshot()==bindings,"Reflection flag or borrowed texture state mismatch");
+    };
+    settings.renderPath=RenderPath::Deferred; settings.water.surfaceOptics=false;
+    settings.atmosphere.cloudsEnabled=false; settings.water.cloudReflectionStrength=0;
+    iris::WaterSamplingInputs input;
+    for(const bool enabled : {false,true}) {
+        input={enabled,enabled ? texture : 0U};
+        plugin.renderFrame({target,camera,settings,0,0,0,0,nullptr,shader,nullptr,nullptr,nullptr,nullptr,&input});
+        verify(true,enabled); // Independent of dimensions and all previous packets.
+        plugin.renderFrame({target,camera,settings,64,64,0,0,nullptr,shader,&frame,&light,&shadow,&cloud,&input});
+        verify(true,enabled);
+    }
+    // Seed noncanonical values: writing the same constants again would hide a
+    // legacy-call regression if this only checked the canonical result.
+    for(std::size_t i=0;i<names.size();++i) shader->setInt(names[i],static_cast<int>(i)+8);
+    shader->setBool("uCloudReflectionEnabled",true); // Deliberately contradict disabled Settings.
+    plugin.renderFrame({target,camera,settings,0,0,0,0,nullptr,shader}); verify(false,true);
+    plugin.renderFrame({target,camera,settings,64,64,0,0,nullptr,shader,&frame}); verify(false,true);
+    plugin.renderFrame({target,camera,settings,64,64,0,0,nullptr,shader,nullptr,&light}); verify(false,true);
+    plugin.renderFrame({target,camera,settings,64,64,0,0,nullptr,shader,nullptr,nullptr,&shadow}); verify(false,true);
+    plugin.renderFrame({target,camera,settings,64,64,0,0,nullptr,shader,nullptr,nullptr,nullptr,&cloud}); verify(false,true);
+    const auto previous=uniformSnapshot(program);
+    auto changed=settings; changed.water.extent+=10; changed.water.timeSeconds+=1;
+    camera.setFarPlane(811); frame.currentViewProjection[3][0]=0.4f;
+    light.diffuseStrength=0.47f; shadow.shadowsEnabled=true; cloud.extent=83;
+    for(const auto invalid : {iris::WaterSamplingInputs{true,0},iris::WaterSamplingInputs{false,texture}}) {
+        rejects([&]{plugin.renderFrame({target,camera,changed,128,72,0,0,nullptr,shader,&frame,&light,&shadow,&cloud,&invalid});},
+            "Invalid reflection activation/texture pair accepted");
+        require(uniformSnapshot(program)==previous && textureSnapshot()==bindings,"Rejected reflection changed GPU state");
+    }
+    auto* motion=plugin.borrowShadingShader(true); motion->use();
+    const iris::WaterSamplingInputs invalid{true,0};
+    plugin.renderFrame({target,camera,settings,64,64,0,0,nullptr,motion,&frame,&light,&shadow,&cloud,&invalid});
+    GLint motionProgram=0; glGetIntegerv(GL_CURRENT_PROGRAM,&motionProgram);
+    for(const auto* name : names) require(glGetUniformLocation(motionProgram,name)<0,"Motion shader consumes color samplers");
+    require(glGetUniformLocation(motionProgram,"uCloudReflectionEnabled")<0 && textureSnapshot()==bindings,"Motion consumes reflection");
+    glActiveTexture(GL_TEXTURE7); glBindTexture(GL_TEXTURE_2D,oldTexture); glDeleteTextures(1,&texture);
+    glActiveTexture(oldActive);
+    require(glGetError()==GL_NO_ERROR,"Water sampling adaptation GL error");
 }
 // Use the real water vertex/G-buffer programs and geometry. Restrict outputs
 // exactly as the backend's Deferred+TAA motion subpass does.
@@ -504,6 +568,7 @@ int main() {
         checkLighting(*owner,settings);
         checkShadows(*owner,settings);
         checkCloudShadows(*owner,settings);
+        checkSampling(*owner,settings);
         sentinelShader.use(); glBindVertexArray(sentinelVao); glBindBuffer(GL_ARRAY_BUFFER,sentinelBuffer);
         bindings();
         Camera camera; RenderTarget target;

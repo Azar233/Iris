@@ -123,7 +123,31 @@ bool Application::waterPluginRegression() {
                     && medium.cameraSurfaceHeight==renderer_->cameraWaterSurfaceHeight(),"Water medium transition lost frame reset/height");
                 camera_.setOrbitState(frameCamera);
             }
+            // Same-instance transitions exercise the backend's current cloud
+            // selection, including stale lastFrameActive/texture after clouds off.
+            for(const auto path:{RenderPath::Forward,RenderPath::Deferred}) {
+                rendererSettings_=frameSettings;rendererSettings_.renderPath=path;
+                rendererSettings_.temporalAaEnabled=false;rendererSettings_.water.timeSeconds=0;
+                rendererSettings_.water.surfaceOptics=true;rendererSettings_.water.cloudReflectionStrength=1;
+                auto& atmosphere=rendererSettings_.atmosphere;
+                atmosphere.enabled=true;atmosphere::applyCloudPreset(atmosphere,atmosphere::CloudPreset::Cumulus);
+                atmosphere.cloudQuality=atmosphere::CloudQualityTier::Low;
+                atmosphere.cloudHalfResolution=true;atmosphere.cloudTemporalEnabled=true;atmosphere.cloudsEnabled=false;
+                camera_.setOrbitPose({0,1.6f,-30},-4,-3,16,58);
+                renderer_->invalidateTemporalHistory();draw();const auto clear=pixels();
+                const auto warm=[&]{renderer_->invalidateTemporalHistory();for(int i=0;i<16;++i)draw();};
+                atmosphere.cloudsEnabled=true;warm();const auto resolved=pixels();
+                check(resolved!=clear,"Cloud reflection transition fixture has no cloudy pixels");
+                atmosphere.cloudsEnabled=false;draw();check(pixels()==clear,"Cloud disable retained previous reflection");
+                atmosphere.cloudsEnabled=true;warm();check(pixels()==resolved,"Cloud reenable selected stale temporal texture");
+                atmosphere.cloudTemporalEnabled=false;renderer_->invalidateTemporalHistory();draw();const auto raw=pixels();
+                atmosphere.cloudTemporalEnabled=true;warm();check(pixels()==resolved,"Temporal reenable changed reflection selection");
+                draw(641,361);warm();check(pixels()==resolved,"Odd resize retained a stale reflection texture");
+                atmosphere.cloudTemporalEnabled=false;renderer_->invalidateTemporalHistory();draw();
+                check(pixels()==raw,"Temporal disable retained resolved reflection");
+            }
             rendererSettings_=frameSettings;camera_.setOrbitState(frameCamera);renderer_->invalidateTemporalHistory();draw();
+            std::cout<<"Water same-instance cloud off/on/off/on / raw-resolved / odd resize reflection PASS\n";
             std::cout<<"Water resolved frame jitter / independent VP-time fallback / +/-0.2 boundary / resize / medium PASS\n";
             std::cout<<"Water owned grid release/restart: "<<waterBytes<<" bytes PASS\n";
             std::cout<<"Water real parameter UI / both paths / legacy parity / history / rejection / Scene / resize / replacement / disable-enable PASS\n";

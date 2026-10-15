@@ -253,3 +253,13 @@ CloudShadowRenderer 提供七字段 CloudShadowInputs 值快照，统一解析�
 冻结 W2c-2i：拟议两字段 WaterSamplingInputs 默认空同步借用反射 enabled/texture，插件为实际颜色程序写八项 Uniform，后端在原位置绑定同一快照的 unit7。旧空调用保留任意预置 sampler/开关，运动不消费，启用-ID 不匹配在所有 Uniform 写入前拒绝；不新增通用纹理层、服务、CloudLayer API 或 Shader 改动。
 
 本次只有调查/文档和静态合同核对，无新运行时代码/API/测试或构建/CPU/GPU/图像/成本成绩。完整本地记录 docs/a4w2c2h-water-sampling-contract.md，插图明确归属 W2c-2g。W2c-2i 尚未实施，无安装/ZIP，A4/W2 父项及 P1/M3 保持未完成；提交/推送/CI 单独记录。
+
+## A4-W2c-2i：剩余采样器与云反射开关适配（2026-10-15 本地验收）
+
+Frame 末尾新增默认空 WaterSamplingInputs，独立同步借用反射 enabled/texture。插件按实际自有颜色程序写七 sampler 和反射开关，兼容 Deferred 颜色；旧空调用保留任意预置值，运动不消费，非法启用/ID 配对在所有 Uniform 写入前拒绝。后端在当前云 Pass 后解析同次快照并绑定 unit7；纹理所有权、绑定顺序、环境回退、附件、状态与历史保持，Renderer 已无直接 waterShader.set 调用。
+
+双编译器 Integration 各 37/37、OFF 5/5/普通场景/含水 Job 66 无输出，真实水面与云时域 GPU、两窗口同实例云开关/raw-resolved/奇数尺寸恢复及原历史/GUI-Job 通过。50 对 PNG 精确一致，云反射贡献、云水集成与 GPU smoke 通过；四组 Draw/bytes 保持。
+
+原 CPU P95 门槛在 MSVC 首轮及限定复测失败，未选较好复测宣称通过。追加预先固定两次×两路径的未修改旧程序负对照，旧 Deferred P95=2.3477/2.6199 ms 仍超原 2.2128 ms，图像/Draw/bytes 不变，证明跨运行判定误拒绝旧程序。按用户既有授权仅从本包验收剔除此项，所有计时/失败、原脚本和阈值保留；不称原成本套件通过或 CPU 无回退。临时对照后当前源码逐字节及 Build ID 恢复并重新构建。完整本地记录 docs/a4w2c2i-water-sampling-uniforms.md、.local/verification/a4w2c2i。
+
+功能与调整后的本地验收完成，提交/推送/CI 单独记录；上一包 6c3456b 的 CI 38702791943 completed/success。无安装/ZIP，A4/W2 父项及 P1/M3 未完成。下一入口 W2c-2j：水面 Uniform 迁移收口核对，只审计剩余责任、共享资源/调度/历史边界和父项验收缺口。

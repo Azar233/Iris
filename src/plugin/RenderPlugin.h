@@ -57,6 +57,12 @@ struct WaterShadowInputs {
     std::array<float, shadow::maximumCascadeCount> cascadeSplits{};
 };
 
+// Dynamic reflection selection only; sampler units are fixed by the water shader.
+struct WaterSamplingInputs {
+    bool cloudReflectionEnabled{false};
+    unsigned int cloudReflectionTexture{0};
+};
+
 // Borrowed frame inputs. The caller owns the context, target and scheduling.
 // RendererSettings is a compatibility bridge for this first migration, not a
 // frozen public material/plugin schema or a cross-backend GPU ABI.
@@ -67,7 +73,8 @@ struct RenderPluginFrame {
         const WaterFrameInputs* waterInputs = nullptr,
         const WaterLightingInputs* waterLightingInputs = nullptr,
         const WaterShadowInputs* waterShadowInputs = nullptr,
-        const CloudShadowInputs* waterCloudShadowInputs = nullptr);
+        const CloudShadowInputs* waterCloudShadowInputs = nullptr,
+        const WaterSamplingInputs* waterSamplingInputs = nullptr);
     RenderTarget& target;
     const Camera& camera;
     const RendererSettings& settings;
@@ -85,6 +92,7 @@ struct RenderPluginFrame {
     const WaterLightingInputs* waterLightingInputs;
     const WaterShadowInputs* waterShadowInputs;
     const CloudShadowInputs* waterCloudShadowInputs;
+    const WaterSamplingInputs* waterSamplingInputs;
     std::vector<RenderTextureBinding> textures;
     unsigned int texture(const std::string& name) const;
     std::vector<ModuleParameterOverride> parameterValues(const RenderPluginParameterSchema& schema) const;

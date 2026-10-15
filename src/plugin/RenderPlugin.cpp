@@ -19,11 +19,11 @@ RenderPluginFrame::RenderPluginFrame(RenderTarget& targetValue, const Camera& ca
     const RendererSettings& settingsValue, int widthValue, int heightValue, float timeValue,
     unsigned int vao, const PostProcessSettings* postSettings, Shader* shader,
     const WaterFrameInputs* water, const WaterLightingInputs* waterLighting, const WaterShadowInputs* waterShadow,
-    const CloudShadowInputs* waterCloudShadow)
+    const CloudShadowInputs* waterCloudShadow, const WaterSamplingInputs* waterSampling)
     : target(targetValue), camera(cameraValue), settings(settingsValue), width(widthValue),
       height(heightValue), timeSeconds(timeValue), fullscreenVertexArray(vao),
       postProcessSettings(postSettings), shadingShader(shader), waterInputs(water), waterLightingInputs(waterLighting),
-      waterShadowInputs(waterShadow), waterCloudShadowInputs(waterCloudShadow) {
+      waterShadowInputs(waterShadow), waterCloudShadowInputs(waterCloudShadow), waterSamplingInputs(waterSampling) {
     if (shadingShader) return;
     textures.push_back({"display",target.colorTexture(),TextureFormat::DisplayColor,target.width(),target.height()});
     if (!postSettings) return;

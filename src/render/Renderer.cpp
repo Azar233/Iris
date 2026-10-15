@@ -827,7 +827,12 @@ shader_->setMat4("uView", view);
         iris::WaterLightingInputs waterLightingInputs;
         iris::WaterShadowInputs waterShadowInputs;
         CloudShadowInputs waterCloudShadowInputs;
+        iris::WaterSamplingInputs waterSamplingInputs;
         if (!deferred) {
+            const bool reflectCloud = settings.water.surfaceOptics && settings.atmosphere.enabled
+                && settings.water.cloudReflectionStrength > 0.0f
+                && settings.atmosphere.cloudsEnabled && cloudLayer_->lastFrameActive();
+            waterSamplingInputs = {reflectCloud, reflectCloud ? cloudLayer_->radianceTexture() : 0U};
             waterCloudShadowInputs = cloudShadow_->frameInputs(cloudShadowEnabled);
             waterShadowInputs = {objectShadowsActive, static_cast<int>(cascadeCount), cascadeMatrices, cascadeSplits};
             const float solarTwilight = settings.atmosphere.enabled
@@ -846,24 +851,14 @@ shader_->setMat4("uView", view);
         waterShader.use();
         waterRenderer_->renderFrame({*renderTarget_,camera,settings,width,height,settings.water.timeSeconds,
             fullscreenVertexArray_,nullptr,&waterShader,&waterFrameInputs_,deferred ? nullptr : &waterLightingInputs,
-            deferred ? nullptr : &waterShadowInputs, deferred ? nullptr : &waterCloudShadowInputs});
+            deferred ? nullptr : &waterShadowInputs, deferred ? nullptr : &waterCloudShadowInputs,
+            deferred ? nullptr : &waterSamplingInputs});
         if (!deferred) {
             glActiveTexture(GL_TEXTURE5);
             glBindTexture(GL_TEXTURE_2D, waterCloudShadowInputs.texture);
-            waterShader.setInt("uPrefilteredEnvironmentMap", 0);
-            waterShader.setInt("uIrradianceMap", 1);
-            waterShader.setInt("uShadowMap", 2);
-            waterShader.setInt("uOpaqueSceneColor", 3);
-            waterShader.setInt("uOpaqueSceneDepth", 4);
             environmentMap_->bindBrdfLut(6U);
-            waterShader.setInt("uWaterBrdfLut", 6);
-            waterShader.setInt("uCloudReflection", 7);
-            const bool reflectCloud = settings.water.surfaceOptics && settings.atmosphere.enabled
-                && settings.water.cloudReflectionStrength > 0.0f
-                && settings.atmosphere.cloudsEnabled && cloudLayer_->lastFrameActive();
-            waterShader.setBool("uCloudReflectionEnabled", reflectCloud);
             glActiveTexture(GL_TEXTURE7);
-            glBindTexture(GL_TEXTURE_2D, reflectCloud ? cloudLayer_->radianceTexture() : 0U);
+            glBindTexture(GL_TEXTURE_2D, waterSamplingInputs.cloudReflectionTexture);
             if (settings.water.surfaceOptics) environmentMap_->bindWaterPrefiltered(0U);
             else environmentMap_->bindPrefiltered(0U);
             environmentMap_->bindIrradiance(1U);

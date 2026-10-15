@@ -50,6 +50,9 @@ void WaterRenderer::renderFrame(const RenderPluginFrame& frame) {
         throw std::invalid_argument("Water requires its borrowed, bound water shader");
     auto& shader=*frame.shadingShader;
     const auto& settings=frame.settings.water;
+    if (frame.waterSamplingInputs && frame.shadingShader == forwardShader_.get()
+        && frame.waterSamplingInputs->cloudReflectionEnabled != (frame.waterSamplingInputs->cloudReflectionTexture != 0U))
+        throw std::invalid_argument("Water reflection activation must match its borrowed texture");
     if (frame.waterCloudShadowInputs && frame.shadingShader == forwardShader_.get()) {
         const auto& input=*frame.waterCloudShadowInputs;
         if(input.enabled != (input.texture != 0U) || !std::isfinite(input.extent) || input.extent<=0
@@ -119,6 +122,16 @@ void WaterRenderer::renderFrame(const RenderPluginFrame& frame) {
         shader.setVec2("uCloudShadowCenter",input.center);
         shader.setFloat("uCloudShadowExtent",input.extent);
         shader.setFloat("uCloudShadowBase",input.base);
+    }
+    if (frame.waterSamplingInputs && frame.shadingShader == forwardShader_.get()) {
+        shader.setInt("uPrefilteredEnvironmentMap",0);
+        shader.setInt("uIrradianceMap",1);
+        shader.setInt("uShadowMap",2);
+        shader.setInt("uOpaqueSceneColor",3);
+        shader.setInt("uOpaqueSceneDepth",4);
+        shader.setInt("uWaterBrdfLut",6);
+        shader.setInt("uCloudReflection",7);
+        shader.setBool("uCloudReflectionEnabled",frame.waterSamplingInputs->cloudReflectionEnabled);
     }
     if (frame.waterInputs) {
         const auto& input=*frame.waterInputs;
