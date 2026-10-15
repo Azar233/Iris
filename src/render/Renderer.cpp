@@ -213,7 +213,7 @@ void Renderer::render(
         {iris::openGlShadingService},shaderDirectory_);
     if (!iris::waterRequired(settings)) waterRenderer_.reset();
     else if (!waterRenderer_) waterRenderer_=iris::builtinRenderPlugins().prepareReplacement(iris::waterPluginId,
-        {iris::openGlShadingService,iris::openGlIndexedGeometryService,iris::openGlShaderBorrowService},shaderDirectory_,settings,
+        {iris::openGlShadingService,iris::openGlIndexedGeometryService,iris::openGlShaderBorrowService,iris::openGlIndexedDrawService},shaderDirectory_,settings,
         std::max(width,1),std::max(height,1));
     if (!iris::pluginEnabled(settings.renderPlugins,iris::enscapePluginId)) enscapeCubeRenderer_.reset();
     if (!iris::pluginEnabled(settings.renderPlugins,iris::postProcessPluginId)) postProcessor_.reset();
@@ -818,8 +818,6 @@ shader_->setMat4("uView", view);
 
     const auto drawWater = [&](bool deferred) {
         if (!settings.water.enabled) return;
-        const auto geometry = waterRenderer_->borrowIndexedGeometry(settings);
-        iris::validateIndexedTriangleGeometry(geometry);
         auto* borrowedShader = waterRenderer_->borrowShadingShader(deferred);
         if (!borrowedShader) throw std::runtime_error("Water plugin supplied no shading shader");
         Shader& waterShader = *borrowedShader;
@@ -892,10 +890,7 @@ shader_->setMat4("uView", view);
         glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
         glEnable(GL_DEPTH_TEST);
         glDepthMask(deferred ? GL_FALSE : GL_TRUE);
-        glBindVertexArray(geometry.vertexArray);
-        glDrawElements(GL_TRIANGLES, static_cast<GLsizei>(geometry.indexCount), GL_UNSIGNED_INT, nullptr);
-        glBindVertexArray(0);
-        ++drawCallCount_;
+        drawCallCount_ += waterRenderer_->drawIndexedGeometry(settings);
     };
 
     drawCallCount_ = 0U;
@@ -1879,7 +1874,7 @@ bool Renderer::rebuildPluginResources(const std::string& id, const RendererSetti
         auto* owner = id == iris::enscapePluginId ? &enscapeCubeRenderer_ : id == iris::postProcessPluginId ? &postProcessor_
             : id == iris::nprPluginId ? &nprRenderer_ : id == iris::waterPluginId ? &waterRenderer_ : nullptr;
         if (!owner) throw std::runtime_error("Unknown plugin: " + id);
-        auto candidate = iris::builtinRenderPlugins().prepareReplacement(id, {iris::openGlFullscreenService,iris::openGlShadingService,iris::openGlIndexedGeometryService,iris::openGlShaderBorrowService}, shaderDirectory_,
+        auto candidate = iris::builtinRenderPlugins().prepareReplacement(id, {iris::openGlFullscreenService,iris::openGlShadingService,iris::openGlIndexedGeometryService,iris::openGlShaderBorrowService,iris::openGlIndexedDrawService}, shaderDirectory_,
             settings, std::max(renderTarget_->width(), 1), std::max(renderTarget_->height(), 1));
         auto success = "Plugin resources committed: " + id;
         owner->swap(candidate);

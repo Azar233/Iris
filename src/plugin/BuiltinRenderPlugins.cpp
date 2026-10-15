@@ -20,7 +20,7 @@ const std::vector<RenderPluginDescriptor>& builtinRenderPluginCatalog() {
         {enscapePluginId,renderPluginApiVersion,{openGlFullscreenService},"CC BY-NC-SA-3.0 (third-party shaders)",enscapeContract(),builtinRenderPluginParameterSchema(enscapePluginId)},
         {postProcessPluginId,renderPluginApiVersion,{openGlFullscreenService},"MIT",postProcessContract(),builtinRenderPluginParameterSchema(postProcessPluginId)},
         {nprPluginId,renderPluginApiVersion,{openGlShadingService},"MIT",{PluginStage::MaterialShading,{},{}},builtinRenderPluginParameterSchema(nprPluginId)},
-        {waterPluginId,renderPluginApiVersion,{openGlShadingService,openGlIndexedGeometryService,openGlShaderBorrowService},"MIT",{PluginStage::MaterialShading,{},{}},builtinRenderPluginParameterSchema(waterPluginId)}};
+        {waterPluginId,renderPluginApiVersion,{openGlShadingService,openGlIndexedGeometryService,openGlShaderBorrowService,openGlIndexedDrawService},"MIT",{PluginStage::Surface,{},{}},builtinRenderPluginParameterSchema(waterPluginId)}};
     return catalog;
 }
 

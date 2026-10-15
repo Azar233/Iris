@@ -22,6 +22,13 @@ int main() {
         iris::validatePluginContract(iris::enscapeContract());
         iris::RenderPluginContract shading{iris::PluginStage::MaterialShading,{},{}};
         iris::validatePluginContract(shading);
+        iris::RenderPluginContract surface{iris::PluginStage::Surface,{},{}};
+        iris::validatePluginContract(surface);
+        surface.passes.push_back({"unexpected scheduled draw",{},{},{}});
+        rejects([&]{iris::validatePluginContract(surface);});
+        surface.passes.clear();
+        surface.resources.emplace_back("unexpected texture",iris::TextureFormat::HdrColor,iris::ResourceScope::Input);
+        rejects([&]{iris::validatePluginContract(surface);});
         shading.passes.push_back({"draw",{},{},{}});
         rejects([&]{iris::validatePluginContract(shading);});
         auto bad=valid;

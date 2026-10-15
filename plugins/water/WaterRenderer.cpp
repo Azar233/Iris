@@ -2,6 +2,7 @@
 #include "render/Renderer.h"
 #include "render/Shader.h"
 #include "render/WaterSurface.h"
+#include <glad/gl.h>
 #include <stdexcept>
 namespace iris {
 WaterRenderer::WaterRenderer(std::filesystem::path shaderDirectory) : shaderDirectory_(std::move(shaderDirectory)) {}
@@ -31,6 +32,14 @@ IndexedTriangleGeometry WaterRenderer::borrowIndexedGeometry(const RendererSetti
 }
 std::size_t WaterRenderer::estimatedBytes() const {
     return (high_ ? high_->estimatedBytes() : 0) + (low_ ? low_->estimatedBytes() : 0);
+}
+std::size_t WaterRenderer::drawIndexedGeometry(const RendererSettings& settings) const {
+    const auto geometry = borrowIndexedGeometry(settings);
+    validateIndexedTriangleGeometry(geometry);
+    glBindVertexArray(geometry.vertexArray);
+    glDrawElements(GL_TRIANGLES, static_cast<GLsizei>(geometry.indexCount), GL_UNSIGNED_INT, nullptr);
+    glBindVertexArray(0);
+    return 1;
 }
 void WaterRenderer::renderFrame(const RenderPluginFrame& frame) {
     if (!frame.shadingShader || (frame.shadingShader != forwardShader_.get() && frame.shadingShader != deferredShader_.get()))

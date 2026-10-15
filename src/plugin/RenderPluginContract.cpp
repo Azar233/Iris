@@ -13,6 +13,8 @@ void validateIndexedTriangleGeometry(const IndexedTriangleGeometry& geometry) {
 void validatePluginContract(const RenderPluginContract& contract) {
     if (contract.stage == PluginStage::MaterialShading && (!contract.resources.empty() || !contract.passes.empty()))
         throw std::invalid_argument("Material shading extensions bind uniforms without texture resources or draw passes");
+    if (contract.stage == PluginStage::Surface && (!contract.resources.empty() || !contract.passes.empty()))
+        throw std::invalid_argument("Surface draws borrow backend bindings without logical resources or scheduled passes");
     std::map<std::string, PluginResource> resources;
     std::set<std::string> ready, written, passNames;
     for (const auto& resource : contract.resources) {

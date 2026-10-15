@@ -24,6 +24,7 @@ inline constexpr const char* openGlFullscreenService = "opengl.fullscreen.v1";
 inline constexpr const char* openGlShadingService = "opengl.material-shading.v1";
 inline constexpr const char* openGlIndexedGeometryService = "opengl.indexed-geometry.v1";
 inline constexpr const char* openGlShaderBorrowService = "opengl.shader-borrow.v1";
+inline constexpr const char* openGlIndexedDrawService = "opengl.indexed-draw.v1";
 
 // Borrowed frame inputs. The caller owns the context, target and scheduling.
 // RendererSettings is a compatibility bridge for this first migration, not a
@@ -74,6 +75,10 @@ public:
     // Context-thread borrow for the shader-borrow service. Select the actual
     // backend path; never retain the pointer across replacement/destruction.
     virtual Shader* borrowShadingShader(bool /*deferred*/) const { return nullptr; }
+    // Surface/indexed-draw service only, on the owning context thread. The
+    // caller binds the shader/uniforms, textures, target, viewport and state.
+    // Draw private geometry, leave VAO 0, and return the actual draw count.
+    virtual std::size_t drawIndexedGeometry(const RendererSettings&) const;
     virtual void invalidateHistory() = 0;
     virtual RenderPluginFrameInfo frameInfo() const = 0;
     virtual std::size_t estimatedBytes() const { return 0; }

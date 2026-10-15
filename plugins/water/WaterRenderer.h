@@ -3,7 +3,8 @@
 #include <memory>
 class WaterSurface;
 namespace iris {
-// Owns water grids and programs; the backend owns draws, attachments and history.
+// Owns water grids, programs and indexed draws; the backend supplies bindings,
+// attachments, draw state, scheduling and history.
 class WaterRenderer final : public RenderPlugin {
 public:
     explicit WaterRenderer(std::filesystem::path shaderDirectory);
@@ -11,6 +12,7 @@ public:
     void prepareResources(const RendererSettings&, int, int) override;
     IndexedTriangleGeometry borrowIndexedGeometry(const RendererSettings&) const override;
     Shader* borrowShadingShader(bool deferred) const override;
+    std::size_t drawIndexedGeometry(const RendererSettings&) const override;
     std::size_t estimatedBytes() const override;
     void renderFrame(const RenderPluginFrame& frame) override;
     void invalidateHistory() override {}

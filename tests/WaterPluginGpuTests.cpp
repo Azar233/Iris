@@ -12,6 +12,8 @@
 #include <array>
 #include <fstream>
 #include <chrono>
+#include <vector>
+#include <cmath>
 
 namespace {
 void require(bool ok, const char* message) { if (!ok) throw std::runtime_error(message); }
@@ -68,6 +70,92 @@ void alive(const std::array<GLuint,2>& values, bool expected) {
     require(bool(glIsProgram(values[0])) == expected && bool(glIsProgram(values[1])) == expected,
         "Water program lifetime mismatch");
 }
+// Use the real water vertex/G-buffer programs and geometry. Restrict outputs
+// exactly as the backend's Deferred+TAA motion subpass does.
+void checkDraw(iris::RenderPlugin& plugin, RendererSettings settings) {
+    GLuint fbo = 0, depth = 0, query = 0;
+    std::array<GLuint,4> textures{};
+    glGenFramebuffers(1, &fbo); glBindFramebuffer(GL_FRAMEBUFFER, fbo);
+    glGenTextures(4, textures.data());
+    const std::array<GLenum,4> all{GL_COLOR_ATTACHMENT0,GL_COLOR_ATTACHMENT1,GL_COLOR_ATTACHMENT2,GL_COLOR_ATTACHMENT3};
+    for (std::size_t i = 0; i < textures.size(); ++i) {
+        glBindTexture(GL_TEXTURE_2D, textures[i]);
+        glTexImage2D(GL_TEXTURE_2D,0,GL_RGBA32F,64,64,0,GL_RGBA,GL_FLOAT,nullptr);
+        glFramebufferTexture2D(GL_FRAMEBUFFER,all[i],GL_TEXTURE_2D,textures[i],0);
+    }
+    glGenRenderbuffers(1,&depth); glBindRenderbuffer(GL_RENDERBUFFER,depth);
+    glRenderbufferStorage(GL_RENDERBUFFER,GL_DEPTH_COMPONENT24,64,64);
+    glFramebufferRenderbuffer(GL_FRAMEBUFFER,GL_DEPTH_ATTACHMENT,GL_RENDERBUFFER,depth);
+    require(glCheckFramebufferStatus(GL_FRAMEBUFFER)==GL_FRAMEBUFFER_COMPLETE,"Draw fixture FBO incomplete");
+    glGenQueries(1,&query);
+    Camera camera; camera.setOrbitPose({0,0,0},45,45,6,45);
+    RenderTarget target;
+    settings.water.level=0; settings.water.extent=4;
+    auto* shader=plugin.borrowShadingShader(true); shader->use();
+    GLint program=0; glGetIntegerv(GL_CURRENT_PROGRAM,&program);
+    const auto current=camera.projectionMatrix(1)*camera.viewMatrix();
+    auto previous=current; previous[3][0]+=0.1f;
+    const std::array<GLenum,4> motion{GL_NONE,GL_NONE,GL_NONE,GL_COLOR_ATTACHMENT3};
+    const std::array<float,4> clear{0.25f,0.5f,0.75f,0.125f};
+    const std::array<GLenum,13> keys{GL_CURRENT_PROGRAM,GL_DRAW_FRAMEBUFFER_BINDING,GL_READ_FRAMEBUFFER_BINDING,
+        GL_ACTIVE_TEXTURE,GL_TEXTURE_BINDING_2D,GL_ARRAY_BUFFER_BINDING,GL_DEPTH_WRITEMASK,GL_DEPTH_FUNC,
+        GL_BLEND_SRC_RGB,GL_BLEND_DST_RGB,GL_DRAW_BUFFER0,GL_DRAW_BUFFER1,GL_DRAW_BUFFER3};
+    for (const auto quality : {WaterQuality::High,WaterQuality::Low}) {
+        settings.water.quality=quality;
+        for (const bool motionOnly : {false,true}) {
+            glDrawBuffers(4,all.data()); glDepthMask(GL_TRUE);
+            for (int i=0;i<4;++i) glClearBufferfv(GL_COLOR,i,clear.data());
+            glClearDepth(1); glClear(GL_DEPTH_BUFFER_BIT);
+            glDrawBuffers(4,motionOnly?motion.data():all.data());
+            glViewport(0,0,64,64); glEnable(GL_DEPTH_TEST); glDepthFunc(GL_LESS);
+            glDepthMask(motionOnly?GL_FALSE:GL_TRUE); glDisable(GL_BLEND); glDisable(GL_CULL_FACE);
+            glPolygonMode(GL_FRONT_AND_BACK,GL_FILL);
+            plugin.renderFrame({target,camera,settings,64,64,0,0,nullptr,shader});
+            shader->setMat4("uCurrentViewProjection",current); shader->setMat4("uPreviousViewProjection",previous);
+            shader->setVec3("uCameraPosition",camera.position()); shader->setFloat("uTime",0);
+            shader->setFloat("uPreviousTime",0); shader->setBool("uMotionHistoryValid",true);
+            std::array<GLint,13> before{},after{};
+            std::array<GLint,2> polygonBefore{-1,-1};
+            glGetIntegerv(GL_POLYGON_MODE,polygonBefore.data());
+            for (std::size_t i=0;i<keys.size();++i) glGetIntegerv(keys[i],&before[i]);
+            glBeginQuery(GL_PRIMITIVES_GENERATED,query);
+            require(plugin.drawIndexedGeometry(settings)==1,"Wrong successful draw count");
+            glEndQuery(GL_PRIMITIVES_GENERATED);
+            GLuint generated=0; glGetQueryObjectuiv(query,GL_QUERY_RESULT,&generated);
+            const auto resolution=quality==WaterQuality::Low?water::lowGridResolution:water::gridResolution;
+            require(generated==static_cast<GLuint>(resolution*resolution*2),"Draw selected wrong grid or did not execute");
+            for (std::size_t i=0;i<keys.size();++i) glGetIntegerv(keys[i],&after[i]);
+            require(before==after && after[0]==program,"Draw changed external bindings or state");
+            GLint vao=-1; std::array<GLint,4> viewport{}; std::array<GLint,2> polygon{-1,-1};
+            glGetIntegerv(GL_VERTEX_ARRAY_BINDING,&vao); glGetIntegerv(GL_VIEWPORT,viewport.data());
+            glGetIntegerv(GL_POLYGON_MODE,polygon.data());
+            require(vao==0 && viewport==std::array<GLint,4>{0,0,64,64},"Draw changed viewport or left VAO bound");
+            require(glIsEnabled(GL_DEPTH_TEST),"Draw disabled depth test");
+            require(!glIsEnabled(GL_BLEND) && !glIsEnabled(GL_CULL_FACE),"Draw enabled blend/cull");
+            require(polygonBefore[0]==GL_FILL && polygon==polygonBefore,"Draw changed polygon mode");
+            std::vector<float> pixels(64*64*4);
+            glReadBuffer(GL_COLOR_ATTACHMENT3); glReadPixels(0,0,64,64,GL_RGBA,GL_FLOAT,pixels.data());
+            std::size_t visible=0;
+            for (std::size_t i=0;i<pixels.size();i+=4)
+                if (pixels[i+2]==1 && std::abs(pixels[i])>0.0001f) ++visible;
+            require(visible>64,"Water draw produced no meaningful motion pixels");
+            if (motionOnly) {
+                for (int attachment=0;attachment<3;++attachment) {
+                    glReadBuffer(all[attachment]); glReadPixels(0,0,64,64,GL_RGBA,GL_FLOAT,pixels.data());
+                    for (std::size_t i=0;i<pixels.size();++i)
+                        require(pixels[i]==clear[i%4],"Motion-only draw overwrote material attachment");
+                }
+                std::vector<float> depths(64*64);
+                glReadPixels(0,0,64,64,GL_DEPTH_COMPONENT,GL_FLOAT,depths.data());
+                for (const auto value : depths) require(value==1,"Motion-only draw overwrote depth");
+            }
+            require(glGetError()==GL_NO_ERROR,"Indexed surface draw GL error");
+        }
+    }
+    glDepthMask(GL_TRUE); glBindFramebuffer(GL_FRAMEBUFFER,0);
+    glDeleteQueries(1,&query); glDeleteRenderbuffers(1,&depth);
+    glDeleteTextures(4,textures.data()); glDeleteFramebuffers(1,&fbo);
+}
 }
 int main() {
     if (!glfwInit()) return 1;
@@ -103,23 +191,31 @@ int main() {
         iris::WaterRenderer* candidate = nullptr;
         int factoryCalls = 0;
         registry.add({iris::waterPluginId, iris::renderPluginApiVersion,
-            {iris::openGlShadingService, iris::openGlIndexedGeometryService, iris::openGlShaderBorrowService}, "MIT",
-            {iris::PluginStage::MaterialShading, {}, {}}, iris::builtinRenderPluginParameterSchema(iris::waterPluginId)},
+            {iris::openGlShadingService, iris::openGlIndexedGeometryService, iris::openGlShaderBorrowService,iris::openGlIndexedDrawService}, "MIT",
+            {iris::PluginStage::Surface, {}, {}}, iris::builtinRenderPluginParameterSchema(iris::waterPluginId)},
             [&](const std::filesystem::path& shaders) {
                 ++factoryCalls;
                 auto plugin = std::make_unique<iris::WaterRenderer>(shaders); candidate = plugin.get(); return plugin;
             });
         RendererSettings settings; settings.water.quality = WaterQuality::High;
-        const std::vector<std::string> services{iris::openGlShadingService, iris::openGlIndexedGeometryService, iris::openGlShaderBorrowService};
+        iris::WaterRenderer unprepared(directory);
+        rejects([&] { unprepared.RenderPlugin::drawIndexedGeometry(settings); }, "Unsupported base draw accepted");
+        rejects([&] { unprepared.drawIndexedGeometry(settings); }, "Unprepared water draw accepted");
+        const std::vector<std::string> services{iris::openGlShadingService, iris::openGlIndexedGeometryService, iris::openGlShaderBorrowService,iris::openGlIndexedDrawService};
         auto prepare = [&](const RendererSettings& value, const std::function<bool()>& current = {}) {
             return registry.prepareReplacement(iris::waterPluginId, services, directory, value, 64, 64, current);
         };
         rejects([&] { registry.prepareReplacement(iris::waterPluginId, {iris::openGlShadingService}, {}, settings, 64, 64); });
         rejects([&] { registry.prepareReplacement(iris::waterPluginId,
             {iris::openGlShadingService, iris::openGlIndexedGeometryService}, directory, settings, 64, 64); });
+        rejects([&] { registry.prepareReplacement(iris::waterPluginId,
+            {iris::openGlShadingService, iris::openGlIndexedGeometryService, iris::openGlShaderBorrowService}, directory, settings, 64, 64); });
         require(factoryCalls == 0, "Missing service allocated water resources"); bindings();
         auto owner = prepare(settings); bindings();
         auto ownedPrograms = programs(*owner); bindings();
+        checkDraw(*owner,settings);
+        sentinelShader.use(); glBindVertexArray(sentinelVao); glBindBuffer(GL_ARRAY_BUFFER,sentinelBuffer);
+        bindings();
         Camera camera; RenderTarget target;
         const iris::RenderPluginFrame foreignShaderFrame{target, camera, settings, 64, 64, 0, 0, nullptr, &sentinelShader};
         rejects([&] { owner->renderFrame(foreignShaderFrame); }, "Foreign shader accepted by water uniforms");

@@ -2,8 +2,12 @@
 #include "render/RenderTarget.h"
 #include "render/PostProcessSettings.h"
 #include "plugin/RenderPluginParameters.h"
+#include <stdexcept>
 
 namespace iris {
+std::size_t RenderPlugin::drawIndexedGeometry(const RendererSettings&) const {
+    throw std::logic_error("Render plugin does not support indexed draws");
+}
 std::vector<ModuleParameterOverride> RenderPluginFrame::parameterValues(const RenderPluginParameterSchema& schema) const {
     return schema.capture(settings);
 }

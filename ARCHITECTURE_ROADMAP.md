@@ -167,3 +167,13 @@ Water 插件拥有 Forward/Deferred 两套 Shader 与 High/Low 网格，新增 o
 下一项门槛：双编译器领域/共享接口 Integration；真实 GPU High/Low 绘制、运动附件隔离、调用前后外部 program/FBO/纹理/状态保持与 VAO 0、未准备/缺失服务拒绝及候选事务；两路径 GUI/Job/TAA/Resize/启停/OFF；两编译器各八张迁移图及受影响水面 18 图一致、GPU smoke/云水集成、CPU/Draw/bytes 原预算。GPU 时间仅诊断，不恢复已撤弃的历史 P95 门槛；不添加只复述调用计数的无效测试。
 
 本次仅交付源码审计和合同冻结，没有运行时代码变更，未重复构建/GPU/性能/打包。详细证据为本地 docs/a4w2c-water-draw-boundary.md 的所有权矩阵与调查命令；W2c-1 尚未实施，A4/W2 父项及 P1/M3 保持未完成。前项 f19ed96 的 CI 38584152494 已核对 completed/success。
+
+## A4-W2c-1：水面 indexed draw 所有权（2026-10-15 已验收）
+
+Water 改用独立 Surface stage 和 opengl.indexed-draw.v1，插件选择 High/Low 网格、验证 uint32 三角形索引并执行 draw，返回次数供后端统计。后端不再直接使用水面网格，继续准备 Shader/Uniform、环境纹理、目标/draw buffers/viewport 和 GL 状态，拥有调度与历史；Deferred + TAA 仍先仅补运动附件，再用 Forward Shader 绘制颜色。旧几何/Shader 借用接口保持，MaterialShading 仍只写 Uniform；Surface 拒绝自有逻辑纹理/pass，未准备或不支持的 draw 明确拒绝，缺失服务在资源创建前拒绝。
+
+双编译器 Integration 各 37/37；真实 GPU 两种网格的实际图元数/运动像素、材质与深度隔离、外部 program/FBO/纹理/状态保持与 VAO 0、缺失服务/失败/热重载/取消/替换/释放通过；两窗口 UI、Forward/Deferred GUI/Job、OFF CPU 5/5/普通场景/66 无帧输出通过。34 张受影响 PNG 精确一致，GPU smoke 和云水几何/两路径/云影贡献通过。
+
+四组 CPU/Draw/活跃资源 bytes 原预算通过。MSVC Forward 初次 CPU P95 3.8884 ms 和首次复测 3.3290 ms 超过原 3.3245 ms 上限，全部保留；随后固定两次同协议结果 2.0105/1.7402 ms 均通过，未改阈值或基线，不宣称性能提升。GPU P50/P95 仍仅诊断。PolygonMode 夹具不再假定查询必定写回两个值，改为比较调用前后的实际状态；纯 CPU 注册表测试的无关 GL include 已撤回，拒绝断言放到现有 GPU 夹具。失败日志保留，本地阶段说明为 docs/a4w2c1-water-indexed-draw.md，证据为 .local/verification/a4w2c1。
+
+前项调查提交 5ef02fd 的 CI 38664009109 completed/success，head 一致。本项源码和本地验收完成，提交/推送/CI 独立核对；未安装/打包，A4/W2 父项和 P1/M3 保持未完成。下一入口 A4-W2c-2：调查水面逐帧 Uniform 适配的最小切片，固定相机/时间/历史与环境依赖后再实施。
