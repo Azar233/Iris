@@ -273,3 +273,13 @@ Frame 末尾新增默认空 WaterSamplingInputs，独立同步借用反射 enabl
 下一包冻结为 A4-W2d：水面迁移阶段集成验收与支持矩阵。复用最终源码已有 CPU/GPU/OFF/GUI-Job/受影响图像证据，只补阶段十套 renderer-regression-suite、当前水面 Label Capture 与父项支持/证据归属缺口；不自动复制全套 GCC 图像或 benchmark，不把 W2c-2i 已证实误拒绝旧程序的 CPU 跨运行门槛恢复为验收。满足 W2 门槛后才收口，A4/P1/M3 不联动完成；不新增安装/ZIP。
 
 本次仅调查/文档与静态核对，没有运行时代码、新构建/CPU/GPU/图像/成本验收。完整本地记录 docs/a4w2c2j-water-uniform-closure.md、.local/verification/a4w2c2j；插图明确引用 W2c-2i 历史实拍。前项 43a8d46 的 CI 38708359880 已核对 completed/success，head 一致。本次提交/推送/CI 单独记录。
+
+## A4-W2d：水面迁移阶段验收与 W2 收口（2026-10-15 已验收）
+
+运行时代码保持 43a8d46，与调查提交 4043d70 的代码/Shader/构建输入无差异，README 等文档除外；核对源码哈希及 MSVC Build ID 0.1.0+dbd14521df436214 后，复用 W2c-2i 两编译器 CPU各37/37、OFF5/5、真实 GPU/时域/两窗口/GUI-Job、50 对精确图与四组 Draw/bytes。新增 MSVC renderer-regression-suite 十套/63 次图像比较全部通过，退出0，未改基线/阈值；阶段截图已人工查看。
+
+新增两份当前水面 RenderDoc Capture：Cloud volume march 在水面前，Forward 一次颜色绘制，Deferred+TAA 先运动程序337/FBO362、GL_NONE×3+附件3/深度不写，再颜色程序334/scene FBO347/深度写入；每次221184个 uint32 索引。实际 Shader 源、八 typed 纹理和颜色末 active unit4 均核对。CLI 正常 stderr 被 PowerShell 误报、捕获 ResourceId 被误当原始 GL 名称0的两项夹具问题已修正，失败留存，没有改生产代码或真实 GL0 合同。
+
+W2 按静态 OpenGL Surface 边界完成：Water 拥有私有网格/程序/58 Uniform 适配/索引绘制；共享纹理、环境回退、附件/状态/调度、统一历史和水下 PostProcess 保持原所有者。支持 Forward/Deferred 颜色、Deferred+TAA 运动、两网格、水上/水下、云 raw/resolved、GUI/Native Raster Job 与相关 OFF 拒绝；不承诺 DLL ABI、独立调度、CPU PT 或 Vulkan/GPU PT 水面支持。
+
+保留 W2a GPU 和 W2c-2i CPU 跨运行计时已授权例外，原数值/负对照/失败与阈值不删，阶段不宣称原成本全通过或 CPU/GPU 无回退。完整本地说明 docs/a4w2d-water-stage-acceptance.md，产物 .local/verification/a4w2d。无新运行时代码、安装/ZIP，A4/P1/M3 未完成；提交/推送/CI 单独记录。下一入口 A4-C0：原生云层迁移边界调查，先选最小切片，不继续云画质研发。

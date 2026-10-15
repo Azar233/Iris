@@ -29,3 +29,5 @@ W2c-2g 通过独立可选 CloudShadowInputs 同步借用同次解析的云影开
 W2c-2i 增加独立可选 WaterSamplingInputs，借用当前云 Pass 后解析的反射开关与实际 raw/resolved 纹理 ID；插件为实际颜色程序适配剩余 sampler 0/1/2/3/4/6/7 与反射开关。后端在原位置绑定同一快照的 unit7，保留其余 typed 纹理绑定与环境回退。旧空调用保留任意预置 sampler/开关，运动不消费；启用-ID 不一致在所有 Uniform 写入前拒绝。插件不绑定纹理、保留 ID 或新增历史，Scene/Job 与 19 项 schema 不变。
 
 W2c-2j 静态收口核对：三个水面 Shader 与云影 include 的 58 个去重 Uniform 名称均已在插件适配，后端无直接水面 Uniform 上传。Surface 仍借用宿主准备的目标、八单元纹理和绘制状态，不声明逻辑资源或调度 pass；统一时域历史、云/环境/阴影资源、水下 PostProcess 与透明物体衔接继续由原所有者管理。此结论不扩大为跨后端 ABI，也不代表 W2 阶段集成验收已完成。
+
+W2d 已完成静态 OpenGL 水面迁移阶段验收：在相同最终源码的双编译器/OFF/真实 GPU/GUI-Job/50 对精确图证据上，新增 MSVC 十套图像回归（63 次比较）和 Forward/Deferred 两份带标签 GPU Capture，确认当前颜色/运动程序、附件隔离、纹理 target 与云 Pass 顺序。支持 Native Raster 两路径、两档网格、水上/水下和现有云反射组合；CPU PT、Vulkan、DLL ABI 与独立 pass 调度不在支持范围。原跨运行 CPU/GPU 计时存在已授权的无效门槛例外，原失败与诊断保留，不宣称性能无回退；W2 完成不代表 A4 整体完成。
