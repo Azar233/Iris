@@ -211,3 +211,11 @@ RenderPluginFrame 末尾增加默认空 WaterLightingInputs，同步借用后端
 双编译器 Integration 各 37/37、OFF 5/5/普通场景/水面 66 无输出，双编译器真实 GPU 八项 Uniform/旧调用/原资源事务、两窗口 UI/后端历史边界/GUI-Job 通过。54 张 PNG 精确一致，其中 20 张覆盖太阳 -2° 边界两侧、无月夜、强月和大气关闭；云水集成与 GPU smoke 通过。四组 CPU/Draw/bytes 原预算首轮通过，GPU 时间仅诊断，无新采样失败、阈值/基线修改或验收测试撤弃。提前 GCC PlanOnly 因旧索引时间拒绝，随后标准配置/完整检查通过，日志保留。
 
 本地记录 docs/a4w2c2c-water-lighting-uniforms.md 和 .local/verification/a4w2c2c。前项 23bdde8 的 CI 38668610183 已核对 completed/success。本项源码与本地验收完成，提交/推送/CI 独立核对；无新安装/ZIP，A4/W2 父项及 P1/M3 未完成。下一入口 W2c-2d：水面阴影、云 metadata 与纹理绑定借用边界调查，先冻结依赖与状态合同，再选择实现切片。
+
+## A4-W2c-2d：水面阴影、云与纹理边界调查（2026-10-15 已完成）
+
+基于 890cbf4 核对四项实际水面级联阴影 Uniform、八个纹理 unit/target 和对象/云影不同的禁用语义。后端共享级联拟合与填充不能在插件重算；公共 helper 的 optics/debug 两个名字未在水面声明，其他消费者继续保留。云影 bind 同时写 metadata 与绑定资源，缓存复用不代表失活；云反射 radianceTexture 可能是当前时域结果，必须在本帧云 Pass 后解析，不能提前借用上一帧 ID。opaque 颜色/深度与水面写入附件保持分离，Surface 不增加逻辑资源/pass。
+
+下一包冻结为 W2c-2e：四字段 WaterShadowInputs 默认空同步借用，插件仅为实际自有颜色程序适配 shadowsEnabled、cascadeCount、四矩阵、四 splits；旧调用不覆盖，非法直接输入在所有 Uniform 写入前拒绝。后端保持 caster/拟合/填充及阴影纹理、云/环境/折射资源、附件/状态/调度/历史。本次没有实际添加 API 或运行时代码。
+
+完整审计与未执行的下一包验收门槛见本地 docs/a4w2c2d-water-shadow-texture-boundary.md；本次只作源码/路径/合同静态检查，复用并实际查看上一包的说明图，没有新 CPU/GPU/图像/性能成绩或基线修改。A4/W2 父项、P1/M3 保持未完成，无新安装/ZIP；提交/推送/CI 单独记录。
