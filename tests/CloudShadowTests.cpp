@@ -16,6 +16,50 @@ namespace {
 void require(bool condition, const char* message) {
     if (!condition) throw std::runtime_error(message);
 }
+CloudShadowInputs checkInputs(const CloudShadowRenderer& map, Shader& receiver, bool hostEnabled) {
+    GLint active=0,program=0; glGetIntegerv(GL_ACTIVE_TEXTURE,&active); glGetIntegerv(GL_CURRENT_PROGRAM,&program);
+    const auto input=map.frameInputs(hostEnabled);
+    GLint afterActive=0,afterProgram=0; glGetIntegerv(GL_ACTIVE_TEXTURE,&afterActive); glGetIntegerv(GL_CURRENT_PROGRAM,&afterProgram);
+    require(active==afterActive && program==afterProgram,"Cloud snapshot changed GL state");
+    require(input.enabled==(hostEnabled && map.active()) && input.texture==(input.enabled ? map.texture() : 0U),
+        "Cloud snapshot activation/resource mismatch");
+    require(std::isfinite(input.extent) && input.extent>=1 && std::isfinite(input.base),"Invalid resolved projection");
+    if(map.resolution()>0) for(const int pixel : {0,map.resolution()-1}) {
+        const auto coordinate=input.center+(glm::vec2(pixel+0.5f)/float(map.resolution())*2.0f-1.0f)*input.extent;
+        const auto origin=input.axisX*coordinate.x+input.axisY*coordinate.y;
+        const auto expected=map.texelRayOrigin(pixel,pixel);
+        for(int i=0;i<3;++i) require(std::abs(origin[i]-expected[i])<0.001f,"Snapshot/map projection drift");
+    }
+    receiver.use(); GLint id=0; glGetIntegerv(GL_CURRENT_PROGRAM,&id);
+    for(const unsigned int unit : {2U,5U,11U,17U}) {
+        map.bind(receiver,unit,hostEnabled);
+        GLint bound=0,boundUnit=0; glGetIntegerv(GL_TEXTURE_BINDING_2D,&bound); glGetIntegerv(GL_ACTIVE_TEXTURE,&boundUnit);
+        require(static_cast<unsigned int>(bound)==input.texture && boundUnit==static_cast<GLint>(GL_TEXTURE0+unit),
+            "Cloud bind borrowed a different texture or unit");
+        const auto flag=[&](const char* name,int expected) {
+            const auto location=glGetUniformLocation(id,name); require(location>=0,"Missing cloud receiver flag");
+            GLint value=0; glGetUniformiv(id,location,&value); require(value==expected,"Cloud receiver flag mismatch");
+        };
+        flag("uCloudShadowEnabled",input.enabled); flag("uCloudShadowMap",static_cast<int>(unit));
+        const auto check=[&](const char* name,const float* expected,int size) {
+            const auto location=glGetUniformLocation(id,name); require(location>=0,"Missing cloud receiver metadata");
+            float value[3]{}; glGetUniformfv(id,location,value);
+            for(int i=0;i<size;++i) require(value[i]==expected[i],"Cloud receiver/snapshot mismatch");
+        };
+        check("uCloudShadowAxisX",&input.axisX[0],3); check("uCloudShadowAxisY",&input.axisY[0],3);
+        check("uCloudShadowCenter",&input.center[0],2); check("uCloudShadowExtent",&input.extent,1);
+        check("uCloudShadowBase",&input.base,1);
+        if(input.enabled) {
+            GLint width=0,height=0,format=0;
+            glGetTexLevelParameteriv(GL_TEXTURE_2D,0,GL_TEXTURE_WIDTH,&width);
+            glGetTexLevelParameteriv(GL_TEXTURE_2D,0,GL_TEXTURE_HEIGHT,&height);
+            glGetTexLevelParameteriv(GL_TEXTURE_2D,0,GL_TEXTURE_INTERNAL_FORMAT,&format);
+            require(glIsTexture(input.texture) && width==map.resolution() && height==width && format==GL_R16F,
+                "Cloud snapshot resource storage mismatch");
+        }
+    }
+    return input;
+}
 std::vector<float> read(const CloudShadowRenderer& map) {
     std::vector<float> values(static_cast<std::size_t>(map.resolution()) * map.resolution());
     glBindTexture(GL_TEXTURE_2D, map.texture());
@@ -43,12 +87,17 @@ void run(const std::filesystem::path& output) {
     p.cloudOfflineNoise=std::getenv("MYRENDERER_TEST_OFFLINE_NOISE")!=nullptr;
     p.cloudNoisePeriod = p.cloudOfflineNoise?4.0f:5.0f;
     CloudShadowRenderer map(std::filesystem::path(MYRENDERER_SOURCE_DIR) / "shaders");
+    Shader receiver(std::filesystem::path(MYRENDERER_SOURCE_DIR) / "shaders/water.vert",
+        std::filesystem::path(MYRENDERER_SOURCE_DIR) / "shaders/water_forward.frag");
+    require(!checkInputs(map,receiver,true).enabled,"Unrendered cloud map must be disabled");
     for (auto tier : {atmosphere::CloudQualityTier::Low, atmosphere::CloudQualityTier::High}) {
         p.cloudQuality = tier;
         p.cloudWindOffsetX = 0;
         map.render(p, glm::vec3(0), 6000, cloud::volumetricExtinction);
         require(map.active(), "daylight cloud shadow map must run");
         require(map.updatedThisFrame(), "first map or quality change must render a new transmission map");
+        const auto first=checkInputs(map,receiver,true);
+        require(!checkInputs(map,receiver,false).enabled && map.active(),"Host gate changed internal cloud activity");
         const auto pixels = read(map);
         float worst = 0;
         int dark = 0;
@@ -68,10 +117,14 @@ void run(const std::filesystem::path& output) {
         save(output / (name + "-base.ppm"), pixels, map.resolution());
         map.render(p, glm::vec3(0.001f), 6000, cloud::volumetricExtinction);
         require(!map.updatedThisFrame(), "unchanged snapped inputs must reuse the existing map");
+        const auto cached=checkInputs(map,receiver,true);
+        require(cached.enabled && cached.texture==first.texture && cached.center==first.center,
+            "Cache hit invalidated cloud receiver inputs");
         require(pixels == read(map), "sub-texel camera movement must keep the snapped shadow grid stable");
         p.cloudWindOffsetX = 700;
         map.render(p, glm::vec3(0), 6000, cloud::volumetricExtinction);
         require(map.updatedThisFrame(), "wind changes must invalidate the map cache");
+        checkInputs(map,receiver,true);
         const auto moved = read(map);
         double delta = 0;
         for (std::size_t i = 0; i < moved.size(); ++i) delta += std::abs(moved[i] - pixels[i]);
@@ -81,6 +134,7 @@ void run(const std::filesystem::path& output) {
         p.sunAzimuthDegrees += 25;
         map.render(p, glm::vec3(0), 6000, cloud::volumetricExtinction);
         require(map.updatedThisFrame(), "sun changes must invalidate the map cache");
+        checkInputs(map,receiver,true);
         require(moved != read(map), "solar direction must affect the cloud projection");
         p.sunAzimuthDegrees -= 25;
         std::cout << name << ": CPU/GPU maximum error " << worst << ", wind transmission MAE " << delta << '\n';
@@ -89,18 +143,29 @@ void run(const std::filesystem::path& output) {
     p.cloudCoverageVariation = 0;
     map.render(p, glm::vec3(0), 6000, cloud::volumetricExtinction);
     for (float t : read(map)) require(t == 1, "removing clouds must immediately clear cloud shadows");
+    checkInputs(map,receiver,true);
     p.sunElevationDegrees = -10;
     map.render(p, glm::vec3(0), 6000, cloud::volumetricExtinction);
     require(!map.active(), "night must skip solar cloud shadows");
+    require(!checkInputs(map,receiver,true).enabled,"Inactive map leaked a receiver texture");
     p.sunElevationDegrees = 45;
     p.cloudShadowsEnabled = false;
     map.render(p, glm::vec3(0), 6000, cloud::volumetricExtinction);
     require(!map.active(), "cloud shadow switch must disable the map");
+    checkInputs(map,receiver,true);
+    p.cloudShadowsEnabled=true;
+    map.render(p,glm::vec3(0),6000,cloud::volumetricExtinction);
+    require(checkInputs(map,receiver,true).enabled,"Reenabled cloud map remained disabled");
     // A changed program must rerender even when every density/projection input
     // remains identical. Only a temporary shader copy is edited here.
     const auto shaderRoot = std::filesystem::path(MYRENDERER_SOURCE_DIR) / "shaders";
     const auto reloadRoot = output / "reload" / "shaders";
     std::filesystem::create_directories(reloadRoot);
+    // Keep the reload fixture self-contained even in deeply nested evidence
+    // directories, beyond the shader loader's bounded ancestor search.
+    std::filesystem::create_directories(reloadRoot / "src/optics");
+    std::filesystem::copy_file(shaderRoot.parent_path() / "src/optics/CloudField.h",
+        reloadRoot / "src/optics/CloudField.h", std::filesystem::copy_options::overwrite_existing);
     for (const char* file : {"fullscreen.vert", "cloud_shadow.frag", "cloud_noise_sample.glsl"}) {
         std::filesystem::copy_file(shaderRoot / file, reloadRoot / file,
             std::filesystem::copy_options::overwrite_existing);
@@ -122,9 +187,11 @@ void run(const std::filesystem::path& output) {
         require(reload.reloaded >= 1 && reload.failed == 0, "temporary cloud shader reload must succeed");
         reloadMap.render(reloadParameters, glm::vec3(0), 6000, cloud::volumetricExtinction);
         require(reloadMap.updatedThisFrame(), "hot reload must invalidate cached cloud transmission");
+        checkInputs(reloadMap,receiver,true);
         require(original == read(reloadMap), "comment-only reload must preserve transmission pixels");
         reloadMap.render(reloadParameters, glm::vec3(0), 7000, cloud::volumetricExtinction);
         require(reloadMap.updatedThisFrame(), "projection extent changes must invalidate cached transmission");
+        checkInputs(reloadMap,receiver,true);
         require(original != read(reloadMap), "projection extent must affect sampled cloud rays");
         reloadParameters.cloudShapeBlend = 0.85f;
         reloadMap.render(reloadParameters, glm::vec3(0), 6000, cloud::volumetricExtinction);

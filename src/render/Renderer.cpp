@@ -826,7 +826,9 @@ shader_->setMat4("uView", view);
         if (!settings.water.enabled) return;
         iris::WaterLightingInputs waterLightingInputs;
         iris::WaterShadowInputs waterShadowInputs;
+        CloudShadowInputs waterCloudShadowInputs;
         if (!deferred) {
+            waterCloudShadowInputs = cloudShadow_->frameInputs(cloudShadowEnabled);
             waterShadowInputs = {objectShadowsActive, static_cast<int>(cascadeCount), cascadeMatrices, cascadeSplits};
             const float solarTwilight = settings.atmosphere.enabled
                 ? 0.03f + 0.97f * std::clamp(
@@ -844,9 +846,10 @@ shader_->setMat4("uView", view);
         waterShader.use();
         waterRenderer_->renderFrame({*renderTarget_,camera,settings,width,height,settings.water.timeSeconds,
             fullscreenVertexArray_,nullptr,&waterShader,&waterFrameInputs_,deferred ? nullptr : &waterLightingInputs,
-            deferred ? nullptr : &waterShadowInputs});
+            deferred ? nullptr : &waterShadowInputs, deferred ? nullptr : &waterCloudShadowInputs});
         if (!deferred) {
-            cloudShadow_->bind(waterShader, 5U, cloudShadowEnabled);
+            glActiveTexture(GL_TEXTURE5);
+            glBindTexture(GL_TEXTURE_2D, waterCloudShadowInputs.texture);
             waterShader.setInt("uPrefilteredEnvironmentMap", 0);
             waterShader.setInt("uIrradianceMap", 1);
             waterShader.setInt("uShadowMap", 2);

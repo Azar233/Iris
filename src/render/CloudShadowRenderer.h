@@ -10,6 +10,16 @@
 #include "render/CloudNoiseTexture.h"
 class Shader;
 
+// Same-call values for receivers; the map and its lifetime stay with the backend.
+struct CloudShadowInputs {
+    bool enabled{false};
+    glm::vec3 axisX{1,0,0}, axisY{0,0,1};
+    glm::vec2 center{0};
+    float extent{1};
+    float base{0};
+    unsigned int texture{0};
+};
+
 // One orthographic sun-ray transmission map. All receivers below the cloud base use the same
 // integral along a ray, regardless of receiver height. The frame's map is shared by every path.
 class CloudShadowRenderer {
@@ -21,6 +31,7 @@ public:
     void render(const atmosphere::AtmosphereParameters& parameters, const glm::vec3& cameraPosition,
         float extent, float extinction);
     void bind(Shader& shader, unsigned int unit, bool enabled) const;
+    CloudShadowInputs frameInputs(bool hostEnabled) const;
     unsigned int texture() const { return texture_; }
     int resolution() const { return resolution_; }
     int steps() const { return steps_; }

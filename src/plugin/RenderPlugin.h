@@ -14,6 +14,7 @@ class Shader;
 class RenderTarget;
 struct RendererSettings;
 struct PostProcessSettings;
+struct CloudShadowInputs;
 
 namespace iris {
 struct RenderPluginParameterSchema;
@@ -65,7 +66,8 @@ struct RenderPluginFrame {
         const PostProcessSettings* postProcessSettings = nullptr, Shader* shadingShader = nullptr,
         const WaterFrameInputs* waterInputs = nullptr,
         const WaterLightingInputs* waterLightingInputs = nullptr,
-        const WaterShadowInputs* waterShadowInputs = nullptr);
+        const WaterShadowInputs* waterShadowInputs = nullptr,
+        const CloudShadowInputs* waterCloudShadowInputs = nullptr);
     RenderTarget& target;
     const Camera& camera;
     const RendererSettings& settings;
@@ -82,6 +84,7 @@ struct RenderPluginFrame {
     // Optional synchronous borrow for the water color program only.
     const WaterLightingInputs* waterLightingInputs;
     const WaterShadowInputs* waterShadowInputs;
+    const CloudShadowInputs* waterCloudShadowInputs;
     std::vector<RenderTextureBinding> textures;
     unsigned int texture(const std::string& name) const;
     std::vector<ModuleParameterOverride> parameterValues(const RenderPluginParameterSchema& schema) const;

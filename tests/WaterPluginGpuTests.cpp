@@ -4,6 +4,7 @@
 #include "render/Shader.h"
 #include "render/Camera.h"
 #include "render/RenderTarget.h"
+#include "render/CloudShadowRenderer.h"
 #include <glad/gl.h>
 #include <GLFW/glfw3.h>
 #include <iostream>
@@ -70,6 +71,25 @@ std::array<GLuint,2> programs(const iris::RenderPlugin& plugin) {
 void alive(const std::array<GLuint,2>& values, bool expected) {
     require(bool(glIsProgram(values[0])) == expected && bool(glIsProgram(values[1])) == expected,
         "Water program lifetime mismatch");
+}
+std::vector<std::array<float,16>> uniformSnapshot(GLuint program) {
+    GLint count=0,maxName=0;
+    glGetProgramiv(program,GL_ACTIVE_UNIFORMS,&count);
+    glGetProgramiv(program,GL_ACTIVE_UNIFORM_MAX_LENGTH,&maxName);
+    std::vector<char> name(static_cast<std::size_t>(maxName));
+    std::vector<std::array<float,16>> values;
+    for(GLint i=0;i<count;++i) {
+        GLsizei length=0; GLint size=0; GLenum type=0;
+        glGetActiveUniform(program,i,maxName,&length,&size,&type,name.data());
+        std::string base(name.data(),static_cast<std::size_t>(length));
+        if(size>1) base.resize(base.size()-3);
+        for(GLint element=0;element<size;++element) {
+            const auto key=size>1 ? base+"["+std::to_string(element)+"]" : base;
+            values.push_back({});
+            glGetUniformfv(program,glGetUniformLocation(program,key.c_str()),values.back().data());
+        }
+    }
+    return values;
 }
 void checkFrameUniforms(GLuint program, const iris::WaterFrameInputs& input,
     const Camera& camera, float time, bool forward, int width=64, int height=64) {
@@ -197,33 +217,14 @@ void checkShadows(iris::RenderPlugin& plugin, RendererSettings settings) {
     }
     // Snapshot every active element, including camera, light and Settings
     // uniforms. A rejected shadow packet must not partially update any of them.
-    const auto snapshot=[&] {
-        GLint count=0,maxName=0;
-        glGetProgramiv(program,GL_ACTIVE_UNIFORMS,&count);
-        glGetProgramiv(program,GL_ACTIVE_UNIFORM_MAX_LENGTH,&maxName);
-        std::vector<char> name(static_cast<std::size_t>(maxName));
-        std::vector<std::array<float,16>> values;
-        for(GLint i=0;i<count;++i) {
-            GLsizei length=0; GLint size=0; GLenum type=0;
-            glGetActiveUniform(program,i,maxName,&length,&size,&type,name.data());
-            std::string base(name.data(),static_cast<std::size_t>(length));
-            if(size>1) base.resize(base.size()-3); // The active array name ends in [0].
-            for(GLint element=0;element<size;++element) {
-                const auto key=size>1 ? base+"["+std::to_string(element)+"]" : base;
-                values.push_back({});
-                glGetUniformfv(program,glGetUniformLocation(program,key.c_str()),values.back().data());
-            }
-        }
-        return values;
-    };
-    const auto previous=snapshot();
+    const auto previous=uniformSnapshot(program);
     auto changed=settings; changed.water.extent+=10; changed.water.timeSeconds+=1;
     changed.environmentIntensity+=2; camera.setFarPlane(711);
     frame.currentViewProjection[3][0]=0.25f; light.diffuseStrength=0.123f;
     const auto reject=[&](const iris::WaterShadowInputs& invalid) {
         rejects([&]{plugin.renderFrame({target,camera,changed,128,72,0,0,nullptr,shader,&frame,&light,&invalid});},
             "Invalid water shadow packet accepted");
-        require(snapshot()==previous,"Rejected shadow packet partially changed uniforms");
+        require(uniformSnapshot(program)==previous,"Rejected shadow packet partially changed uniforms");
     };
     for(const int count : {0,5}) {auto invalid=input; invalid.cascadeCount=count; reject(invalid);}
     for(const float value : {std::numeric_limits<float>::quiet_NaN(),std::numeric_limits<float>::infinity()})
@@ -239,6 +240,84 @@ void checkShadows(iris::RenderPlugin& plugin, RendererSettings settings) {
     for(const auto* name : {"uShadowsEnabled","uShadowCascadeCount","uLightViewProjection[0]","uCascadeSplits[0]"})
         require(glGetUniformLocation(motionProgram,name)<0,"Motion program unexpectedly consumes shadows");
     require(glGetError()==GL_NO_ERROR,"Water shadow uniform checks produced a GL error");
+}
+void checkCloudShadows(iris::RenderPlugin& plugin, RendererSettings settings) {
+    Camera camera; RenderTarget target;
+    iris::WaterFrameInputs frame; iris::WaterLightingInputs light; iris::WaterShadowInputs shadow;
+    for(auto& matrix : shadow.lightViewProjections) matrix=glm::mat4(1);
+    shadow.cascadeSplits.fill(100);
+    GLint oldActive=0,oldTexture=0; glGetIntegerv(GL_ACTIVE_TEXTURE,&oldActive);
+    glActiveTexture(GL_TEXTURE5); glGetIntegerv(GL_TEXTURE_BINDING_2D,&oldTexture);
+    GLuint texture=0; glGenTextures(1,&texture); glBindTexture(GL_TEXTURE_2D,texture);
+    glTexImage2D(GL_TEXTURE_2D,0,GL_R16F,4,4,0,GL_RED,GL_FLOAT,nullptr);
+    glActiveTexture(GL_TEXTURE3);
+    const auto textureState=[] {
+        std::array<GLint,25> state{}; glGetIntegerv(GL_ACTIVE_TEXTURE,&state[0]);
+        for(int unit=0;unit<8;++unit) {
+            glActiveTexture(GL_TEXTURE0+unit);
+            glGetIntegerv(GL_TEXTURE_BINDING_2D,&state[1+unit*3]);
+            glGetIntegerv(GL_TEXTURE_BINDING_CUBE_MAP,&state[2+unit*3]);
+            glGetIntegerv(GL_TEXTURE_BINDING_2D_ARRAY,&state[3+unit*3]);
+        }
+        glActiveTexture(state[0]); return state;
+    };
+    const auto bindings=textureState();
+    auto* shader=plugin.borrowShadingShader(false); shader->use();
+    GLint program=0; glGetIntegerv(GL_CURRENT_PROGRAM,&program);
+    CloudShadowInputs input{true,{0.7f,0.1f,0.2f},{0.2f,0.6f,0.3f},{13,-27},83,42,texture};
+    settings.renderPath=RenderPath::Deferred; settings.atmosphere.cloudShadowsEnabled=false;
+    const auto verify=[&] {
+        for(const auto* name : {"uCloudShadowEnabled","uCloudShadowMap"}) {
+            const auto location=glGetUniformLocation(program,name); require(location>=0,"Missing cloud shadow flag");
+            GLint value=0; glGetUniformiv(program,location,&value);
+            require(value==(std::string(name)=="uCloudShadowMap" ? 5 : int(input.enabled)),"Cloud flag/sampler mismatch");
+        }
+        const auto check=[&](const char* name,const float* expected,int count) {
+            const auto location=glGetUniformLocation(program,name); require(location>=0,"Missing cloud shadow metadata");
+            std::array<float,3> value{}; glGetUniformfv(program,location,value.data());
+            for(int i=0;i<count;++i) require(value[i]==expected[i],"Cloud shadow metadata mismatch");
+        };
+        check("uCloudShadowAxisX",&input.axisX[0],3); check("uCloudShadowAxisY",&input.axisY[0],3);
+        check("uCloudShadowCenter",&input.center[0],2); check("uCloudShadowExtent",&input.extent,1);
+        check("uCloudShadowBase",&input.base,1);
+        require(textureState()==bindings,"Water cloud adapter changed borrowed textures");
+    };
+    for(const bool enabled : {false,true}) {
+        input.enabled=enabled; input.texture=enabled ? texture : 0U;
+        // Independent packet: no camera/frame/light/cascade borrow or viewport requirement.
+        plugin.renderFrame({target,camera,settings,0,0,0,0,nullptr,shader,nullptr,nullptr,nullptr,&input}); verify();
+        plugin.renderFrame({target,camera,settings,64,64,0,0,nullptr,shader,&frame,&light,&shadow,&input}); verify();
+        plugin.renderFrame({target,camera,settings,0,0,0,0,nullptr,shader}); verify();
+        plugin.renderFrame({target,camera,settings,64,64,0,0,nullptr,shader,&frame}); verify();
+        plugin.renderFrame({target,camera,settings,64,64,0,0,nullptr,shader,nullptr,&light}); verify();
+        plugin.renderFrame({target,camera,settings,64,64,0,0,nullptr,shader,nullptr,nullptr,&shadow}); verify();
+    }
+    const auto previous=uniformSnapshot(program);
+    auto changed=settings; changed.water.extent+=10; changed.water.timeSeconds+=1;
+    frame.currentViewProjection[3][0]=0.3f; camera.setFarPlane(911);
+    light.diffuseStrength=0.23f; shadow.shadowsEnabled=true;
+    const auto reject=[&](const CloudShadowInputs& invalid) {
+        rejects([&]{plugin.renderFrame({target,camera,changed,128,72,0,0,nullptr,shader,&frame,&light,&shadow,&invalid});},
+            "Invalid cloud shadow packet accepted");
+        require(uniformSnapshot(program)==previous && textureState()==bindings,"Rejected cloud packet changed GPU state");
+    };
+    for(const float value : {std::numeric_limits<float>::quiet_NaN(),std::numeric_limits<float>::infinity()})
+        for(int field=0;field<10;++field) {
+            auto invalid=input;
+            const std::array<float*,10> fields{&invalid.axisX[0],&invalid.axisX[1],&invalid.axisX[2],
+                &invalid.axisY[0],&invalid.axisY[1],&invalid.axisY[2],&invalid.center[0],&invalid.center[1],&invalid.extent,&invalid.base};
+            *fields[field]=value; reject(invalid);
+        }
+    for(const float extent : {0.0f,-1.0f}) {auto invalid=input;invalid.extent=extent;reject(invalid);}
+    auto invalid=input; invalid.texture=0; reject(invalid);
+    invalid=input; invalid.enabled=false; reject(invalid);
+    auto* motion=plugin.borrowShadingShader(true); motion->use();
+    plugin.renderFrame({target,camera,settings,64,64,0,0,nullptr,motion,&frame,&light,&shadow,&invalid});
+    GLint motionProgram=0; glGetIntegerv(GL_CURRENT_PROGRAM,&motionProgram);
+    require(glGetUniformLocation(motionProgram,"uCloudShadowEnabled")<0 && textureState()==bindings,"Motion consumed cloud shadow");
+    glActiveTexture(GL_TEXTURE5); glBindTexture(GL_TEXTURE_2D,oldTexture); glDeleteTextures(1,&texture);
+    glActiveTexture(oldActive);
+    require(glGetError()==GL_NO_ERROR,"Cloud shadow adaptation GL error");
 }
 // Use the real water vertex/G-buffer programs and geometry. Restrict outputs
 // exactly as the backend's Deferred+TAA motion subpass does.
@@ -424,6 +503,7 @@ int main() {
         checkDraw(*owner,settings);
         checkLighting(*owner,settings);
         checkShadows(*owner,settings);
+        checkCloudShadows(*owner,settings);
         sentinelShader.use(); glBindVertexArray(sentinelVao); glBindBuffer(GL_ARRAY_BUFFER,sentinelBuffer);
         bindings();
         Camera camera; RenderTarget target;

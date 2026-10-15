@@ -3,6 +3,7 @@
 #include "render/Shader.h"
 #include "render/Camera.h"
 #include "render/WaterSurface.h"
+#include "render/CloudShadowRenderer.h"
 #include <glad/gl.h>
 #include <glm/matrix.hpp>
 #include <cmath>
@@ -49,6 +50,18 @@ void WaterRenderer::renderFrame(const RenderPluginFrame& frame) {
         throw std::invalid_argument("Water requires its borrowed, bound water shader");
     auto& shader=*frame.shadingShader;
     const auto& settings=frame.settings.water;
+    if (frame.waterCloudShadowInputs && frame.shadingShader == forwardShader_.get()) {
+        const auto& input=*frame.waterCloudShadowInputs;
+        if(input.enabled != (input.texture != 0U) || !std::isfinite(input.extent) || input.extent<=0
+            || !std::isfinite(input.base))
+            throw std::invalid_argument("Water cloud shadow requires consistent activation and finite positive extent");
+        for(int i=0;i<3;++i)
+            if(!std::isfinite(input.axisX[i]) || !std::isfinite(input.axisY[i]))
+                throw std::invalid_argument("Water cloud shadow axes must be finite");
+        for(int i=0;i<2;++i)
+            if(!std::isfinite(input.center[i]))
+                throw std::invalid_argument("Water cloud shadow center must be finite");
+    }
     // Validate the entire color packet before writing any uniforms. Motion-only
     // calls do not consume shadow inputs, including their validation contract.
     if (frame.waterShadowInputs && frame.shadingShader == forwardShader_.get()) {
@@ -96,6 +109,16 @@ void WaterRenderer::renderFrame(const RenderPluginFrame& frame) {
         shader.setInt("uShadowCascadeCount",shadow.cascadeCount);
         shader.setMat4Array("uLightViewProjection[0]",shadow.lightViewProjections.data(),shadow.lightViewProjections.size());
         shader.setFloatArray("uCascadeSplits[0]",shadow.cascadeSplits.data(),shadow.cascadeSplits.size());
+    }
+    if (frame.waterCloudShadowInputs && frame.shadingShader == forwardShader_.get()) {
+        const auto& input=*frame.waterCloudShadowInputs;
+        shader.setBool("uCloudShadowEnabled",input.enabled);
+        shader.setInt("uCloudShadowMap",5);
+        shader.setVec3("uCloudShadowAxisX",input.axisX);
+        shader.setVec3("uCloudShadowAxisY",input.axisY);
+        shader.setVec2("uCloudShadowCenter",input.center);
+        shader.setFloat("uCloudShadowExtent",input.extent);
+        shader.setFloat("uCloudShadowBase",input.base);
     }
     if (frame.waterInputs) {
         const auto& input=*frame.waterInputs;

@@ -115,14 +115,19 @@ void CloudShadowRenderer::render(const atmosphere::AtmosphereParameters& p,
     cacheValid_ = true;
     updatedThisFrame_ = true;
 }
+CloudShadowInputs CloudShadowRenderer::frameInputs(bool hostEnabled) const {
+    const bool enabled = hostEnabled && active_;
+    return {enabled, axisX_, axisY_, center_, extent_, cloudBase_, enabled ? texture_ : 0U};
+}
 void CloudShadowRenderer::bind(Shader& shader, unsigned int unit, bool enabled) const {
-    shader.setBool("uCloudShadowEnabled", enabled && active_);
+    const auto input = frameInputs(enabled);
+    shader.setBool("uCloudShadowEnabled", input.enabled);
     shader.setInt("uCloudShadowMap", static_cast<int>(unit));
-    shader.setVec3("uCloudShadowAxisX", axisX_);
-    shader.setVec3("uCloudShadowAxisY", axisY_);
-    shader.setVec2("uCloudShadowCenter", center_);
-    shader.setFloat("uCloudShadowExtent", extent_);
-    shader.setFloat("uCloudShadowBase", cloudBase_);
+    shader.setVec3("uCloudShadowAxisX", input.axisX);
+    shader.setVec3("uCloudShadowAxisY", input.axisY);
+    shader.setVec2("uCloudShadowCenter", input.center);
+    shader.setFloat("uCloudShadowExtent", input.extent);
+    shader.setFloat("uCloudShadowBase", input.base);
     glActiveTexture(GL_TEXTURE0 + unit);
-    glBindTexture(GL_TEXTURE_2D, enabled && active_ ? texture_ : 0U);
+    glBindTexture(GL_TEXTURE_2D, input.texture);
 }

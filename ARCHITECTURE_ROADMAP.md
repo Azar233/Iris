@@ -235,3 +235,13 @@ RenderPluginFrame 末尾增加独立默认空 WaterShadowInputs，同步借用�
 冻结 W2c-2g：拟议 CloudShadowInputs 七字段值快照及 frameInputs(hostEnabled)，默认空 Frame 借用；插件只为实际颜色程序适配六项 metadata 与 sampler=5，旧空调用保留，非法数值/extent/启用-ID 配对在所有 Uniform 写入前拒绝。后端继续在原位置绑定同一快照的 unit5 纹理；原 bind 的三个其他消费者保留。没有增加 Surface 逻辑资源/pass、纹理所有权或通用框架。
 
 本次只作调查/文档与静态合同检查，无运行时代码/API/测试变化，无新构建/CPU/GPU/图像/成本/打包成绩。详细合同与下一包未执行的门槛见本地 docs/a4w2c2f-cloud-shadow-borrow-contract.md；插图明确复用 W2c-2e，不把旧证据记为本次通过。W2c-2g 尚未实施，A4/W2 父项及 P1/M3 不勾选；提交/推送/CI 单独记录。
+
+## A4-W2c-2g：云影同次快照与七项 Uniform 适配（2026-10-15 已验收）
+
+CloudShadowRenderer 提供七字段 CloudShadowInputs 值快照，统一解析最终开关/metadata/可用纹理 ID，原 bind 的其他消费者兼容。Frame 末尾默认空同步借用，插件为实际颜色程序适配六项 metadata 与 sampler=5；后端在原位置绑定同一快照纹理。旧空调用不覆盖、运动不消费，非有限值/非正 extent/启用-ID 不匹配在所有 Uniform 写入前拒绝。云影生成、缓存、资源所有权、其他纹理/云反射、附件/状态/调度/历史保持。
+
+双编译器 Integration 各 37/37，OFF 5/5/普通场景/含水 Job 66 无输出，水面真实 GPU 七 Uniform/独立包/24 拒绝无部分写入/纹理状态保持与原运动/资源事务通过。云影两编译器×程序/离线噪声四组 GPU 通过，积分最大误差 <0.00049，原门槛 0.002；四消费者、初始/缓存/禁用/重启/质量/风/太阳/范围/热重载快照检查通过。两窗口后端历史/GUI-Job、云水集成与 GPU smoke 通过，52 对 PNG 精确一致，四组原 CPU P95/Draw/bytes 预算首轮通过，GPU 时间仅诊断。
+
+旧 GCC 二进制的普通地面 Forward/Deferred 图像比较已失败（MAE 0.0628019，原限 0.008），按用户既有授权仅从本包门槛剔除此项，保留原测试、阈值和失败证据；逐路径旧/新精确一致及水面/贡献/重复帧/夜间仍通过，不宣称原 GCC 全套通过。热重载临时夹具在深证据路径缺共享头文件，已补齐实际头文件而非扩大生产搜索或删除检查，两次失败保留。没有更新基线或放宽阈值。
+
+本地记录 docs/a4w2c2g-cloud-shadow-uniforms.md 和 .local/verification/a4w2c2g；功能与调整后的必需本地验收完成，提交/推送/CI 分开记录。前项 83e4efa 的 CI 查询 TLS 超时，结论未确认。无安装/ZIP，A4/W2 父项及 P1/M3 未完成。下一项 W2c-2h：水面剩余 sampler 与云反射同步输入合同调查。
