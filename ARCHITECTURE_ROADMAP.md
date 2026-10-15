@@ -157,3 +157,13 @@ Water 插件拥有 Forward/Deferred 两套 Shader 与 High/Low 网格，新增 o
 首次启用时有一次上下文线程编译；停用释放两套程序和网格，程序驱动内存不计入 1,479,184 bytes 网格估算。来源与命令在本地 docs/a4w2b-water-shader-ownership.md 与 .local/verification/a4w2b。前项 1fc3e12 CI 38577302174 已核对 completed/success。W2b 提交/推送/CI 分开核对；无新安装/ZIP，A4 父项/P1/M3 未完成。
 
 下一入口 A4-W2c：调查水面绘制执行与环境/灯光/阴影/云纹理借用最小切片，固定实际 Forward/Deferred 目标、状态和历史合同；不自动扩大为云层/PBR 或渲染图重构。
+
+## A4-W2c：水面绘制边界调查（2026-10-15 已完成）
+
+源码审计基于 f19ed96：Deferred 管线的水面颜色仍走 Forward Shader；仅在 Deferred + TAA 时先用水面 G-buffer Shader 补写运动附件 3，另三路 GL_NONE、深度不写，再回 scene FBO 绘制颜色。bindRefractiveScene 先把 opaque 颜色/深度/模板复制到独立 scene 目标；opaqueColor 与 sceneDepth 只供采样。surfaceOptics 的云 march 在折射前执行，运动历史仍由后端帧末统一更新。纹理输入为 unit 0/1 CUBE_MAP 环境、2 级联 2D_ARRAY、3/4 opaque 颜色/深度、5 云影、6 BRDF LUT、7 云反射；云影还依赖投影 Uniform，不能仅借一个纹理 ID。
+
+选定下一工作包 **A4-W2c-1：水面 indexed draw 所有权**。只把网格选择、几何校验、VAO 绑定/一次 glDrawElements/解除到 VAO 0 移入 Water 插件；后端保留 Shader/Uniform/纹理准备、目标/draw buffers/viewport、GL 状态、调度和历史。新增独立 Surface stage 与 opengl.indexed-draw.v1 服务、drawIndexedGeometry(RendererSettings) 返回本次 draw 数；基础实现拒绝不支持的调用。renderFrame 继续只写 Uniform，MaterialShading 保持原合同；Surface 暂不接受逻辑纹理资源或自有 pass。保留已交付的几何/Shader 借用 API，不新增通用状态快照或环境输入框架。
+
+下一项门槛：双编译器领域/共享接口 Integration；真实 GPU High/Low 绘制、运动附件隔离、调用前后外部 program/FBO/纹理/状态保持与 VAO 0、未准备/缺失服务拒绝及候选事务；两路径 GUI/Job/TAA/Resize/启停/OFF；两编译器各八张迁移图及受影响水面 18 图一致、GPU smoke/云水集成、CPU/Draw/bytes 原预算。GPU 时间仅诊断，不恢复已撤弃的历史 P95 门槛；不添加只复述调用计数的无效测试。
+
+本次仅交付源码审计和合同冻结，没有运行时代码变更，未重复构建/GPU/性能/打包。详细证据为本地 docs/a4w2c-water-draw-boundary.md 的所有权矩阵与调查命令；W2c-1 尚未实施，A4/W2 父项及 P1/M3 保持未完成。前项 f19ed96 的 CI 38584152494 已核对 completed/success。
