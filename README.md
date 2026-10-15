@@ -20,7 +20,7 @@ A3 / S1-A2a 增加 `.shaderscene` v2：最多 4 Pass、每 Pass 4 个二维 Pass
 
 A4-N1/N2 将 NPR 的 25 项共享参数、Forward/Deferred Uniform 绑定与 CPU 后处理设置适配迁入可选静态 `iris.npr`，不新增绘制 Pass 或 GPU 资源。Preset/Scene/Job 共用原字段，缺失或停用时明确拒绝；Shader 算法与 PostProcess 所有权保留，参数集中在 Render settings。见 [NPR 说明](plugins/npr/README.md)。
 
-A4-W1 将原生水面的 19 项共享参数与着色 Uniform 适配迁入可选静态 `iris.water`；A4-W2a/W2b 继续将 High/Low GPU 网格和 Forward/Deferred 水面 Shader 交给插件，W2c-1 进一步让插件执行网格选择和索引绘制。W2c-2a 通过只读当帧输入继续迁移七项公共 Uniform 适配，保留 TAA 抖动及原时间来源。后端短期借用 Shader，保留附件、环境绑定、GL 状态、调度和历史管理。停用水面释放网格和程序，重启时事务创建；编译失败或取消保留旧实例。旧水面场景、Preset、命令与 Job 保持，插件缺失时拒绝水面请求，普通干燥场景仍可运行。见 [水面插件](plugins/water/README.md)。
+A4-W1 将原生水面的 19 项共享参数与着色 Uniform 适配迁入可选静态 `iris.water`；A4-W2a/W2b 继续将 High/Low GPU 网格和 Forward/Deferred 水面 Shader 交给插件，W2c-1 进一步让插件执行网格选择和索引绘制。W2c-2a/W2c-2b 通过只读当帧输入继续迁移七项公共与六项颜色相机 Uniform 适配，保留 TAA 抖动及原时间来源。后端短期借用 Shader，保留附件、环境绑定、GL 状态、调度和历史管理。停用水面释放网格和程序，重启时事务创建；编译失败或取消保留旧实例。旧水面场景、Preset、命令与 Job 保持，插件缺失时拒绝水面请求，普通干燥场景仍可运行。见 [水面插件](plugins/water/README.md)。
 
 模型 ShaderMaterial v1 示例和宿主接口见 [Checker 材质说明](assets/shader-materials/checker/README.md)。可运行 `Iris.exe assets/scenes/fixtures/29_shader_material.myscene` 或 `Iris.exe raster-sequence assets/renderjobs/11_shader_material.renderjob`；包的浏览、绑定及完整包重编译复用现有 Inspector，不覆盖当前 Scene。
 

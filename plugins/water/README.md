@@ -16,4 +16,6 @@ cmake 选项：IRIS_ENABLE_WATER_PLUGIN，默认 ON；plugins-off preset 为 OFF
 
 Surface 的 renderFrame 仅适配 Uniform，drawIndexedGeometry 在上下文线程执行一次 draw 并返回计数，未准备或不支持时拒绝。目标、program、纹理、viewport、draw buffers 和 GL 状态由宿主先绑定；插件仅绑定自有 VAO/draw/解除到 VAO 0。Surface 不声明自有逻辑纹理或调度 Pass，MaterialShading 继续只写 Uniform。旧 opengl.indexed-geometry.v1 和 Shader 借用 API 保留兼容。GPU 专项检查 High/Low 实际图元、运动像素、材质/深度隔离与外部状态保持。
 
-W2c-2a 用 WaterFrameInputs 的五个只读字段借用后端已解析的当前/前帧 VP、前帧时间、水面高度和运动有效性；插件写入七项公共逐帧 Uniform。Camera 与当前时间仍来自原 Frame/WaterSettings，VP 保留后端 TAA jitter；两个历史回退、0.2 s 边界和帧末更新仍由后端决定。Frame 构造函数末尾的借用参数默认 nullptr，旧 Settings-only 调用保持；插件不保存指针。后端只读 renderedWaterFrameInputs 暴露实际当帧包供诊断，该包不作为下一帧历史来源。Forward 专用相机/逆投影参数、环境/灯光/纹理绑定仍在后端。
+W2c-2a 用 WaterFrameInputs 的五个只读字段借用后端已解析的当前/前帧 VP、前帧时间、水面高度和运动有效性；插件写入七项公共逐帧 Uniform。Camera 与当前时间仍来自原 Frame/WaterSettings，VP 保留后端 TAA jitter；两个历史回退、0.2 s 边界和帧末更新仍由后端决定。Frame 构造函数末尾的借用参数默认 nullptr，旧 Settings-only 调用保持；插件不保存指针。后端只读 renderedWaterFrameInputs 暴露实际当帧包供诊断，该包不作为下一帧历史来源。环境/灯光/纹理绑定仍在后端。
+
+W2c-2b 在上述逐帧借用存在时，继续适配颜色程序的 CameraForward、近远面、逆 viewport 和输入包当前 VP 的逆矩阵。按自有 Forward Shader 对象选择，兼容 Deferred 的颜色子调用；运动程序不绑定此组。非正尺寸或非有限逆矩阵在写 Uniform 前拒绝，旧空借用仍保持 Settings-only。共享 Frame/API/服务不扩展；灯光、环境与纹理仍由后端准备。

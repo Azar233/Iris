@@ -4,6 +4,8 @@
 #include "render/Camera.h"
 #include "render/WaterSurface.h"
 #include <glad/gl.h>
+#include <glm/matrix.hpp>
+#include <cmath>
 #include <stdexcept>
 namespace iris {
 WaterRenderer::WaterRenderer(std::filesystem::path shaderDirectory) : shaderDirectory_(std::move(shaderDirectory)) {}
@@ -47,6 +49,22 @@ void WaterRenderer::renderFrame(const RenderPluginFrame& frame) {
         throw std::invalid_argument("Water requires its borrowed, bound water shader");
     auto& shader=*frame.shadingShader;
     const auto& settings=frame.settings.water;
+    // Deferred also uses this program for water color; only its motion subpass
+    // uses deferredShader_. Select by the actual borrowed program, not settings.
+    if (frame.waterInputs && frame.shadingShader == forwardShader_.get()) {
+        if (frame.width < 1 || frame.height < 1)
+            throw std::invalid_argument("Water color frame requires positive dimensions");
+        const auto inverse=glm::inverse(frame.waterInputs->currentViewProjection);
+        for(int column=0;column<4;++column)for(int row=0;row<4;++row)
+            if(!std::isfinite(inverse[column][row]))
+                throw std::invalid_argument("Water color frame requires an invertible view-projection");
+        shader.setVec3("uCameraForward",frame.camera.forwardDirection());
+        shader.setFloat("uInverseViewportWidth",1.0f/static_cast<float>(frame.width));
+        shader.setFloat("uInverseViewportHeight",1.0f/static_cast<float>(frame.height));
+        shader.setFloat("uCameraNearPlane",frame.camera.nearPlane());
+        shader.setFloat("uCameraFarPlane",frame.camera.farPlane());
+        shader.setMat4("uInverseCurrentViewProjection",inverse);
+    }
     if (frame.waterInputs) {
         const auto& input=*frame.waterInputs;
         shader.setMat4("uCurrentViewProjection",input.currentViewProjection);

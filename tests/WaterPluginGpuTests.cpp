@@ -14,6 +14,7 @@
 #include <chrono>
 #include <vector>
 #include <cmath>
+#include <glm/matrix.hpp>
 
 namespace {
 void require(bool ok, const char* message) { if (!ok) throw std::runtime_error(message); }
@@ -71,7 +72,7 @@ void alive(const std::array<GLuint,2>& values, bool expected) {
         "Water program lifetime mismatch");
 }
 void checkFrameUniforms(GLuint program, const iris::WaterFrameInputs& input,
-    const Camera& camera, float time, bool forward) {
+    const Camera& camera, float time, bool forward, int width=64, int height=64) {
     const auto check = [&](const char* name, const float* expected, int count, bool required) {
         const GLint location=glGetUniformLocation(program,name);
         require(location>=0 || !required,"Expected frame uniform optimized out");
@@ -86,6 +87,18 @@ void checkFrameUniforms(GLuint program, const iris::WaterFrameInputs& input,
     check("uTime",&time,1,true);
     check("uPreviousTime",&input.previousTimeSeconds,1,!forward);
     check("uCameraSurfaceHeight",&input.cameraSurfaceHeight,1,forward);
+    if(forward) {
+        const auto direction=camera.forwardDirection();
+        const auto inverse=glm::inverse(input.currentViewProjection);
+        const float inverseWidth=1.0f/static_cast<float>(width),inverseHeight=1.0f/static_cast<float>(height);
+        const float nearPlane=camera.nearPlane(),farPlane=camera.farPlane();
+        check("uCameraForward",&direction[0],3,true);
+        check("uInverseViewportWidth",&inverseWidth,1,true);
+        check("uInverseViewportHeight",&inverseHeight,1,true);
+        check("uCameraNearPlane",&nearPlane,1,true);
+        check("uCameraFarPlane",&farPlane,1,true);
+        check("uInverseCurrentViewProjection",&inverse[0][0],16,true);
+    }
     const GLint location=glGetUniformLocation(program,"uMotionHistoryValid");
     require(location>=0 || forward,"Motion flag missing from motion shader");
     if(location>=0) {
@@ -112,6 +125,7 @@ void checkDraw(iris::RenderPlugin& plugin, RendererSettings settings) {
     require(glCheckFramebufferStatus(GL_FRAMEBUFFER)==GL_FRAMEBUFFER_COMPLETE,"Draw fixture FBO incomplete");
     glGenQueries(1,&query);
     Camera camera; camera.setOrbitPose({0,0,0},45,45,6,45);
+    camera.setFarPlane(397);
     RenderTarget target;
     settings.water.level=0; settings.water.extent=4;
     auto* shader=plugin.borrowShadingShader(true); shader->use();
@@ -122,17 +136,31 @@ void checkDraw(iris::RenderPlugin& plugin, RendererSettings settings) {
     auto previous=current; previous[3][0]+=0.1f;
     settings.water.timeSeconds=0.125f;
     iris::WaterFrameInputs input{current,previous,0.0625f,0.375f,true};
+    settings.renderPath=RenderPath::Deferred;
     // Both owned programs receive the resolved packet. Generic frame time is
     // deliberately different: water must keep its existing settings time.
-    for(const bool forward : {true,false}) {
+    for(const bool forward : {true,false}) for(const auto size : {std::array<int,2>{64,64},std::array<int,2>{128,72}}) {
         auto* owned=plugin.borrowShadingShader(!forward); owned->use();
         GLint id=0; glGetIntegerv(GL_CURRENT_PROGRAM,&id);
-        plugin.renderFrame({target,camera,settings,64,64,99,0,nullptr,owned,&input});
-        checkFrameUniforms(id,input,camera,settings.water.timeSeconds,forward);
+        // Keep the jittered packet while changing Camera projection and viewport:
+        // the inverse must come from that packet, not a new Camera projection.
+        camera.setFarPlane(733);
+        plugin.renderFrame({target,camera,settings,size[0],size[1],99,0,nullptr,owned,&input});
+        checkFrameUniforms(id,input,camera,settings.water.timeSeconds,forward,size[0],size[1]);
         auto legacy=settings; legacy.water.timeSeconds=9;
-        plugin.renderFrame({target,camera,legacy,64,64,99,0,nullptr,owned});
-        checkFrameUniforms(id,input,camera,settings.water.timeSeconds,forward);
+        plugin.renderFrame({target,camera,legacy,0,0,99,0,nullptr,owned});
+        checkFrameUniforms(id,input,camera,settings.water.timeSeconds,forward,size[0],size[1]);
+        if(forward) {
+            rejects([&]{plugin.renderFrame({target,camera,settings,0,size[1],99,0,nullptr,owned,&input});},"Zero viewport accepted");
+            rejects([&]{plugin.renderFrame({target,camera,settings,size[0],-1,99,0,nullptr,owned,&input});},"Negative viewport accepted");
+            auto singular=input;singular.currentViewProjection=glm::mat4(0);
+            rejects([&]{plugin.renderFrame({target,camera,settings,size[0],size[1],99,0,nullptr,owned,&singular});},"Singular VP accepted");
+            auto nonfinite=input;nonfinite.currentViewProjection[0][0]=std::numeric_limits<float>::quiet_NaN();
+            rejects([&]{plugin.renderFrame({target,camera,settings,size[0],size[1],99,0,nullptr,owned,&nonfinite});},"Nonfinite VP accepted");
+            checkFrameUniforms(id,input,camera,settings.water.timeSeconds,forward,size[0],size[1]);
+        }
     }
+    camera.setFarPlane(397);
     shader->use();
     const std::array<GLenum,4> motion{GL_NONE,GL_NONE,GL_NONE,GL_COLOR_ATTACHMENT3};
     const std::array<float,4> clear{0.25f,0.5f,0.75f,0.125f};

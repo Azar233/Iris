@@ -195,3 +195,11 @@ WaterFrameInputs 五字段只读借用保留后端已解析的当前/前帧 VP�
 最终 MSVC/GCC Integration 各 37/37；真实 GPU 活动 Uniform 与 jitter 矩阵/独立时间源/旧空借用一致，运动有效/无效/相同帧的实际像素、状态/附件及资源事务通过。两编译器两窗口真实后端正负 0.2 s 边界、独立 VP/时间回退、Resize 与介质切换、GUI/Job，OFF CPU 5/5/普通场景/66 无帧输出通过。34 张 PNG 精确一致，GPU smoke 通过；四组 CPU/Draw/bytes 原预算首轮通过，GPU 仅诊断。无新失败、未放宽阈值或撤弃测试；绑定未变且无疑点，不机械重复云水/完整图像/纯 Wave GPU 套件。
 
 本地证据为 docs/a4w2c2a-water-frame-uniforms.md 与 .local/verification/a4w2c2a。前项 228c8ca 的 CI 38665906290 completed/success；本项源码和本地验收完成，提交/推送/CI 单独核对。无新安装/ZIP，A4/W2 父项、P1/M3 保持未完成。下一入口 W2c-2b：Forward 专用相机和逆投影 Uniform 适配，先固定输入合同再实施，环境/灯光/纹理继续单独推进。
+
+## A4-W2c-2b：Forward 水面相机 Uniform 适配（2026-10-15 已验收）
+
+插件复用现有 Frame/WaterFrameInputs 适配 CameraForward、近远面、逆 viewport 和当前 VP 逆矩阵六项 Uniform。按实际自有 Forward Shader 选择，兼容 Deferred 的水面颜色子调用；G-buffer 运动程序不绑定此组，旧空借用仍为 Settings-only。非正尺寸或非有限逆矩阵在写入前拒绝。共享 API/字段/服务、Shader、Scene/Job、灯光/纹理/附件/状态/历史不变。
+
+双编译器 Focused 各 5/5，真实 GPU 六项值、非方形 viewport、含 jitter 输入矩阵与独立 Camera 近远面来源、实际程序选择、旧空借用及无效输入不写入通过；两窗口 UI/后端历史边界/Resize/介质、两路径 GUI/Job、34 张 PNG 精确一致、GPU smoke 与四组 CPU/Draw/bytes 原预算首轮通过。GPU 时间仅诊断，无新失败或门槛/基线修改。按领域计划没有重复完整 CPU Integration、OFF、云水和无关历史专项；OFF 本次未重验，前项证据仅作历史。
+
+本地记录 docs/a4w2c2b-water-camera-uniforms.md、.local/verification/a4w2c2b。前项 588c863 的 CI 38667459553 completed/success。本项源码/本地验收完成，提交/推送/CI 独立核对；无新安装/ZIP，A4/W2 父项与 P1/M3 未完成。下一入口 W2c-2c：水面灯光与环境标量 Uniform 适配，先固定 CPU 计算/资源元数据借用，再实施；不并入纹理所有权或渲染图。

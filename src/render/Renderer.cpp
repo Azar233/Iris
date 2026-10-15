@@ -831,7 +831,6 @@ shader_->setMat4("uView", view);
         waterRenderer_->renderFrame({*renderTarget_,camera,settings,width,height,settings.water.timeSeconds,
             fullscreenVertexArray_,nullptr,&waterShader,&waterFrameInputs_});
         if (!deferred) {
-            waterShader.setVec3("uCameraForward", camera.forwardDirection());
             waterShader.setVec3("uLightDirection", lightDirection);
             waterShader.setVec3("uLightColor", lightColor);
             waterShader.setBool("uSeparatedWaterSun", settings.water.surfaceOptics && settings.atmosphere.enabled);
@@ -865,12 +864,6 @@ shader_->setMat4("uView", view);
             waterShader.setBool("uCloudReflectionEnabled", reflectCloud);
             glActiveTexture(GL_TEXTURE7);
             glBindTexture(GL_TEXTURE_2D, reflectCloud ? cloudLayer_->radianceTexture() : 0U);
-            waterShader.setFloat("uInverseViewportWidth", 1.0f / static_cast<float>(width));
-            waterShader.setFloat("uInverseViewportHeight", 1.0f / static_cast<float>(height));
-            waterShader.setFloat("uCameraNearPlane", camera.nearPlane());
-            waterShader.setFloat("uCameraFarPlane", camera.farPlane());
-            waterShader.setMat4("uInverseCurrentViewProjection",
-                glm::inverse(currentViewProjection));
             if (settings.water.surfaceOptics) environmentMap_->bindWaterPrefiltered(0U);
             else environmentMap_->bindPrefiltered(0U);
             environmentMap_->bindIrradiance(1U);
