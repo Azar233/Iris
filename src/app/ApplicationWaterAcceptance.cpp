@@ -7,6 +7,7 @@
 #include <cstdlib>
 #include <iostream>
 #include <limits>
+#include <cmath>
 #include <stdexcept>
 void Application::interactWaterParameters(const std::vector<iris::PluginControlBounds>& controls) {
     if(!std::getenv("IRIS_WATER_UI_TEST") || ++waterUiFrames_<5 || waterUiPhase_>=3)return;
@@ -73,6 +74,57 @@ bool Application::waterPluginRegression() {
             const auto oldPath=currentScenePath_;check(!openScene(invalid) && currentScenePath_==oldPath && before==renderer_->historyInvalidationRevision(),"Disabled water Scene replaced current scene");
             activation(true);legacyEnabled(true);draw();check(renderer_->hasRenderPluginInstance(iris::waterPluginId),"Water did not recreate instance");
             check(renderer_->estimatedRenderMemoryBytes()==activeMemory,"Water restart memory differs");
+            const auto matrixNear=[](const glm::mat4& a,const glm::mat4& b){
+                for(int column=0;column<4;++column)for(int row=0;row<4;++row)
+                    if(std::abs(a[column][row]-b[column][row])>1e-6f)return false;
+                return true;
+            };
+            const auto frameSettings=rendererSettings_;
+            const auto frameCamera=camera_.orbitState();
+            // Drive the actual backend, including independent VP/time fallbacks.
+            const std::array<float,5> deltas{std::nextafter(.2f,0.f),.2f,
+                std::nextafter(.2f,1.f),-std::nextafter(.2f,0.f),-.2f};
+            for(const auto path:{RenderPath::Forward,RenderPath::Deferred}) {
+                rendererSettings_.renderPath=path;rendererSettings_.water.surfaceOptics=false;
+                for(std::size_t sample=0;sample<deltas.size();++sample) {
+                    rendererSettings_.temporalAaEnabled=false;rendererSettings_.water.timeSeconds=0;draw();
+                    rendererSettings_.temporalAaEnabled=true;renderer_->invalidateTemporalHistory();draw();
+                    const auto first=renderer_->renderedWaterFrameInputs();
+                    auto projection=camera_.projectionMatrix(640.f/360.f);
+                    projection[2][1]+=2.f*(1.f/3.f-.5f)/360.f;
+                    check(matrixNear(first.currentViewProjection,projection*camera_.viewMatrix())
+                        && matrixNear(first.previousViewProjection,first.currentViewProjection)
+                        && first.previousTimeSeconds==0 && !first.motionHistoryValid,"First water frame lost jitter/fallback");
+                    rendererSettings_.water.timeSeconds=deltas[sample];draw();
+                    const auto second=renderer_->renderedWaterFrameInputs();
+                    check(second.motionHistoryValid==(sample==0 || sample==3)
+                        && second.previousTimeSeconds==0
+                        && matrixNear(second.previousViewProjection,first.currentViewProjection),"Water time boundary or VP history changed");
+                }
+                rendererSettings_.water.timeSeconds=.125f;draw();
+                renderer_->invalidateTemporalHistory();rendererSettings_.water.timeSeconds=.175f;draw();
+                const auto reset=renderer_->renderedWaterFrameInputs();
+                check(!reset.motionHistoryValid && reset.previousTimeSeconds==.125f
+                    && matrixNear(reset.previousViewProjection,reset.currentViewProjection),"VP invalidation also discarded independent water time");
+                rendererSettings_.water.enabled=false;draw();const auto dry=renderer_->renderedWaterFrameInputs();
+                rendererSettings_.water.enabled=true;rendererSettings_.water.timeSeconds=.19f;draw();
+                const auto enabled=renderer_->renderedWaterFrameInputs();
+                check(!enabled.motionHistoryValid && enabled.previousTimeSeconds==.19f
+                    && matrixNear(enabled.previousViewProjection,dry.currentViewProjection),"Water time fallback discarded valid camera VP");
+                rendererSettings_.water.timeSeconds=.2f;draw(320,180);
+                check(!renderer_->renderedWaterFrameInputs().motionHistoryValid,"Resize retained water motion history");
+                draw();check(!renderer_->renderedWaterFrameInputs().motionHistoryValid,"Resize-back retained water motion history");
+                rendererSettings_.water.surfaceOptics=true;rendererSettings_.water.level=0;
+                camera_.setOrbitPose({0,3,0},45,0,6,45);draw();
+                const auto transitions=renderer_->waterMediumTransitions();
+                camera_.setOrbitPose({0,-3,0},45,0,6,45);draw();
+                const auto medium=renderer_->renderedWaterFrameInputs();
+                check(renderer_->waterMediumTransitions()==transitions+1 && !medium.motionHistoryValid
+                    && medium.cameraSurfaceHeight==renderer_->cameraWaterSurfaceHeight(),"Water medium transition lost frame reset/height");
+                camera_.setOrbitState(frameCamera);
+            }
+            rendererSettings_=frameSettings;camera_.setOrbitState(frameCamera);renderer_->invalidateTemporalHistory();draw();
+            std::cout<<"Water resolved frame jitter / independent VP-time fallback / +/-0.2 boundary / resize / medium PASS\n";
             std::cout<<"Water owned grid release/restart: "<<waterBytes<<" bytes PASS\n";
             std::cout<<"Water real parameter UI / both paths / legacy parity / history / rejection / Scene / resize / replacement / disable-enable PASS\n";
         }

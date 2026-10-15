@@ -1,6 +1,7 @@
 #include "WaterRenderer.h"
 #include "render/Renderer.h"
 #include "render/Shader.h"
+#include "render/Camera.h"
 #include "render/WaterSurface.h"
 #include <glad/gl.h>
 #include <stdexcept>
@@ -46,6 +47,16 @@ void WaterRenderer::renderFrame(const RenderPluginFrame& frame) {
         throw std::invalid_argument("Water requires its borrowed, bound water shader");
     auto& shader=*frame.shadingShader;
     const auto& settings=frame.settings.water;
+    if (frame.waterInputs) {
+        const auto& input=*frame.waterInputs;
+        shader.setMat4("uCurrentViewProjection",input.currentViewProjection);
+        shader.setMat4("uPreviousViewProjection",input.previousViewProjection);
+        shader.setVec3("uCameraPosition",frame.camera.position());
+        shader.setFloat("uTime",settings.timeSeconds);
+        shader.setFloat("uPreviousTime",input.previousTimeSeconds);
+        shader.setFloat("uCameraSurfaceHeight",input.cameraSurfaceHeight);
+        shader.setBool("uMotionHistoryValid",input.motionHistoryValid);
+    }
     shader.setFloat("uExtent",settings.extent);
     shader.setFloat("uNearMeshFocus",settings.nearMeshFocus);
     shader.setFloat("uGridResolution",static_cast<float>(settings.quality==WaterQuality::Low ? water::lowGridResolution : water::gridResolution));

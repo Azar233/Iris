@@ -187,3 +187,11 @@ Water 改用独立 Surface stage 和 opengl.indexed-draw.v1，插件选择 High/
 下一项门槛：双编译器共享 Frame Integration、旧调用兼容；真实 Uniform 与带 jitter 矩阵/时间一致、运动有效/重置像素、后端回退和阈值的真实路径验证、既有状态/附件隔离/资源事务；相关 GUI/Job/TAA/Resize/水面介质与 OFF、34 张受影响固定图、gpu-smoke 和原 CPU/Draw/bytes 门槛。云水集成仅在环境绑定变化或疑点时补跑，不机械扩大到所有历史专项；GPU 时间仍诊断，无新基线或 ZIP。
 
 本次只完成源码审计和合同冻结，无运行时代码/测试变更，不重复构建/GPU。详细本地记录：docs/a4w2c2-water-frame-uniform-boundary.md。W2c-2a 尚未实施，A4/W2 父项、P1/M3 未完成；上一项 5c9ffba 的 CI 在本次开始核对时仍 in_progress，结论单独等待。
+
+## A4-W2c-2a：七项公共逐帧 Uniform 适配（2026-10-15 已验收）
+
+WaterFrameInputs 五字段只读借用保留后端已解析的当前/前帧 VP、前帧时间、相机水面高度和运动有效性；WaterRenderer 复用 Frame 的 Camera 与原 WaterSettings 当前时间，执行七项 Uniform 写入。Frame 构造函数末尾默认 nullptr 保留旧 Settings-only 调用；插件不缓存借用。后端保留 TAA jitter、两个独立回退、0.2 s 判断及帧末历史，现有只读诊断新增实际当帧输入包，不将其作为下一帧历史来源。Forward 专用相机/环境/灯光/纹理、附件/GL 状态/调度仍在后端，Shader、19 项 schema 与 Scene/Job 不变。
+
+最终 MSVC/GCC Integration 各 37/37；真实 GPU 活动 Uniform 与 jitter 矩阵/独立时间源/旧空借用一致，运动有效/无效/相同帧的实际像素、状态/附件及资源事务通过。两编译器两窗口真实后端正负 0.2 s 边界、独立 VP/时间回退、Resize 与介质切换、GUI/Job，OFF CPU 5/5/普通场景/66 无帧输出通过。34 张 PNG 精确一致，GPU smoke 通过；四组 CPU/Draw/bytes 原预算首轮通过，GPU 仅诊断。无新失败、未放宽阈值或撤弃测试；绑定未变且无疑点，不机械重复云水/完整图像/纯 Wave GPU 套件。
+
+本地证据为 docs/a4w2c2a-water-frame-uniforms.md 与 .local/verification/a4w2c2a。前项 228c8ca 的 CI 38665906290 completed/success；本项源码和本地验收完成，提交/推送/CI 单独核对。无新安装/ZIP，A4/W2 父项、P1/M3 保持未完成。下一入口 W2c-2b：Forward 专用相机和逆投影 Uniform 适配，先固定输入合同再实施，环境/灯光/纹理继续单独推进。

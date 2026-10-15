@@ -70,6 +70,29 @@ void alive(const std::array<GLuint,2>& values, bool expected) {
     require(bool(glIsProgram(values[0])) == expected && bool(glIsProgram(values[1])) == expected,
         "Water program lifetime mismatch");
 }
+void checkFrameUniforms(GLuint program, const iris::WaterFrameInputs& input,
+    const Camera& camera, float time, bool forward) {
+    const auto check = [&](const char* name, const float* expected, int count, bool required) {
+        const GLint location=glGetUniformLocation(program,name);
+        require(location>=0 || !required,"Expected frame uniform optimized out");
+        if(location<0) return;
+        std::array<float,16> actual{}; glGetUniformfv(program,location,actual.data());
+        for(int i=0;i<count;++i) require(std::abs(actual[i]-expected[i])<1e-6f,"Borrowed frame uniform mismatch");
+    };
+    const auto position=camera.position();
+    check("uCurrentViewProjection",&input.currentViewProjection[0][0],16,true);
+    check("uPreviousViewProjection",&input.previousViewProjection[0][0],16,!forward);
+    check("uCameraPosition",&position[0],3,true);
+    check("uTime",&time,1,true);
+    check("uPreviousTime",&input.previousTimeSeconds,1,!forward);
+    check("uCameraSurfaceHeight",&input.cameraSurfaceHeight,1,forward);
+    const GLint location=glGetUniformLocation(program,"uMotionHistoryValid");
+    require(location>=0 || forward,"Motion flag missing from motion shader");
+    if(location>=0) {
+        GLint actual=0; glGetUniformiv(program,location,&actual);
+        require(bool(actual)==input.motionHistoryValid,"Motion validity uniform mismatch");
+    }
+}
 // Use the real water vertex/G-buffer programs and geometry. Restrict outputs
 // exactly as the backend's Deferred+TAA motion subpass does.
 void checkDraw(iris::RenderPlugin& plugin, RendererSettings settings) {
@@ -93,8 +116,24 @@ void checkDraw(iris::RenderPlugin& plugin, RendererSettings settings) {
     settings.water.level=0; settings.water.extent=4;
     auto* shader=plugin.borrowShadingShader(true); shader->use();
     GLint program=0; glGetIntegerv(GL_CURRENT_PROGRAM,&program);
-    const auto current=camera.projectionMatrix(1)*camera.viewMatrix();
+    auto projection=camera.projectionMatrix(1);
+    projection[2][0]+=0.0123f; projection[2][1]-=0.007f;
+    const auto current=projection*camera.viewMatrix();
     auto previous=current; previous[3][0]+=0.1f;
+    settings.water.timeSeconds=0.125f;
+    iris::WaterFrameInputs input{current,previous,0.0625f,0.375f,true};
+    // Both owned programs receive the resolved packet. Generic frame time is
+    // deliberately different: water must keep its existing settings time.
+    for(const bool forward : {true,false}) {
+        auto* owned=plugin.borrowShadingShader(!forward); owned->use();
+        GLint id=0; glGetIntegerv(GL_CURRENT_PROGRAM,&id);
+        plugin.renderFrame({target,camera,settings,64,64,99,0,nullptr,owned,&input});
+        checkFrameUniforms(id,input,camera,settings.water.timeSeconds,forward);
+        auto legacy=settings; legacy.water.timeSeconds=9;
+        plugin.renderFrame({target,camera,legacy,64,64,99,0,nullptr,owned});
+        checkFrameUniforms(id,input,camera,settings.water.timeSeconds,forward);
+    }
+    shader->use();
     const std::array<GLenum,4> motion{GL_NONE,GL_NONE,GL_NONE,GL_COLOR_ATTACHMENT3};
     const std::array<float,4> clear{0.25f,0.5f,0.75f,0.125f};
     const std::array<GLenum,13> keys{GL_CURRENT_PROGRAM,GL_DRAW_FRAMEBUFFER_BINDING,GL_READ_FRAMEBUFFER_BINDING,
@@ -102,7 +141,7 @@ void checkDraw(iris::RenderPlugin& plugin, RendererSettings settings) {
         GL_BLEND_SRC_RGB,GL_BLEND_DST_RGB,GL_DRAW_BUFFER0,GL_DRAW_BUFFER1,GL_DRAW_BUFFER3};
     for (const auto quality : {WaterQuality::High,WaterQuality::Low}) {
         settings.water.quality=quality;
-        for (const bool motionOnly : {false,true}) {
+        for (const bool motionOnly : {false,true}) for(int history=0;history<3;++history) {
             glDrawBuffers(4,all.data()); glDepthMask(GL_TRUE);
             for (int i=0;i<4;++i) glClearBufferfv(GL_COLOR,i,clear.data());
             glClearDepth(1); glClear(GL_DEPTH_BUFFER_BIT);
@@ -110,10 +149,11 @@ void checkDraw(iris::RenderPlugin& plugin, RendererSettings settings) {
             glViewport(0,0,64,64); glEnable(GL_DEPTH_TEST); glDepthFunc(GL_LESS);
             glDepthMask(motionOnly?GL_FALSE:GL_TRUE); glDisable(GL_BLEND); glDisable(GL_CULL_FACE);
             glPolygonMode(GL_FRONT_AND_BACK,GL_FILL);
-            plugin.renderFrame({target,camera,settings,64,64,0,0,nullptr,shader});
-            shader->setMat4("uCurrentViewProjection",current); shader->setMat4("uPreviousViewProjection",previous);
-            shader->setVec3("uCameraPosition",camera.position()); shader->setFloat("uTime",0);
-            shader->setFloat("uPreviousTime",0); shader->setBool("uMotionHistoryValid",true);
+            input.motionHistoryValid=history!=1;
+            input.previousViewProjection=history==2?current:previous;
+            input.previousTimeSeconds=history==2?settings.water.timeSeconds:0.0625f;
+            plugin.renderFrame({target,camera,settings,64,64,99,0,nullptr,shader,&input});
+            checkFrameUniforms(program,input,camera,settings.water.timeSeconds,false);
             std::array<GLint,13> before{},after{};
             std::array<GLint,2> polygonBefore{-1,-1};
             glGetIntegerv(GL_POLYGON_MODE,polygonBefore.data());
@@ -135,10 +175,16 @@ void checkDraw(iris::RenderPlugin& plugin, RendererSettings settings) {
             require(polygonBefore[0]==GL_FILL && polygon==polygonBefore,"Draw changed polygon mode");
             std::vector<float> pixels(64*64*4);
             glReadBuffer(GL_COLOR_ATTACHMENT3); glReadPixels(0,0,64,64,GL_RGBA,GL_FLOAT,pixels.data());
-            std::size_t visible=0;
-            for (std::size_t i=0;i<pixels.size();i+=4)
-                if (pixels[i+2]==1 && std::abs(pixels[i])>0.0001f) ++visible;
-            require(visible>64,"Water draw produced no meaningful motion pixels");
+            std::size_t visible=0, moved=0;
+            for (std::size_t i=0;i<pixels.size();i+=4) {
+                if(pixels[i+2]==1) { ++visible; if(std::abs(pixels[i])>0.0001f || std::abs(pixels[i+1])>0.0001f) ++moved; }
+                if(history==1 && pixels[i+2]!=clear[2])
+                    require(pixels[i]==0 && pixels[i+1]==0 && pixels[i+2]==0,"Reset motion was not zero");
+                if(history==2 && pixels[i+2]==1)
+                    require(std::abs(pixels[i])<1e-6f && std::abs(pixels[i+1])<1e-6f,"Equal frames produced motion");
+            }
+            if(history==1) require(visible==0,"Reset retained valid object motion");
+            else require(visible>64 && (history!=0 || moved>64),"Water draw produced no meaningful motion pixels");
             if (motionOnly) {
                 for (int attachment=0;attachment<3;++attachment) {
                     glReadBuffer(all[attachment]); glReadPixels(0,0,64,64,GL_RGBA,GL_FLOAT,pixels.data());

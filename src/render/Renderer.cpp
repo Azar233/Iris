@@ -816,25 +816,20 @@ shader_->setMat4("uView", view);
         shadowMap_->bindTransmissionTexture(16U);
     };
 
+    waterFrameInputs_ = {currentViewProjection,
+        previousViewProjectionValid_ ? previousViewProjection_ : currentViewProjection,
+        previousWaterValid_ ? previousWaterTime_ : settings.water.timeSeconds,
+        cameraSurfaceHeight,
+        previousWaterValid_ && !resetTemporalHistory
+            && std::abs(settings.water.timeSeconds - previousWaterTime_) < 0.2f};
     const auto drawWater = [&](bool deferred) {
         if (!settings.water.enabled) return;
         auto* borrowedShader = waterRenderer_->borrowShadingShader(deferred);
         if (!borrowedShader) throw std::runtime_error("Water plugin supplied no shading shader");
         Shader& waterShader = *borrowedShader;
         waterShader.use();
-        waterShader.setMat4("uCurrentViewProjection", currentViewProjection);
-        waterShader.setMat4("uPreviousViewProjection",
-            previousViewProjectionValid_ ? previousViewProjection_ : currentViewProjection);
-        waterShader.setVec3("uCameraPosition", camera.position());
-        waterShader.setFloat("uTime", settings.water.timeSeconds);
-        waterShader.setFloat("uPreviousTime",
-            previousWaterValid_ ? previousWaterTime_ : settings.water.timeSeconds);
         waterRenderer_->renderFrame({*renderTarget_,camera,settings,width,height,settings.water.timeSeconds,
-            fullscreenVertexArray_,nullptr,&waterShader});
-        waterShader.setFloat("uCameraSurfaceHeight",cameraSurfaceHeight);
-        waterShader.setBool("uMotionHistoryValid", previousWaterValid_
-            && !resetTemporalHistory
-            && std::abs(settings.water.timeSeconds - previousWaterTime_) < 0.2f);
+            fullscreenVertexArray_,nullptr,&waterShader,&waterFrameInputs_});
         if (!deferred) {
             waterShader.setVec3("uCameraForward", camera.forwardDirection());
             waterShader.setVec3("uLightDirection", lightDirection);

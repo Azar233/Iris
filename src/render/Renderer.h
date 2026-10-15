@@ -22,6 +22,7 @@ namespace iris { struct ShaderScenePackage; struct ShaderSceneRuntimeStatus; }
 #include "scene/Light.h"
 #include "render/WaterWaves.h"
 #include "plugin/RenderPluginConfiguration.h"
+#include "plugin/RenderPlugin.h"
 #include "plugin/ShaderSceneHistory.h"
 
 class Camera;
@@ -360,6 +361,7 @@ public:
     bool cameraUnderWater() const { return cameraUnderWater_; }
     std::size_t waterMediumTransitions() const { return waterMediumTransitions_; }
     const WaterSettings& renderedWaterSettings() const { return renderedWaterSettings_; }
+    const iris::WaterFrameInputs& renderedWaterFrameInputs() const { return waterFrameInputs_; }
 
 private:
     // Only cloudless sky inputs invalidate the environment; camera/cloud changes
@@ -372,6 +374,9 @@ private:
     bool cameraUnderWater_{false};
     std::size_t waterMediumTransitions_{0U};
     WaterSettings renderedWaterSettings_{};
+    // Last frame's resolved input packet, also exposed by read-only diagnostics.
+    // This is never used as the source of previous-frame history.
+    iris::WaterFrameInputs waterFrameInputs_;
     bool atmosphereActive_{false};
     int builtEnvironmentPreset_{0};
     std::unique_ptr<Shader> shader_;

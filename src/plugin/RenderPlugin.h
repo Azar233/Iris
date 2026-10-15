@@ -3,6 +3,7 @@
 #include <filesystem>
 #include <string>
 #include <vector>
+#include <glm/mat4x4.hpp>
 #include "plugin/RenderPluginContract.h"
 #include "module/ParameterRegistry.h"
 
@@ -26,13 +27,23 @@ inline constexpr const char* openGlIndexedGeometryService = "opengl.indexed-geom
 inline constexpr const char* openGlShaderBorrowService = "opengl.shader-borrow.v1";
 inline constexpr const char* openGlIndexedDrawService = "opengl.indexed-draw.v1";
 
+// Already-resolved backend inputs. No history is owned or advanced here.
+struct WaterFrameInputs {
+    glm::mat4 currentViewProjection{1.0f};
+    glm::mat4 previousViewProjection{1.0f};
+    float previousTimeSeconds{0.0f};
+    float cameraSurfaceHeight{0.0f};
+    bool motionHistoryValid{false};
+};
+
 // Borrowed frame inputs. The caller owns the context, target and scheduling.
 // RendererSettings is a compatibility bridge for this first migration, not a
 // frozen public material/plugin schema or a cross-backend GPU ABI.
 struct RenderPluginFrame {
     RenderPluginFrame(RenderTarget& target, const Camera& camera, const RendererSettings& settings,
         int width, int height, float timeSeconds, unsigned int fullscreenVertexArray,
-        const PostProcessSettings* postProcessSettings = nullptr, Shader* shadingShader = nullptr);
+        const PostProcessSettings* postProcessSettings = nullptr, Shader* shadingShader = nullptr,
+        const WaterFrameInputs* waterInputs = nullptr);
     RenderTarget& target;
     const Camera& camera;
     const RendererSettings& settings;
@@ -44,6 +55,8 @@ struct RenderPluginFrame {
     // Borrowed, already-bound scene shader for MaterialShading extensions.
     // Such extensions only write uniforms; they neither draw nor retain it.
     Shader* shadingShader;
+    // Synchronous borrow only. Null preserves the legacy settings-only adapter.
+    const WaterFrameInputs* waterInputs;
     std::vector<RenderTextureBinding> textures;
     unsigned int texture(const std::string& name) const;
     std::vector<ModuleParameterOverride> parameterValues(const RenderPluginParameterSchema& schema) const;
