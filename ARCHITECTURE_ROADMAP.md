@@ -203,3 +203,11 @@ WaterFrameInputs 五字段只读借用保留后端已解析的当前/前帧 VP�
 双编译器 Focused 各 5/5，真实 GPU 六项值、非方形 viewport、含 jitter 输入矩阵与独立 Camera 近远面来源、实际程序选择、旧空借用及无效输入不写入通过；两窗口 UI/后端历史边界/Resize/介质、两路径 GUI/Job、34 张 PNG 精确一致、GPU smoke 与四组 CPU/Draw/bytes 原预算首轮通过。GPU 时间仅诊断，无新失败或门槛/基线修改。按领域计划没有重复完整 CPU Integration、OFF、云水和无关历史专项；OFF 本次未重验，前项证据仅作历史。
 
 本地记录 docs/a4w2c2b-water-camera-uniforms.md、.local/verification/a4w2c2b。前项 588c863 的 CI 38667459553 completed/success。本项源码/本地验收完成，提交/推送/CI 独立核对；无新安装/ZIP，A4/W2 父项与 P1/M3 未完成。下一入口 W2c-2c：水面灯光与环境标量 Uniform 适配，先固定 CPU 计算/资源元数据借用，再实施；不并入纹理所有权或渲染图。
+
+## A4-W2c-2c：水面灯光与环境标量适配（2026-10-15 已验收）
+
+RenderPluginFrame 末尾增加默认空 WaterLightingInputs，同步借用后端统一计算的主光方向/颜色、关键光辐照度、漫反射强度、实际环境最大 mip 与 twilight 因子。插件为实际自有 Forward 颜色程序写入这六项以及原 Settings 的环境强度、分离太阳开关，共八项 Uniform，兼容 Deferred 颜色。frame-only / Settings-only 空借用不覆盖原灯光；运动程序不消费，干燥帧不解析；不持有包、不复制光照算法或资源。阴影/级联/云 metadata、sampler、纹理绑定、附件/状态/调度/历史仍在后端，Shader/Scene/Job/19 项 schema 不变。
+
+双编译器 Integration 各 37/37、OFF 5/5/普通场景/水面 66 无输出，双编译器真实 GPU 八项 Uniform/旧调用/原资源事务、两窗口 UI/后端历史边界/GUI-Job 通过。54 张 PNG 精确一致，其中 20 张覆盖太阳 -2° 边界两侧、无月夜、强月和大气关闭；云水集成与 GPU smoke 通过。四组 CPU/Draw/bytes 原预算首轮通过，GPU 时间仅诊断，无新采样失败、阈值/基线修改或验收测试撤弃。提前 GCC PlanOnly 因旧索引时间拒绝，随后标准配置/完整检查通过，日志保留。
+
+本地记录 docs/a4w2c2c-water-lighting-uniforms.md 和 .local/verification/a4w2c2c。前项 23bdde8 的 CI 38668610183 已核对 completed/success。本项源码与本地验收完成，提交/推送/CI 独立核对；无新安装/ZIP，A4/W2 父项及 P1/M3 未完成。下一入口 W2c-2d：水面阴影、云 metadata 与纹理绑定借用边界调查，先冻结依赖与状态合同，再选择实现切片。

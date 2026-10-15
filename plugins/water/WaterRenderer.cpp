@@ -65,6 +65,17 @@ void WaterRenderer::renderFrame(const RenderPluginFrame& frame) {
         shader.setFloat("uCameraFarPlane",frame.camera.farPlane());
         shader.setMat4("uInverseCurrentViewProjection",inverse);
     }
+    if (frame.waterLightingInputs && frame.shadingShader == forwardShader_.get()) {
+        const auto& light=*frame.waterLightingInputs;
+        shader.setVec3("uLightDirection",light.lightDirection);
+        shader.setVec3("uLightColor",light.lightColor);
+        shader.setBool("uSeparatedWaterSun",settings.surfaceOptics && frame.settings.atmosphere.enabled);
+        shader.setVec3("uWaterKeyIrradiance",light.keyIrradiance);
+        shader.setFloat("uDiffuseStrength",light.diffuseStrength);
+        shader.setFloat("uEnvironmentIntensity",frame.settings.environmentIntensity);
+        shader.setFloat("uEnvironmentMaxMip",light.environmentMaxMip);
+        shader.setFloat("uTwilightFactor",light.twilightFactor);
+    }
     if (frame.waterInputs) {
         const auto& input=*frame.waterInputs;
         shader.setMat4("uCurrentViewProjection",input.currentViewProjection);

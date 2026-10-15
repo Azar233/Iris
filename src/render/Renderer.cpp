@@ -824,29 +824,25 @@ shader_->setMat4("uView", view);
             && std::abs(settings.water.timeSeconds - previousWaterTime_) < 0.2f};
     const auto drawWater = [&](bool deferred) {
         if (!settings.water.enabled) return;
+        iris::WaterLightingInputs waterLightingInputs;
+        if (!deferred) {
+            const float solarTwilight = settings.atmosphere.enabled
+                ? 0.03f + 0.97f * std::clamp(
+                    (settings.atmosphere.sunElevationDegrees + 8.0f) / 12.0f, 0.0f, 1.0f)
+                : 1.0f;
+            waterLightingInputs = {lightDirection, lightColor,
+                settings.atmosphere.sunElevationDegrees >= -2.0f
+                    ? atmosphere::sunIrradiance(settings.atmosphere) : lightColor * diffuseStrength,
+                diffuseStrength, static_cast<float>(environmentMap_->maximumMipLevel()),
+                std::max(solarTwilight, atmosphere::moonKeyStrength(settings.atmosphere))};
+        }
         auto* borrowedShader = waterRenderer_->borrowShadingShader(deferred);
         if (!borrowedShader) throw std::runtime_error("Water plugin supplied no shading shader");
         Shader& waterShader = *borrowedShader;
         waterShader.use();
         waterRenderer_->renderFrame({*renderTarget_,camera,settings,width,height,settings.water.timeSeconds,
-            fullscreenVertexArray_,nullptr,&waterShader,&waterFrameInputs_});
+            fullscreenVertexArray_,nullptr,&waterShader,&waterFrameInputs_,deferred ? nullptr : &waterLightingInputs});
         if (!deferred) {
-            waterShader.setVec3("uLightDirection", lightDirection);
-            waterShader.setVec3("uLightColor", lightColor);
-            waterShader.setBool("uSeparatedWaterSun", settings.water.surfaceOptics && settings.atmosphere.enabled);
-            waterShader.setVec3("uWaterKeyIrradiance", settings.atmosphere.sunElevationDegrees >= -2.0f
-                ? atmosphere::sunIrradiance(settings.atmosphere) : lightColor * diffuseStrength);
-            waterShader.setFloat("uDiffuseStrength", diffuseStrength);
-            waterShader.setFloat("uEnvironmentIntensity", settings.environmentIntensity);
-            waterShader.setFloat("uEnvironmentMaxMip",
-                static_cast<float>(environmentMap_->maximumMipLevel()));
-            const float solarTwilight = settings.atmosphere.enabled
-                ? 0.03f + 0.97f * std::clamp(
-                    (settings.atmosphere.sunElevationDegrees + 8.0f) / 12.0f, 0.0f, 1.0f)
-                : 1.0f;
-            const float twilight = std::max(solarTwilight,
-                atmosphere::moonKeyStrength(settings.atmosphere));
-            waterShader.setFloat("uTwilightFactor", twilight);
             waterShader.setBool("uShadowsEnabled", objectShadowsActive);
             bindCascadeSettings(waterShader);
             cloudShadow_->bind(waterShader, 5U, cloudShadowEnabled);

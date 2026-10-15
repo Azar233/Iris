@@ -18,10 +18,10 @@ unsigned int RenderPluginFrame::texture(const std::string& name) const {
 RenderPluginFrame::RenderPluginFrame(RenderTarget& targetValue, const Camera& cameraValue,
     const RendererSettings& settingsValue, int widthValue, int heightValue, float timeValue,
     unsigned int vao, const PostProcessSettings* postSettings, Shader* shader,
-    const WaterFrameInputs* water)
+    const WaterFrameInputs* water, const WaterLightingInputs* waterLighting)
     : target(targetValue), camera(cameraValue), settings(settingsValue), width(widthValue),
       height(heightValue), timeSeconds(timeValue), fullscreenVertexArray(vao),
-      postProcessSettings(postSettings), shadingShader(shader), waterInputs(water) {
+      postProcessSettings(postSettings), shadingShader(shader), waterInputs(water), waterLightingInputs(waterLighting) {
     if (shadingShader) return;
     textures.push_back({"display",target.colorTexture(),TextureFormat::DisplayColor,target.width(),target.height()});
     if (!postSettings) return;

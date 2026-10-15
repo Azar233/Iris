@@ -19,3 +19,5 @@ Surface 的 renderFrame 仅适配 Uniform，drawIndexedGeometry 在上下文线�
 W2c-2a 用 WaterFrameInputs 的五个只读字段借用后端已解析的当前/前帧 VP、前帧时间、水面高度和运动有效性；插件写入七项公共逐帧 Uniform。Camera 与当前时间仍来自原 Frame/WaterSettings，VP 保留后端 TAA jitter；两个历史回退、0.2 s 边界和帧末更新仍由后端决定。Frame 构造函数末尾的借用参数默认 nullptr，旧 Settings-only 调用保持；插件不保存指针。后端只读 renderedWaterFrameInputs 暴露实际当帧包供诊断，该包不作为下一帧历史来源。环境/灯光/纹理绑定仍在后端。
 
 W2c-2b 在上述逐帧借用存在时，继续适配颜色程序的 CameraForward、近远面、逆 viewport 和输入包当前 VP 的逆矩阵。按自有 Forward Shader 对象选择，兼容 Deferred 的颜色子调用；运动程序不绑定此组。非正尺寸或非有限逆矩阵在写 Uniform 前拒绝，旧空借用仍保持 Settings-only。共享 Frame/API/服务不扩展；灯光、环境与纹理仍由后端准备。
+
+W2c-2c 通过 Frame 末尾默认空的 WaterLightingInputs 借用统一计算后的灯光方向/颜色、关键光辐照度、漫反射强度、实际环境最大 mip 与 twilight 因子；插件为自有颜色程序适配这六项及原 Settings 的环境强度、分离太阳开关，共八项 Uniform。按实际程序选择，兼容 Deferred 颜色；运动程序不消费，旧 Settings-only / frame-only 调用不覆盖灯光。后端在颜色调用时解析六字段，不复制光照算法到插件；插件不保存输入包。阴影/级联/云 metadata、sampler 和所有纹理绑定继续由后端负责。Shader、保存格式与 19 项 schema 不变。

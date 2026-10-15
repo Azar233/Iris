@@ -106,6 +106,56 @@ void checkFrameUniforms(GLuint program, const iris::WaterFrameInputs& input,
         require(bool(actual)==input.motionHistoryValid,"Motion validity uniform mismatch");
     }
 }
+void checkLighting(iris::RenderPlugin& plugin, RendererSettings settings) {
+    Camera camera; RenderTarget target;
+    iris::WaterFrameInputs frame;
+    const iris::WaterLightingInputs light{{-0.2f,-0.8f,0.3f},{0.7f,0.4f,0.9f},
+        {1.7f,0.8f,0.2f},0.37f,6.0f,0.19f};
+    settings.renderPath=RenderPath::Deferred;
+    // These resolved values deliberately differ from raw settings. The plugin
+    // must adapt the shared backend result rather than recompute a second sun.
+    settings.lightDirection={1,0,0}; settings.diffuseStrength=2.0f;
+    settings.atmosphere.sunElevationDegrees=70;
+    for(const bool forward : {true,false}) {
+        auto* shader=plugin.borrowShadingShader(!forward); shader->use();
+        GLint program=0; glGetIntegerv(GL_CURRENT_PROGRAM,&program);
+        const auto check=[&](const char* name,const float* expected,int count) {
+            const auto location=glGetUniformLocation(program,name);
+            require(forward ? location>=0 : location<0,"Wrong water lighting program contract");
+            if(!forward) return;
+            std::array<float,3> actual{}; glGetUniformfv(program,location,actual.data());
+            for(int i=0;i<count;++i)
+                require(std::abs(actual[i]-expected[i])<1e-6f,"Water lighting borrow mismatch");
+        };
+        for(int mode=0;mode<3;++mode) {
+            settings.atmosphere.enabled=mode!=1; settings.water.surfaceOptics=mode!=2;
+            settings.environmentIntensity=0.3f+static_cast<float>(mode);
+            plugin.renderFrame({target,camera,settings,64,64,0,0,nullptr,shader,&frame,&light});
+            const auto verify=[&] {
+                check("uLightDirection",&light.lightDirection[0],3);
+                check("uLightColor",&light.lightColor[0],3);
+                check("uWaterKeyIrradiance",&light.keyIrradiance[0],3);
+                check("uDiffuseStrength",&light.diffuseStrength,1);
+                check("uEnvironmentIntensity",&settings.environmentIntensity,1);
+                check("uEnvironmentMaxMip",&light.environmentMaxMip,1);
+                check("uTwilightFactor",&light.twilightFactor,1);
+                const auto location=glGetUniformLocation(program,"uSeparatedWaterSun");
+                require(forward ? location>=0 : location<0,"Wrong separated-sun program contract");
+                if(forward) {
+                    GLint actual=0; glGetUniformiv(program,location,&actual);
+                    require(bool(actual)==(mode==0),"Separated water sun ignores canonical settings");
+                }
+            };
+            verify();
+            auto legacy=settings;
+            legacy.environmentIntensity=4; legacy.atmosphere.enabled=!settings.atmosphere.enabled;
+            plugin.renderFrame({target,camera,legacy,64,64,0,0,nullptr,shader,&frame});
+            verify(); // Existing frame-only callers must not overwrite lighting.
+            plugin.renderFrame({target,camera,legacy,0,0,0,0,nullptr,shader});
+            verify(); // The original settings-only call also leaves it intact.
+        }
+    }
+}
 // Use the real water vertex/G-buffer programs and geometry. Restrict outputs
 // exactly as the backend's Deferred+TAA motion subpass does.
 void checkDraw(iris::RenderPlugin& plugin, RendererSettings settings) {
@@ -288,6 +338,7 @@ int main() {
         auto owner = prepare(settings); bindings();
         auto ownedPrograms = programs(*owner); bindings();
         checkDraw(*owner,settings);
+        checkLighting(*owner,settings);
         sentinelShader.use(); glBindVertexArray(sentinelVao); glBindBuffer(GL_ARRAY_BUFFER,sentinelBuffer);
         bindings();
         Camera camera; RenderTarget target;

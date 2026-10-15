@@ -4,6 +4,7 @@
 #include <string>
 #include <vector>
 #include <glm/mat4x4.hpp>
+#include <glm/vec3.hpp>
 #include "plugin/RenderPluginContract.h"
 #include "module/ParameterRegistry.h"
 
@@ -36,6 +37,16 @@ struct WaterFrameInputs {
     bool motionHistoryValid{false};
 };
 
+// Resolved shared lighting and environment metadata; no GL resource borrow.
+struct WaterLightingInputs {
+    glm::vec3 lightDirection{0.0f, -1.0f, 0.0f};
+    glm::vec3 lightColor{1.0f};
+    glm::vec3 keyIrradiance{1.0f};
+    float diffuseStrength{1.0f};
+    float environmentMaxMip{0.0f};
+    float twilightFactor{1.0f};
+};
+
 // Borrowed frame inputs. The caller owns the context, target and scheduling.
 // RendererSettings is a compatibility bridge for this first migration, not a
 // frozen public material/plugin schema or a cross-backend GPU ABI.
@@ -43,7 +54,8 @@ struct RenderPluginFrame {
     RenderPluginFrame(RenderTarget& target, const Camera& camera, const RendererSettings& settings,
         int width, int height, float timeSeconds, unsigned int fullscreenVertexArray,
         const PostProcessSettings* postProcessSettings = nullptr, Shader* shadingShader = nullptr,
-        const WaterFrameInputs* waterInputs = nullptr);
+        const WaterFrameInputs* waterInputs = nullptr,
+        const WaterLightingInputs* waterLightingInputs = nullptr);
     RenderTarget& target;
     const Camera& camera;
     const RendererSettings& settings;
@@ -57,6 +69,8 @@ struct RenderPluginFrame {
     Shader* shadingShader;
     // Synchronous borrow only. Null preserves the legacy settings-only adapter.
     const WaterFrameInputs* waterInputs;
+    // Optional synchronous borrow for the water color program only.
+    const WaterLightingInputs* waterLightingInputs;
     std::vector<RenderTextureBinding> textures;
     unsigned int texture(const std::string& name) const;
     std::vector<ModuleParameterOverride> parameterValues(const RenderPluginParameterSchema& schema) const;
