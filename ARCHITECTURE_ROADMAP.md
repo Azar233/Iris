@@ -227,3 +227,11 @@ RenderPluginFrame 末尾增加独立默认空 WaterShadowInputs，同步借用�
 双编译器 Integration 各 37/37，OFF plugins 5/5/普通场景/含水 Job 66 无帧输出，真实 GPU 四槽/count1…4/旧调用/每套 18 个非法输入无部分写入、运动/状态/资源事务通过；两窗口真实后端历史/GUI-Job、云水集成与 GPU smoke 通过。50 对固定 PNG 精确一致，四组原 CPU P95/Draw/bytes 预算首轮通过，GPU 时间仅诊断。无新验收失败、撤弃测试、阈值/基线修改；不重复无关夜间灯光专项或完整图像套件。
 
 本地记录 docs/a4w2c2e-water-shadow-uniforms.md 与 .local/verification/a4w2c2e。前项 37b208f 的 CI 38670674104 completed/success，head 一致；本项源码和本地验收完成，提交/推送/CI 单独核对。无新安装/ZIP，A4/W2 父项及 P1/M3 未完成。下一入口 W2c-2f：云影 metadata 与纹理同步借用合同调查，先核对同次 metadata、active/cache 与禁用绑定，再冻结实现包。
+
+## A4-W2c-2f：云影参数与纹理同步借用合同调查（2026-10-15 已完成）
+
+基于 1009654 核对四个云影消费者、七项 Uniform、hostEnabled && active 的最终开关、26 标量/program/noise fingerprint 缓存与单元绑定。缓存命中仍有效，宿主禁用时旧 active/ID 可保留但必须绑定 0；无物体投影者不代表没有云影。快照必须在 Cloud sun transmission Pass 后、实际水面颜色调用中解析，不能在 lambda 定义时借用旧状态；云反射 unit7 继续独立。
+
+冻结 W2c-2g：拟议 CloudShadowInputs 七字段值快照及 frameInputs(hostEnabled)，默认空 Frame 借用；插件只为实际颜色程序适配六项 metadata 与 sampler=5，旧空调用保留，非法数值/extent/启用-ID 配对在所有 Uniform 写入前拒绝。后端继续在原位置绑定同一快照的 unit5 纹理；原 bind 的三个其他消费者保留。没有增加 Surface 逻辑资源/pass、纹理所有权或通用框架。
+
+本次只作调查/文档与静态合同检查，无运行时代码/API/测试变化，无新构建/CPU/GPU/图像/成本/打包成绩。详细合同与下一包未执行的门槛见本地 docs/a4w2c2f-cloud-shadow-borrow-contract.md；插图明确复用 W2c-2e，不把旧证据记为本次通过。W2c-2g 尚未实施，A4/W2 父项及 P1/M3 不勾选；提交/推送/CI 单独记录。
