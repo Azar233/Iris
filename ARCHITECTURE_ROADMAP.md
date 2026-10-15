@@ -245,3 +245,11 @@ CloudShadowRenderer 提供七字段 CloudShadowInputs 值快照，统一解析�
 旧 GCC 二进制的普通地面 Forward/Deferred 图像比较已失败（MAE 0.0628019，原限 0.008），按用户既有授权仅从本包门槛剔除此项，保留原测试、阈值和失败证据；逐路径旧/新精确一致及水面/贡献/重复帧/夜间仍通过，不宣称原 GCC 全套通过。热重载临时夹具在深证据路径缺共享头文件，已补齐实际头文件而非扩大生产搜索或删除检查，两次失败保留。没有更新基线或放宽阈值。
 
 本地记录 docs/a4w2c2g-cloud-shadow-uniforms.md 和 .local/verification/a4w2c2g；功能与调整后的必需本地验收完成，提交/推送/CI 分开记录。前项 83e4efa 的 CI 查询 TLS 超时，结论未确认。无安装/ZIP，A4/W2 父项及 P1/M3 未完成。下一项 W2c-2h：水面剩余 sampler 与云反射同步输入合同调查。
+
+## A4-W2c-2h：水面剩余采样器与云反射输入合同调查（2026-10-15 已完成）
+
+基于 bf8608d 核对剩余七个固定 sampler（unit0/1/2/3/4/6/7）与云反射开关、环境预滤波回退、比较采样数组和 opaque/scene 附件隔离。当前云 Pass 后才能解析 radianceTexture；首帧即使未复用历史，也可能已输出 resolved history，不能改用 raw 或上一帧 ID。云影 unit5 已迁移，继续独立；GL 绑定次序和资源所有权保持。
+
+冻结 W2c-2i：拟议两字段 WaterSamplingInputs 默认空同步借用反射 enabled/texture，插件为实际颜色程序写八项 Uniform，后端在原位置绑定同一快照的 unit7。旧空调用保留任意预置 sampler/开关，运动不消费，启用-ID 不匹配在所有 Uniform 写入前拒绝；不新增通用纹理层、服务、CloudLayer API 或 Shader 改动。
+
+本次只有调查/文档和静态合同核对，无新运行时代码/API/测试或构建/CPU/GPU/图像/成本成绩。完整本地记录 docs/a4w2c2h-water-sampling-contract.md，插图明确归属 W2c-2g。W2c-2i 尚未实施，无安装/ZIP，A4/W2 父项及 P1/M3 保持未完成；提交/推送/CI 单独记录。
