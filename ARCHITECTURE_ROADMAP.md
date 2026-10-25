@@ -283,3 +283,13 @@ Frame 末尾新增默认空 WaterSamplingInputs，独立同步借用反射 enabl
 W2 按静态 OpenGL Surface 边界完成：Water 拥有私有网格/程序/58 Uniform 适配/索引绘制；共享纹理、环境回退、附件/状态/调度、统一历史和水下 PostProcess 保持原所有者。支持 Forward/Deferred 颜色、Deferred+TAA 运动、两网格、水上/水下、云 raw/resolved、GUI/Native Raster Job 与相关 OFF 拒绝；不承诺 DLL ABI、独立调度、CPU PT 或 Vulkan/GPU PT 水面支持。
 
 保留 W2a GPU 和 W2c-2i CPU 跨运行计时已授权例外，原数值/负对照/失败与阈值不删，阶段不宣称原成本全通过或 CPU/GPU 无回退。完整本地说明 docs/a4w2d-water-stage-acceptance.md，产物 .local/verification/a4w2d。无新运行时代码、安装/ZIP，A4/P1/M3 未完成；提交/推送/CI 单独记录。下一入口 A4-C0：原生云层迁移边界调查，先选最小切片，不继续云画质研发。
+
+## A4-C0：原生云层迁移边界调查（2026-10-25 已完成）
+
+基于97a87d6核对共享Atmosphere/Scene/命令/Job、CloudLayerRenderer、云影/水面/GodRays/PostProcess及现有构建测试。体积云两程序、七张目标纹理、三张FBO、私有噪声与独立时域历史已经封装在CloudLayerRenderer，但Renderer仍无条件拥有实例。共享云参数、云影与天空环境不应随体积实例整体搬迁；raw/resolved选择、门控、光学水面前置march及统一失效必须保持。
+
+冻结下一包A4-C1：可选静态iris.cloud-volume拥有现有CloudLayerRenderer，通过明确opengl.cloud-volume-borrow.v1短期借用服务保持原调用，先迁移私有GPU资源/历史所有权，不同时改积分/参数schema/全部执行。新增IRIS_ENABLE_CLOUD_VOLUME_PLUGIN及追加的资源借用阶段；ON兼容旧配置默认启用，OFF保留共享CPU场/大气并在状态改变前拒绝含云能力请求，晴空/非体积场景保持。插件列表启停/锁定/重建、Scene/命令/Job、生命周期与GPU事务须纵向接通；不创建通用渲染图或第二份历史。
+
+发现原构造先分配raw VAO再创建Shader，Shader构造失败时类析构不会运行；C1事务准备必须修正并实测该清理路径。本次仅记录未修复。资源统计继续沿用现有noiseBytes口径，不冒称完整显存；云影/GodRays/环境与后处理所有权保持。下一包验收覆盖双编译器API/配置、OFF拒绝、真实资源事务、原时域/积分、双窗口/GUI-Job、旧新配对与云水反射，不重复全部云生产、广泛阶段图像或不可靠计时门槛。
+
+完整本地合同docs/a4c0-cloud-volume-boundary.md，静态证据.local/verification/a4c0。仅调查/文档，无运行时代码、新构建/CPU/GPU/图像/成本或安装/ZIP；说明图明确来自W2c-2i历史实拍。前项97a87d6的CI38711243284已核对completed/success。C1未实施，A4/P1/M3未完成，提交/推送/CI单独记录。
