@@ -3,3 +3,4 @@
 *.png binary
 *.ico binary
 *.raw binary
+assets/benchmarks/m3c/sponza/NewSponza_Main_glTF_003.bin filter=lfs diff=lfs merge=lfs -text

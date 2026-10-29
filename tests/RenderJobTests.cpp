@@ -45,6 +45,48 @@ int main() {
         require(loadRenderJob(sourceRoot / "assets" / "renderjobs"
                     / "04_coastal_sequence.renderjob", rasterJob, error), error.c_str());
         require(rasterJob.renderer == "raster", "coastal fixture must select the raster backend");
+        require(rasterJob.rasterBackend=="opengl","Legacy raster jobs must retain OpenGL");
+        RenderJob gpuJob;
+        require(loadRenderJob(sourceRoot/"assets/renderjobs/21_gpu_path_traced.renderjob",gpuJob,error),error.c_str());
+        require(gpuJob.renderer=="gpu-path-traced" && gpuJob.outputs.size()==8,"GPU PT fixture must select GPU and all AOVs");
+        require(validateQueueRenderJob(gpuJob,error),"GPU PT must support background Render Queue submission");
+        gpuJob.outputs.push_back(pathtracer::RenderOutput::DenoisedBeauty);
+        require(validateQueueRenderJob(gpuJob,error),"GPU Queue must support explicit spatial output");
+        auto wrongSpatialBackend=gpuJob;wrongSpatialBackend.renderer="cpu-path-traced";
+        require(!validateRenderJob(wrongSpatialBackend,error) && error.find("denoised-beauty")!=std::string::npos,"CPU must reject GPU spatial output");
+        gpuJob.outputs.pop_back();
+        require(!gpuJob.gpuTemporalDenoise,"Legacy GPU job must remain Raw");
+        gpuJob.outputs.push_back(pathtracer::RenderOutput::AccumulatedBeauty);
+        require(!validateRenderJob(gpuJob,error),"Accumulated output must require explicit temporal opt-in");
+        gpuJob.gpuTemporalDenoise=true;require(validateQueueRenderJob(gpuJob,error),error.c_str());
+        auto wrongTemporal=gpuJob;wrongTemporal.renderer="cpu-path-traced";
+        require(!validateRenderJob(wrongTemporal,error),"CPU must reject temporal GPU jobs");
+        wrongTemporal=gpuJob;wrongTemporal.outputs={pathtracer::RenderOutput::Beauty};
+        require(!validateRenderJob(wrongTemporal,error),"Unused temporal flag must fail rather than silently do nothing");
+        gpuJob.outputs.pop_back();gpuJob.gpuTemporalDenoise=false;
+        gpuJob.schemaVersion=3;require(!validateRenderJob(gpuJob,error),"Legacy schema must reject GPU PT");
+        gpuJob.schemaVersion=4;gpuJob.resume=true;require(!validateRenderJob(gpuJob,error),"GPU PT C1 must reject unverified resume");
+        gpuJob.resume=false;gpuJob.renderSettings.width=1280;gpuJob.renderSettings.height=720;
+        require(validateQueueRenderJob(gpuJob,error),"GPU PT Queue must accept native 720p");
+        gpuJob.renderSettings.width=720;gpuJob.renderSettings.height=1280;
+        require(validateRenderJob(gpuJob,error),"GPU PT must accept portrait 720p");
+        gpuJob.renderSettings.width=1024;gpuJob.renderSettings.height=1024;
+        require(validateRenderJob(gpuJob,error),"GPU PT must retain the old maximum square extent");
+        gpuJob.renderSettings.width=1281;require(!validateRenderJob(gpuJob,error),"GPU PT must bound dispatch width");
+        gpuJob.renderSettings.width=1280;gpuJob.renderSettings.height=1281;
+        require(!validateRenderJob(gpuJob,error),"GPU PT must bound dispatch height");
+        gpuJob.renderSettings.width=0;gpuJob.renderSettings.height=720;
+        require(!validateRenderJob(gpuJob,error),"GPU PT must reject zero dimensions");
+        RenderJob authoredVulkan;
+        require(loadRenderJob(sourceRoot/"assets/renderjobs/17_vulkan_baseline.renderjob",authoredVulkan,error),error.c_str());
+        require(authoredVulkan.rasterBackend=="vulkan" && authoredVulkan.schemaVersion==4,"Authored Vulkan backend must load");
+        auto vulkanJob=rasterJob;vulkanJob.schemaVersion=4;vulkanJob.rasterBackend="vulkan";
+        require(validateRenderJob(vulkanJob,error),error.c_str());
+        vulkanJob.schemaVersion=3;require(!validateRenderJob(vulkanJob,error),"Legacy schema must not opt into Vulkan");
+        vulkanJob.schemaVersion=4;vulkanJob.rasterTemporalAccumulation=true;
+        require(!validateRenderJob(vulkanJob,error),"Vulkan must reject unsupported temporal accumulation");
+        vulkanJob.rasterTemporalAccumulation=false;vulkanJob.rasterBackend="unknown";
+        require(!validateRenderJob(vulkanJob,error),"Unknown raster backend must fail");
         const ModuleRegistry rasterModules = createBuiltinModuleRegistry();
         require(validateRenderJobAssets(rasterJob, error, &rasterModules), error.c_str());
         RenderJob implicitModule = job;
@@ -101,6 +143,25 @@ int main() {
         std::error_code cleanupError;
         std::filesystem::remove_all(outputRoot, cleanupError);
         std::filesystem::create_directories(outputRoot);
+        {
+            std::ifstream file(sourceRoot/"assets/renderjobs/21_gpu_path_traced.renderjob");
+            const std::string original((std::istreambuf_iterator<char>(file)),std::istreambuf_iterator<char>());
+            const auto authored=outputRoot/"temporal.renderjob";
+            const auto attempt=[&](const std::string& flag,bool success){
+                auto text=original;const std::string relativeScene="../scenes/fixtures/40_gpu_path_traced.myscene";
+                const auto sceneIndex=text.find(relativeScene);require(sceneIndex!=std::string::npos,"GPU fixture Scene missing");text.replace(sceneIndex,relativeScene.size(),(sourceRoot/"assets/scenes/fixtures/40_gpu_path_traced.myscene").generic_string());
+                const auto index=text.find("\"beauty\"");require(index!=std::string::npos,"GPU fixture missing Beauty");text.replace(index,8,"\"accumulated-beauty\"");text.insert(text.find('{')+1,flag+",");
+                {std::ofstream next(authored);next<<text;}
+                RenderJob parsed=job;const bool loaded=loadRenderJob(authored,parsed,error);
+                if(loaded!=success)throw std::runtime_error("Temporal authored Job validation mismatch: "+error);
+                if(success)require(parsed.gpuTemporalDenoise && parsed.outputs.front()==pathtracer::RenderOutput::AccumulatedBeauty,"Temporal authored Job not applied");
+                else require(parsed.renderer==job.renderer && parsed.sourcePath==job.sourcePath,"Invalid temporal Job replaced previous state");
+            };
+            attempt("\"gpuTemporalDenoise\":true",true);
+            attempt("\"gpuTemporalDenoise\":false",false);
+            attempt("\"gpuTemporalDenoise\":\"true\"",false);
+            attempt("\"gpuTemporalDenoise\":true,\"gpuTemporalDenoise\":true",false);
+        }
         job.renderSettings.width = 16U;
         job.renderSettings.height = 16U;
         job.renderSettings.samplesPerPixel = 1U;

@@ -1,0 +1,41 @@
+{
+  "format": "MyRendererRenderJob",
+  "schemaVersion": 4,
+  "scene": "../scenes/fixtures/40_gpu_path_traced.myscene",
+  "renderer": "gpu-path-traced",
+  "camera": "scene",
+  "resolution": [
+    160,
+    90
+  ],
+  "frames": {
+    "start": 0,
+    "end": 0,
+    "fps": 30
+  },
+  "sampling": {
+    "spp": 64,
+    "maxDepth": 4,
+    "seed": 20261026
+  },
+  "aovs": [
+    "beauty",
+    "albedo",
+    "normal",
+    "depth",
+    "direct",
+    "indirect",
+    "sample-count",
+    "variance"
+  ],
+  "output": {
+    "path": "../../.local/vulkan/gpu-path-traced/frame_{frame:04}",
+    "formats": [
+      "png",
+      "hdr",
+      "exr"
+    ],
+    "resume": false
+  },
+  "failurePolicy": "stop"
+}

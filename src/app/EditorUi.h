@@ -23,6 +23,13 @@ inline void initialize(ImGuiIO& io) {
 }
 inline const char* label(const char* key) {
   static const std::unordered_map<std::string, std::string> values {
+    {"Rigid body", "刚体"}, {"Enable rigid body", "启用刚体"}, {"Body type", "刚体类型"},
+    {"Collision shape", "碰撞形状"}, {"Collision offset (m)", "碰撞偏移 (m)"},
+    {"Radius (m)", "半径 (m)"}, {"Half extents (m)", "半尺寸 (m)"},
+    {"Friction", "摩擦系数"}, {"Restitution", "弹性系数"}, {"Mass (kg)", "质量 (kg)"},
+    {"Linear damping", "线性阻尼"}, {"Angular damping", "角阻尼"},
+    {"Velocity (m/s)", "初始速度 (m/s)"}, {"Angular velocity (rad/s)", "初始角速度 (rad/s)"},
+    {"Show collision shapes", "显示碰撞形状"},
     {"Hierarchy###Hierarchy", "层级###Hierarchy"},
     {"Inspector###Inspector", "检查器###Inspector"},
     {"Scene###Viewport", "场景###Viewport"},

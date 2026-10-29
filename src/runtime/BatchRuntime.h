@@ -62,6 +62,8 @@ struct BatchFrameResult {
     bool skipped{false};
     BatchFrameStatus status{BatchFrameStatus::Pending};
     pathtracer::RenderStatistics statistics;
+    // Serialized backend evidence; empty for the existing CPU path.
+    std::string gpuBackendReport;
     std::vector<std::filesystem::path> outputs;
     std::vector<BatchOutputDiagnostic> outputDiagnostics;
     // Empty when the job drives the scene directly, otherwise the module run that
@@ -77,7 +79,8 @@ bool bakeJobSimulation(
     const RenderJob& job,
     const ModuleRegistry* modules,
     SimulationCache& cache,
-    std::string& error
+    std::string& error,
+    const CancellationToken* cancellation = nullptr
 );
 
 struct BatchSequenceProgress {

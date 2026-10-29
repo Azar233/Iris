@@ -12,9 +12,21 @@
 | `assets/icons/iris-source.png`, `iris-icon.png`, `iris.ico` | AI-generated iris artwork, revised and selected for Iris; source and export instructions in `assets/icons/README.md` | Distributed under the project MIT license |
 | `assets/readme/*.png` | Captured from the Iris editor; the studio scene uses the CC0 Poly Haven models listed below | MIT, under the project license |
 | `assets/models/polyhaven/*` | Five 1K glTF showcase models from Poly Haven; authors and source URLs are recorded in the adjacent README | CC0 1.0 |
+| `assets/benchmarks/m3c/sponza/*` | Intel Sponza 2022 by Frank Meinl, sponsored by Anton Kaplanyan; derived opaque glTF with 512 px textures; full source credit and license adjacent | CC BY 4.0, with the source's additional notice |
+| `assets/benchmarks/m3c/stanford/*` | Stanford Bunny and classic Cyberware Dragon, Stanford Computer Graphics Laboratory; repaired closed geometry for glass tests; provenance and changes adjacent | Research use and free redistribution with acknowledgement; commercial use or products for sale require Stanford permission |
 | `shaders/ocean_snoise.glsl` | 3D Simplex noise distributed with [osgw](https://github.com/CaffeineViking/osgw), originally by Ashima Arts / Stefan Gustavson; license copies in `assets/licenses/` | MIT |
 
 ## Source-tree-only reference models
+
+`assets/benchmarks/khronos-sponza/` contains the unmodified Khronos
+glTF-Sample-Assets Crytek Sponza model for local evaluation, including its
+cloth and alpha-masked foliage. Upstream revision and per-file hashes are
+recorded in `SOURCE.json`; the original `LICENSE.md`, metadata and CRYENGINE
+license reference are adjacent. Model assets are covered by the upstream
+CRYENGINE Limited License Agreement, not Iris MIT or the Intel Sponza CC BY
+license. This directory, including its Iris scene, is excluded from CPack
+runtime installation; redistribution permission has not been established by
+this integration.
 
 The following legacy/reference models remain useful for local importer checks,
 but are deliberately excluded from CPack binary releases:

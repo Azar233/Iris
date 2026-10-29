@@ -1,0 +1,72 @@
+#version 460
+#extension GL_EXT_ray_query : require
+layout(local_size_x=8,local_size_y=8) in;
+layout(binding=0) uniform accelerationStructureEXT scene;
+struct Triangle {vec4 p0,p1,p2,n0,n1,n2,base,emission,parameters;
+    vec4 uv0,uv1,uv2,tangent0,tangent1,tangent2;ivec4 textures;
+    vec4 transmission,attenuation;uvec4 identity;};
+#ifdef IRIS_PT_INDEXED
+layout(binding=1,std430) readonly buffer Primitives {uvec4 primitives[];};
+struct Vertex {vec4 position,normal,uv,tangent;};
+struct Material {vec4 base,emission,parameters;ivec4 textures;vec4 transmission,attenuation;uvec4 identity;};
+layout(binding=3,std430) readonly buffer Vertices {Vertex vertices[];};
+layout(binding=4,std430) readonly buffer Materials {Material materials[];};
+#else
+layout(binding=1,std430) readonly buffer Triangles {Triangle triangles[];};
+#endif
+layout(binding=2,std430) readonly buffer Instances {uvec4 instances[];};
+struct Pose {mat4 currentToPrevious,normalToPrevious;uvec4 identity;};
+layout(binding=5,std430) readonly buffer Poses {Pose poses[];};
+layout(binding=6,std140) uniform Frame {
+    mat4 inverseView,currentView,previousView;
+    vec4 eyeScale,previousScale; // previousScale.x=previous tan(fov/2)
+    uvec4 extent; // width,height,history-valid,unused
+} frame;
+struct Guide {vec4 motionDepth,normal,previousNormal;uvec4 identity;};
+layout(binding=7,std430) writeonly buffer Guides {Guide guides[];};
+void main(){
+    uvec2 pixel=gl_GlobalInvocationID.xy;
+    if(any(greaterThanEqual(pixel,frame.extent.xy)))return;
+    uint index=pixel.y*frame.extent.x+pixel.x;
+    Guide g=Guide(vec4(0),vec4(0),vec4(0),uvec4(0));
+    vec2 size=vec2(frame.extent.xy),center=vec2(pixel)+.5;
+    float aspect=size.x/size.y;
+    vec3 direction=normalize(mat3(frame.inverseView)*vec3(
+        (2*center.x/size.x-1)*aspect*frame.eyeScale.w,
+        (1-2*center.y/size.y)*frame.eyeScale.w,-1));
+    rayQueryEXT query;
+    rayQueryInitializeEXT(query,scene,gl_RayFlagsOpaqueEXT,1,frame.eyeScale.xyz,.0001,direction,1e30);
+    while(rayQueryProceedEXT(query)){}
+    if(rayQueryGetIntersectionTypeEXT(query,true)!=gl_RayQueryCommittedIntersectionNoneEXT){
+        uint instance=rayQueryGetIntersectionInstanceCustomIndexEXT(query,true);
+        uint primitive=instances[instance].x+rayQueryGetIntersectionPrimitiveIndexEXT(query,true);
+        vec3 a,b,c;uint material;float transmission;
+#ifdef IRIS_PT_INDEXED
+        uvec4 t=primitives[primitive];a=vertices[t.x].position.xyz;b=vertices[t.y].position.xyz;c=vertices[t.z].position.xyz;
+        material=materials[t.w].identity.y;transmission=materials[t.w].transmission.x;
+#else
+        Triangle t=triangles[primitive];a=t.p0.xyz;b=t.p1.xyz;c=t.p2.xyz;
+        material=t.identity.y;transmission=t.transmission.x;
+#endif
+        vec3 normal=normalize(cross(b-a,c-a));if(dot(normal,direction)>0)normal=-normal;
+        vec3 world=frame.eyeScale.xyz+rayQueryGetIntersectionTEXT(query,true)*direction;
+        Pose pose=poses[instance];
+        vec4 previous=frame.previousView*pose.currentToPrevious*vec4(world,1);
+        float depth=-(frame.currentView*vec4(world,1)).z,oldDepth=-previous.z;
+        uint flags=1u|(transmission>0?4u:0u);
+        vec2 oldPixel=center;
+        if(frame.extent.z!=0 && oldDepth>1e-6){
+            oldPixel=vec2(.5+.5*previous.x/(oldDepth*aspect*frame.previousScale.x),
+                .5-.5*previous.y/(oldDepth*frame.previousScale.x))*size;
+            if(all(greaterThanEqual(oldPixel,vec2(0))) && all(lessThan(oldPixel,size)))flags|=2u;
+        }
+        // Invalid reprojections carry zero motion/depth and cannot accidentally reuse history.
+        g.motionDepth=vec4((flags&2u)!=0?oldPixel-center:vec2(0),depth,(flags&2u)!=0?oldDepth:0);
+        g.normal=vec4(normal,float(flags));
+        // AS custom indices are 24 bit; ordinal+1 is exactly representable here.
+        // This also distinguishes repeated mesh nodes within the same entity.
+        g.previousNormal=vec4(normalize(mat3(pose.normalToPrevious)*normal),float(instance+1));
+        g.identity=uvec4(pose.identity.xyz,material);
+    }
+    guides[index]=g;
+}

@@ -1,11 +1,14 @@
 #pragma once
 namespace iris { struct ShaderScenePackage; struct ShaderSceneRuntimeStatus; }
 #include "render/ShaderSourceMap.h"
+#include "vulkan/VulkanRaster.h"
+#include "vulkan/VulkanPathTracer.h"
 
 #include <array>
 #include <cstddef>
 #include <filesystem>
 #include <memory>
+#include <optional>
 #include <string>
 #include <utility>
 #include <vector>
@@ -25,6 +28,7 @@ namespace iris { struct ShaderScenePackage; struct ShaderSceneRuntimeStatus; }
 #include "plugin/RenderPlugin.h"
 #include "plugin/ShaderSceneHistory.h"
 
+struct ModelData;
 class Camera;
 class CausticsMap;
 class CloudLayerRenderer;
@@ -132,6 +136,12 @@ struct EnscapeCubeSettings {
 };
 
 struct RendererSettings {
+    // Workspace/Job backend choice, not a second persisted scene setting.
+    bool vulkanRaster{false};
+    bool vulkanPathTraced{false};
+    int gpuPathTracingSpp{64},gpuPathTracingDepth{6},gpuPathTracingSeed{1};
+    bool gpuSpatialDenoise{false};
+    bool gpuTemporalDenoise{false};
     iris::RenderPluginConfiguration renderPlugins;
     iris::RenderPluginParameterStore renderPluginValues;
     std::string shaderSceneResource; // Empty selects the existing native/Enscape pipelines.
@@ -185,6 +195,8 @@ struct RendererSettings {
     StylizedDebugView stylizedDebugView{StylizedDebugView::Final};
     bool iblEnabled{true};
     bool shadowsEnabled{true};
+    bool vulkanRayQueryShadows{false};
+    bool vulkanShadowDebug{false};
     // Cascaded directional shadows. 1 cascade with the default split reproduces a single orthographic
     // box, which is the compatibility fallback for scenes written before cascades existed.
     int shadowCascadeCount{3};
@@ -286,6 +298,7 @@ public:
     void drawSelectionOutline(const std::vector<RenderItem>& items, const Camera& camera,
         std::uint64_t selected, bool cullBackFaces);
     unsigned int colorTexture() const;
+    const iris::vulkan::RasterStatistics& vulkanStatistics() const { return vulkanStatistics_; }
     // Read-only visualizations of this frame's Deferred attachments (no lighting re-render).
     bool updateBufferPreviews(int width, int height);
     void clearBufferPreviews();
@@ -301,6 +314,12 @@ public:
     ) const;
     int activeMsaaSamples() const;
     void invalidateTemporalHistory();
+    const pathtracer::RenderImage* gpuPathTracedImage() const;
+    const pathtracer::RenderImage* gpuSpatialImage() const;
+    const pathtracer::RenderImage* gpuAccumulatedImage() const;
+    std::optional<unsigned> gpuPathTracedSamples() const;
+    void setTemporalFrame(int frame,int framesPerSecond);
+    const iris::vulkan::TemporalGuideFrame* gpuTemporalGuides() const;
     bool hasGpuFrameTime() const { return hasGpuFrameTime_; }
     double gpuFrameTimeMilliseconds() const { return gpuFrameTimeMilliseconds_; }
     double latestGpuFrameMeasurementMilliseconds() const { return latestGpuFrameMeasurementMilliseconds_; }
@@ -313,6 +332,9 @@ public:
     double causticsGpuTimeMilliseconds() const { return causticsGpuTimeMilliseconds_; }
     double latestCausticsMeasurementMilliseconds() const { return latestCausticsMeasurementMilliseconds_; }
     std::size_t causticsMeasurementSerial() const { return causticsMeasurementSerial_; }
+    bool shadowDepthReused() const { return shadowDepthReused_; }
+    const RasterVisibilityStatistics& rasterVisibility() const { return rasterVisibility_; }
+    const std::array<RasterVisibilityStatistics, 4>& shadowVisibility() const { return shadowVisibility_; }
     std::size_t drawCallCount() const { return drawCallCount_; }
     std::size_t submittedInstanceCount() const { return submittedInstanceCount_; }
     std::size_t visibleInstanceCount() const { return visibleInstanceCount_; }
@@ -364,6 +386,15 @@ public:
     const iris::WaterFrameInputs& renderedWaterFrameInputs() const { return waterFrameInputs_; }
 
 private:
+    void renderVulkan(const std::vector<RenderItem>&,const Camera&,const RendererSettings&,int,int);
+    iris::vulkan::RasterStatistics vulkanStatistics_;
+    int gpuTemporalFrame_{0},gpuTemporalFps_{30};
+#ifdef IRIS_HAS_VULKAN
+    std::unique_ptr<iris::vulkan::VulkanRaster> vulkanRaster_;
+    std::unique_ptr<iris::vulkan::VulkanPathTracer> vulkanPathTracer_;
+    std::string vulkanPathTracingKey_;
+    std::uint64_t vulkanBackendGeneration_{0};
+#endif
     // Only cloudless sky inputs invalidate the environment; camera/cloud changes
     // are handled by the per-frame passes and their own temporal histories.
     void updateAtmosphereEnvironment(const RendererSettings& settings);
@@ -455,6 +486,14 @@ private:
     std::size_t gpuFrameMeasurementSerial_{0};
     std::size_t prismBeamMeasurementSerial_{0};
     std::size_t causticsMeasurementSerial_{0};
+    bool shadowDepthReused_{false}, shadowDepthCacheValid_{false}, shadowCacheCulling_{false};
+    std::size_t shadowCacheCascadeCount_{0}, shadowCacheShaderRevision_{0};
+    glm::mat4 shadowCacheCamera_{1.0f};
+    glm::vec3 shadowCacheLight_{0.0f};
+    std::array<glm::mat4, 4> shadowCacheMatrices_{};
+    std::vector<std::pair<std::shared_ptr<const ModelData>, glm::mat4>> shadowCacheCasters_;
+    RasterVisibilityStatistics rasterVisibility_;
+    std::array<RasterVisibilityStatistics, 4> shadowVisibility_{};
     std::size_t drawCallCount_{0};
     std::size_t submittedInstanceCount_{0};
     std::size_t visibleInstanceCount_{0};

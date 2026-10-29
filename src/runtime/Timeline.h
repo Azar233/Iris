@@ -1,6 +1,7 @@
 #pragma once
 
 #include <algorithm>
+#include <cstdint>
 
 // Deterministic frame/time mapping shared by the GUI preview and the headless
 // batch runtime.
@@ -22,7 +23,7 @@ public:
     int framesPerSecond() const { return framesPerSecond_; }
     bool loop() const { return loop_; }
 
-    int frameCount() const { return endFrame_ - startFrame_ + 1; }
+    std::int64_t frameCount() const { return static_cast<std::int64_t>(endFrame_) - startFrame_ + 1; }
     bool atEnd() const { return frame_ >= endFrame_; }
 
     void setFrameRange(int startFrame, int endFrame) {
@@ -47,18 +48,18 @@ public:
     // caller can use the return value as its termination condition.
     bool advance(int frames = 1) {
         if (frames <= 0) return false;
-        const int target = frame_ + frames;
-        int next = target;
+        const std::int64_t target = static_cast<std::int64_t>(frame_) + frames;
+        std::int64_t next = target;
         if (target > endFrame_) {
             if (loop_) {
-                const int count = frameCount();
+                const auto count = frameCount();
                 next = startFrame_ + ((target - startFrame_) % count);
             } else {
                 next = endFrame_;
             }
         }
         if (next == frame_) return false;
-        frame_ = next;
+        frame_ = static_cast<int>(next);
         return true;
     }
 

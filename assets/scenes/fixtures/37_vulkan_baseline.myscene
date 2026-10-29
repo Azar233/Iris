@@ -1,0 +1,12 @@
+{
+  "format": "MyRendererScene", "version": 2,
+  "camera": {"target": [0, 0, 0], "yawDegrees": 12, "pitchDegrees": 8, "distance": 11, "fieldOfViewDegrees": 42},
+  "renderer": {"backgroundColor": [0.025, 0.035, 0.055], "showGrid": false, "showAxes": false,
+    "pbrEnabled": true, "iblEnabled": true, "skyboxEnabled": true, "environmentIntensity": 0.5,
+    "shadowsEnabled": false, "bloom": false, "temporalAaEnabled": false,
+    "localLights": [{"type": 0, "position": [-2, 3, 4], "radius": 12, "color": [1, 0.7, 0.4], "intensity": 12}]},
+  "entities": [
+    {"id": 1, "name": "Shared glTF metallic roughness", "model": "../../models/pbr_material_test.gltf"},
+    {"id": 2, "name": "Shared glTF texture UV", "model": "../../models/textured_triangle.gltf", "transform": {"translation": [0, -2, 0]}}
+  ]
+}

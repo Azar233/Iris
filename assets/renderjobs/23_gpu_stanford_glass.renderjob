@@ -1,0 +1,40 @@
+{
+  "format": "MyRendererRenderJob",
+  "schemaVersion": 4,
+  "scene": "../benchmarks/m3c/stanford-glass.myscene",
+  "renderer": "gpu-path-traced",
+  "camera": "scene",
+  "resolution": [
+    160,
+    90
+  ],
+  "frames": {
+    "start": 0,
+    "end": 0,
+    "fps": 30
+  },
+  "sampling": {
+    "spp": 256,
+    "maxDepth": 8,
+    "seed": 20261026
+  },
+  "aovs": [
+    "beauty",
+    "albedo",
+    "normal",
+    "depth",
+    "direct",
+    "indirect",
+    "sample-count",
+    "variance"
+  ],
+  "output": {
+    "path": "../../.local/verification/m3c/benchmark-jobs/stanford-glass/frame_{frame:04}",
+    "formats": [
+      "png",
+      "exr"
+    ],
+    "resume": false
+  },
+  "failurePolicy": "stop"
+}

@@ -21,6 +21,14 @@
 
 namespace {
 
+void bindMaterialSamplers(const Shader& shader) {
+    // These units are invariant for every material in one draw entry point.
+    shader.setInt("uBaseColorTexture", 0);
+    shader.setInt("uNormalTexture", 1);
+    shader.setInt("uMetallicRoughnessTexture", 2);
+    shader.setInt("uThicknessTexture", 7);
+}
+
 glm::vec3 srgbToLinear(const glm::vec3& color) {
     glm::vec3 linear(0.0f);
     for (int channel = 0; channel < 3; ++channel) {
@@ -235,10 +243,6 @@ const GpuModel::GpuMaterial* GpuModel::bindMaterial(
     const glm::vec3& linearTint,
     std::int32_t materialIndex
 ) const {
-    shader.setInt("uBaseColorTexture", 0);
-    shader.setInt("uNormalTexture", 1);
-    shader.setInt("uMetallicRoughnessTexture", 2);
-    shader.setInt("uThicknessTexture", 7);
     const GpuMaterial* material = nullptr;
     if (materialIndex >= 0 && static_cast<std::size_t>(materialIndex) < materials_.size()) {
         material = &materials_[static_cast<std::size_t>(materialIndex)];
@@ -307,16 +311,39 @@ void GpuModel::applyCullState(const GpuMaterial* material, bool cullBackFaces) c
     }
 }
 
-void GpuModel::drawOpaque(const Shader& shader, const glm::vec3& tint, bool cullBackFaces) const {
+bool GpuModel::commandVisible(const DrawCommand& command, const glm::mat4* modelToClip,
+                              RasterVisibilityStatistics* statistics) const {
+    const auto& mesh = *meshes_[command.meshIndex];
+    // Skinning can move vertices outside bind bounds. Custom shader deformation
+    // callers likewise leave modelToClip null, preserving their complete draws.
+    const bool visible = modelToClip == nullptr || !meshSkinJoints_[command.meshIndex].empty()
+        || intersectsClipBox(mesh.submeshBounds(command.submeshIndex), *modelToClip * command.nodeTransform);
+    if (statistics) {
+        ++statistics->submittedDraws;
+        const auto triangles = mesh.submeshTriangleCount(command.submeshIndex);
+        statistics->submittedTriangles += triangles;
+        if (visible) statistics->drawnTriangles += triangles;
+        else ++statistics->culledDraws;
+    }
+    return visible;
+}
+
+std::size_t GpuModel::drawOpaque(const Shader& shader, const glm::vec3& tint, bool cullBackFaces,
+                                const glm::mat4* modelToClip, RasterVisibilityStatistics* statistics) const {
     shader.setBool("uInstanced", false);
     const glm::vec3 linearTint = srgbToLinear(tint);
+    bindMaterialSamplers(shader);
+    std::size_t drawn = 0;
     for (const DrawCommand& command : opaqueDrawCommands_) {
+        if (!commandVisible(command, modelToClip, statistics)) continue;
+        ++drawn;
         bindNodeTransform(shader, command);
         bindSkinning(shader, command.meshIndex);
         const GpuMaterial* material = bindMaterial(shader, linearTint, command.materialIndex);
         applyCullState(material, cullBackFaces);
         meshes_[command.meshIndex]->drawSubmesh(command.submeshIndex);
     }
+    return drawn;
 }
 
 void GpuModel::drawOpaqueInstanced(
@@ -329,6 +356,7 @@ void GpuModel::drawOpaqueInstanced(
     if (modelMatrices.empty()) return;
     shader.setBool("uInstanced", true);
     const glm::vec3 linearTint = srgbToLinear(tint);
+    bindMaterialSamplers(shader);
     for (const DrawCommand& command : opaqueDrawCommands_) {
         bindNodeTransform(shader, command);
         bindSkinning(shader, command.meshIndex);
@@ -362,6 +390,7 @@ void GpuModel::drawTransparentSubmesh(
     bindNodeTransform(shader, command);
     bindSkinning(shader, command.meshIndex);
     const glm::vec3 linearTint = srgbToLinear(tint);
+    bindMaterialSamplers(shader);
     const GpuMaterial* material = bindMaterial(shader, linearTint, command.materialIndex);
     applyCullState(material, cullBackFaces);
     meshes_[command.meshIndex]->drawSubmesh(command.submeshIndex);
@@ -387,12 +416,17 @@ bool GpuModel::transparentSubmeshIsTransmissive(
         && materials_[static_cast<std::size_t>(materialIndex)].transmissionFactor > 0.0f;
 }
 
-void GpuModel::drawDepth(const Shader& shader) const {
+std::size_t GpuModel::drawDepth(const Shader& shader, const glm::mat4* modelToClip,
+                               RasterVisibilityStatistics* statistics) const {
+    std::size_t drawn = 0;
     for (const DrawCommand& command : opaqueDrawCommands_) {
+        if (!commandVisible(command, modelToClip, statistics)) continue;
+        ++drawn;
         bindNodeTransform(shader, command);
         bindSkinning(shader, command.meshIndex);
         meshes_[command.meshIndex]->drawSubmesh(command.submeshIndex);
     }
+    return drawn;
 }
 
 void GpuModel::drawTransmissiveDepth(const Shader& shader) const {
@@ -405,6 +439,7 @@ void GpuModel::drawTransmissiveDepth(const Shader& shader) const {
 
 void GpuModel::drawTransmissive(const Shader& shader, const glm::vec3& tint) const {
     const glm::vec3 linearTint = srgbToLinear(tint);
+    bindMaterialSamplers(shader);
     for (const DrawCommand& command : transmissiveDrawCommands_) {
         bindNodeTransform(shader, command);
         bindSkinning(shader, command.meshIndex);

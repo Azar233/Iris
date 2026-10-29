@@ -28,6 +28,7 @@ class EnvironmentLight {
     bool importanceSampled() const { return !cdf_.empty() && totalWeight_ > 0.0; }
     std::uint32_t width() const { return width_; }
     std::uint32_t height() const { return height_; }
+    const std::vector<double>& cumulativeWeights() const { return cdf_; }
     glm::vec3 radiance(const glm::vec3& direction) const;
     EnvironmentSample sample(const glm::vec2& sample) const;
     float pdf(const glm::vec3& direction) const;

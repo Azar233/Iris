@@ -29,6 +29,9 @@ int main() {
             acceptanceRoot / "assets" / "models" / "cube.obj";
 
         SceneDocument source;
+        require(!source.renderer.vulkanRayQueryShadows && !source.renderer.vulkanShadowDebug,"Vulkan shadow opt-in defaults off");
+        source.renderer.gpuPathTracingSpp=32;source.renderer.gpuPathTracingDepth=4;source.renderer.gpuPathTracingSeed=20261026;source.renderer.gpuSpatialDenoise=true;source.renderer.gpuTemporalDenoise=true;
+        source.renderer.vulkanRayQueryShadows=true;source.renderer.vulkanShadowDebug=true;
         source.camera.target = glm::vec3(1.0f, 2.0f, -3.0f);
         source.camera.yawDegrees = -27.0f;
         source.camera.pitchDegrees = 18.0f;
@@ -167,6 +170,10 @@ int main() {
         require(close(firstLoad.entities[0].tint.z, 0.9f), "tint survives first load");
         require(firstLoad.renderer.renderPath == RenderPath::Deferred && firstLoad.renderer.ssaoEnabled,
             "renderer mode survives first load");
+        require(firstLoad.renderer.gpuPathTracingSpp==32 && firstLoad.renderer.gpuPathTracingDepth==4 && firstLoad.renderer.gpuPathTracingSeed==20261026,"GPU PT sampling survives Scene roundtrip");
+        require(firstLoad.renderer.gpuTemporalDenoise,"GPU temporal opt-in survives Scene roundtrip");
+        require(firstLoad.renderer.gpuSpatialDenoise,"GPU spatial display survives Scene roundtrip");
+        require(firstLoad.renderer.vulkanRayQueryShadows && firstLoad.renderer.vulkanShadowDebug,"Vulkan shadow settings survive first load");
         require(firstLoad.renderer.shadowCascadeCount == 4
                 && close(firstLoad.renderer.shadowCascadeSplitLambda, 0.35f)
                 && firstLoad.renderer.shadowCascadeDebugView,

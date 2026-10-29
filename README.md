@@ -4,6 +4,14 @@
 
 <h1 align="center">Iris</h1>
 
+2026-10-29 D4本地交付版：GPU PT支持原生1280×720、可选时间重投影和空间降噪，工作台对照Raw/Accumulated/Denoised。连续移动相机保留最近完成预览并隔离新相机SPP；存在一个完成样本的显示延迟。新增Job25～27为三场景720p/4SPP/Depth4/两帧的显式三种Beauty输出，包内可直接运行。Depth3～4是质量取舍，默认Depth8不变；46组两轮测量中时间＋空间降噪的移动整帧P50约0.33秒（Stanford）/0.84秒（Sponza），未达30FPS。透射保留Raw、低Depth光路截断和纹理软化限制仍在，P5两项原性能门后续统一优化。独立M3D4 ZIP与严格GPU、实际UI/Queue、保存重开、缺SPV恢复证据单列；未提交/推送。详见本地 [D4](docs/m3d4-interactive-delivery.md) 和 [资产许可](ASSET_LICENSES.md)。
+
+2026-10-27：M3-C GPU Path Tracer 已接通共享 PBR 纹理、显式灯光/HDRI、NEE/MIS、Transmission 和单一吸收介质，以及工作台后台 Render Queue。使用 Sponza Atrium 和 Stanford Bunny/Dragon 玻璃及不透明对照；Job 22～24 为固定预算数字检查，人工画质检查使用铺满 Viewport 的 1920×1080 工作台，该阶段内部最长边上限为1024（当前开发版见上方D0）。支持八类 AOV、固定 Seed/SPP、变化重启、取消和 PNG/HDR/EXR；GPU Resume、Alpha Mask/Blend、嵌套介质与降噪仍不支持。脚本入口为 `tools/VulkanPathTracingVisualAcceptance.ps1`、`tools/GpuPathTracingReferenceReport.py` 和 `tools/VulkanPathTracingPackageAcceptance.ps1`。详细支持范围、验收结果与数值限制见本地 [M3-C](docs/m3c-gpu-path-tracer.md)；资产来源和使用限制见 [资产许可](ASSET_LICENSES.md)。
+
+2026-10-26：M3-B 已接通显式开启的 Vulkan Ray Query 方向光硬阴影及可见性调试图。共享 Mesh 建 BLAS，刚体姿态只更新 TLAS；Scene 保存选项，Job 19/20 沿用既有 Raster 后端选择。双编译器严格检查、CPU 几何对照、GUI/Job、双尺寸实际控件与 P1 两轮 121 帧已通过；实测当前 CSM 更快，Vulkan 保留逐帧资源准备和同步回读成本。需要支持 rayQuery / accelerationStructure / bufferDeviceAddress 的设备；Alpha Mask、透明/透射和 Skinned 明确拒绝，可显式切回 OpenGL CSM。使用 `tools/Verify-Vulkan.ps1 -RayQuery` 与 `tools/VulkanRayQueryProductAcceptance.ps1`，收口与发布状态见 [架构路线](ARCHITECTURE_ROADMAP.md)。
+
+2026-10-26：P1 CPU 刚体已完成本地收口，M3-A Vulkan Raster 已接入 Workspace 的 Backend 菜单和 schema 4 Raster Job。可选 `IRIS_ENABLE_VULKAN=ON` 复用共享 ModelData/Camera/运行态 Transform，支持静态/刚体基础 PBR、纹理、灯光和 HDRI；图像通过同步回读交给既有工作台显示。MSVC/GCC 的严格核心/同步检查、GUI/Job 同图和双尺寸实际菜单操作已通过；P1 两轮 121 帧与 Reset/回退、取消通过。严格入口为 `tools/Verify-Vulkan.ps1 -Raster -LayerDirectory <验证层目录>` 与 `tools/VulkanProductAcceptance.ps1`。默认关闭，旧 Job 继续 OpenGL；Ray Query/GPU PT、Skinned、透明/透射、云水和原生效果全量移植不包含在此基线中。发布与阶段状态见 [架构路线](ARCHITECTURE_ROADMAP.md)。
+
 当前研发转向可扩展引擎架构，暂停场景画质扩展；计划和验证状态见 [插件架构路线](ARCHITECTURE_ROADMAP.md)。实验分支不自动合并 `main`。现有图像与场景保留作展示和迁移回归输入。
 
 2026-10-13 进度：A1、A2 静态 OpenGL 核心扩展合同及 A3 用户 Shader 已实现；全屏 ShaderScene 与模型 ShaderMaterial 共用关联文件工作台、参数、诊断和事务编译。模型包选择仅浏览，通过 Bind to selected model 应用到当前实体；支持原生 Forward 静态不透明模型、关闭 TAA，其他路径明确拒绝。独立 Runtime 与验证状态见架构路线；下一主线 A4 分批迁移内置能力。局部灯光阴影、体积光和 Vulkan 尚未实现。
@@ -125,7 +133,7 @@ GLSL 海面来自 Thomas / @Thomas_ensc 的 Enscape Cube，海面过程署名 Al
 .\Iris.exe raster-sequence assets/renderjobs/04_coastal_sequence.renderjob --output ".local/renders/coastal/frame_{frame:04}"
 ```
 
-示例 Job 保留源码工作流的默认输出路径；解压包推荐使用 `--output` 指定结果目录。CPU 示例输出 2 帧及 AOV，海面示例输出 13 帧 Beauty PNG；格式、缓存和 Queue 边界见下方支持矩阵。Vulkan/GPU PT、PhysX 和曲面细分尚未实现；CPU PT 尚未完整支持原生水面与空中透视，原生云海已完成云形与高度照明切片，海面与整幅作品的最终视觉定稿仍在后续阶段。
+示例 Job 保留源码工作流的默认输出路径；解压包推荐使用 `--output` 指定结果目录。CPU 示例输出 2 帧及 AOV，海面示例输出 13 帧 Beauty PNG；格式、缓存和 Queue 边界见下方支持矩阵。Vulkan Raster、方向光 Ray Query 与基础 GPU PT 已接入；PhysX CPU 刚体已完成 P1 本地验收，仍默认关闭且 ON 仅支持 Windows/MSVC Release。曲面细分尚未实现。CPU PT 尚未完整支持原生水面与空中透视，原生云海已完成云形与高度照明切片，海面与整幅作品的最终视觉定稿仍在后续阶段。
 
 批量渲染与验证：
 
@@ -168,6 +176,31 @@ ShaderScene 序列仅支持 Beauty PNG，禁用热重载，拒绝 Resume、Cache
 `.myscene.module` 用于编辑器保存和恢复。CPU Batch 不自动继承这份模块配置：带 Module 的 Scene 必须搭配显式配置 Module 的 Job，避免保存配置被静默忽略。Scene 保存的是参数与 Seed，执行范围和 FPS 由 Timeline / Job 明确定义；示例采用 0～23 帧、24 FPS。
 
 固定示例：[模块场景](assets/scenes/fixtures/26_module_workflow.myscene)与[对应 Job](assets/renderjobs/05_module_workflow.renderjob)，使用 Turntable、22.5 度/帧、Z 轴和 Seed 20260919。可在 GUI 保存重开并预览，再由 Batch 输出；自动验收核对两者的第 12 帧图像、参数、FPS、Seed、API 与 Build ID。
+
+可选 CPU 刚体使用 `iris.physics.rigid-body` Module 与 PhysX 5.6.1，仅支持 Windows/MSVC x64 Release；默认关闭，GCC 可关闭物理构建现有功能。开发示例为[球/箱/地面场景](assets/scenes/fixtures/33_cpu_rigid_bodies.myscene)、[CPU Job](assets/renderjobs/12_cpu_rigid_bodies.renderjob)和 [Raster Job](assets/renderjobs/13_rigid_bodies_raster.renderjob)。模拟步长固定为 1/120 秒，输出 FPS 必须整除 120，第 0 帧保留初始姿态。刚体限根实体、单位 Transform scale，碰撞尺寸独立于模型与显示用 assetMatrix；最多 16 个动态刚体、128 个总刚体。缓存只存逐帧姿态，继续求解按初态补算。启用 Module 后在 Object → 刚体编辑形状与物理参数，在 Module 面板开启碰撞线框并查看子步/求解耗时；线框只显示于 Viewport，不进入 Beauty 导出。CLI simulate/bake 支持取消，观察到 Ctrl+C 时返回 130，不发布未完成缓存。首版范围不包含 GPU dynamics 或任意帧完整物理状态恢复。
+
+```powershell
+cmake --preset msvc -DIRIS_ENABLE_PHYSX=ON
+cmake --build build-ci-msvc --config Release --target MyRenderer MyRendererBatch --parallel 6
+build-ci-msvc/Release/IrisBatch.exe simulate assets/renderjobs/12_cpu_rigid_bodies.renderjob
+build-ci-msvc/Release/IrisBatch.exe bake assets/renderjobs/12_cpu_rigid_bodies.renderjob
+```
+
+物理姿态缓存恢复和烘焙采用成功后提交：损坏输入、取消或失败保留已有完整结果。中间缺帧、重复 Entity/帧、非法数值会拒绝恢复或判为 Stale；旧 schema 1 缺少参数指纹仍可读入，但不会作为当前输入的 Hit。
+
+CPU 帧报告的 `module.physics` 和 Raster 帧报告的 `moduleRun.physics` 记录实际生效的 SDK、PGS 求解器、1/120 秒步长、每输出帧子步数、重力、迭代数和刚体数量；Raster 原有 `module` 字符串保留。`statistics.measured=false` 表示没有该帧的求解测量（例如姿态缓存回放），此时不输出子步计数与耗时；有测量时耗时仅覆盖本次推进的求解循环，不包含资产加载、初始化或渲染，也不进入缓存身份和确定性状态。
+
+| 首版物理支持项 | 范围 |
+| --- | --- |
+| 刚体与碰撞 | Dynamic/Static；Sphere、Box、Static Plane；单位采用米、千克、秒，角速度为弧度/秒 |
+| 求解参数 | Gravity Y 默认 -9.81；PGS Position/Velocity iterations 默认 8/2；固定 1/120 秒，无显示帧时长驱动 |
+| 编辑与输出 | 根实体、单位 Transform scale；CPU/Raster 共享姿态；碰撞线框只用于 Viewport |
+| 缓存与重复运行 | 姿态缓存不含速度/接触/睡眠状态；回退/Loop 从初态重建，继续求解按初态补算；不承诺跨 SDK/编译器/平台逐位一致 |
+| 未实现能力 | Mesh/Convex collider、Kinematic、Joint、软体/布料、GPU dynamics、CCD、通用物理插件 ABI |
+
+独立实验输入：[自由落体](assets/scenes/fixtures/34_physics_free_fall.myscene) / [Job](assets/renderjobs/14_physics_free_fall.renderjob)、[弹跳](assets/scenes/fixtures/35_physics_bounce.myscene) / [Job](assets/renderjobs/15_physics_bounce.renderjob)、[三箱堆叠](assets/scenes/fixtures/36_physics_stack.myscene) / [Job](assets/renderjobs/16_physics_stack.renderjob)。三组显式固定重力、迭代数、初始速度和物理材质，输出/缓存各用独立目录。GUI 对照时将 Timeline 设为对应 Job 的 FPS 和帧区间；三个输入均为 30 FPS，分别为 0..30、0..120、0..120。
+
+开发验证入口为 `cmake --build build-ci-msvc --config Release --target physics-acceptance`，覆盖解析自由落体、弹跳/堆叠门槛、30/60 FPS、重复运行、Batch 和姿态缓存。`tools/PhysicsRenderingAcceptance.ps1` 的 `Workspace`、`Temporal`、`Parity`、`Sequences`、`Cancellation`、`Performance` 分阶段检查真实工作台、TAA、保存重开、CPU/Raster 输出、取消与测量；使用新的 `-Output` 目录保存证据，不覆盖完整输出。
 
 ```powershell
 .\build-ci-msvc\Release\Iris.exe assets/scenes/fixtures/26_module_workflow.myscene

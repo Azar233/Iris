@@ -105,6 +105,26 @@ private:
     mutable std::vector<ModuleLogEntry> logEntries_;
 };
 
+struct ModuleSimulationStatistics {
+    bool measured{false};
+    std::uint64_t totalSubsteps{0};
+    std::uint64_t lastAdvanceSubsteps{0};
+    std::size_t bodyCount{0};
+    double lastAdvanceMilliseconds{0.0};
+};
+
+struct ModuleSimulationConfiguration {
+    std::string sdkVersion;
+    std::string solver;
+    std::string cacheSemantics;
+    double fixedStepSeconds{0.0};
+    float gravityY{0.0f};
+    int substepsPerFrame{0};
+    int positionIterations{0};
+    int velocityIterations{0};
+    std::size_t bodyCount{0}, dynamicBodyCount{0};
+};
+
 class ISceneModule {
 public:
     virtual ~ISceneModule() = default;
@@ -148,6 +168,9 @@ public:
 
     // Optional deterministic module state for the simulation cache / reports.
     virtual std::string serializeState() const { return {}; }
+    // Diagnostic only: timings must never enter cache identity or deterministic state.
+    virtual ModuleSimulationStatistics simulationStatistics() const { return {}; }
+    virtual ModuleSimulationConfiguration simulationConfiguration() const { return {}; }
     virtual bool deserializeState(const std::string& state, std::string& error) {
         (void)state;
         (void)error;

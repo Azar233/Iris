@@ -235,5 +235,9 @@ ModuleRegistry createBuiltinModuleRegistry() {
     );
     const auto coastal = makeCoastalSequenceModule();
     registry.add(coastal->manifest(), []() { return makeCoastalSequenceModule(); }, error);
+#if IRIS_ENABLE_PHYSX
+    const auto physics = makeRigidBodyModule();
+    registry.add(physics->manifest(), []() { return makeRigidBodyModule(); }, error);
+#endif
     return registry;
 }

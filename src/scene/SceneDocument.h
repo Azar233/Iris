@@ -25,6 +25,7 @@ struct SceneDocumentEntity {
     SceneTransform transform;
     glm::vec3 tint{1.0f};
     std::optional<SceneLightComponent> light;
+    std::optional<RigidBodyComponent> rigidBody;
     bool visible{true};
     bool castsShadow{true};
     bool instanceCandidate{false};

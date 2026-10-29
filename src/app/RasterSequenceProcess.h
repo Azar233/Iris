@@ -25,10 +25,19 @@ inline BatchSequenceResult runRasterSequenceProcess(const RenderJob& job,
         if (cancellation && cancellation->isCancellationRequested()) {
             result.status = BatchFrameStatus::Cancelled; return result;
         }
+        const bool gpu = job.renderer == "gpu-path-traced";
+        const auto pathsFor = [&](int frame) {
+            std::vector<std::filesystem::path> paths{renderJobFramePath(job,frame,"-report.json")};
+            for(auto output:job.outputs)for(auto format:job.outputFormats){
+                auto stem=renderJobFrameStem(job,frame);
+                if(output!=pathtracer::RenderOutput::Beauty)stem+="-"+std::string(renderOutputName(output));
+                stem+=renderFileFormatExtension(format);paths.push_back(stem);
+            }
+            return paths;
+        };
         for (int frame = job.startFrame; frame <= job.endFrame; ++frame) {
-            if (std::filesystem::exists(renderJobFramePath(job, frame, ".png"))
-                || std::filesystem::exists(renderJobFramePath(job, frame, "-report.json")))
-                throw std::runtime_error("Raster output already exists");
+            for(const auto& path:pathsFor(frame))if(std::filesystem::exists(path) || std::filesystem::exists(path.string()+".partial"))
+                throw std::runtime_error("Context process output already exists");
         }
 #ifdef _WIN32
         struct Handle {
@@ -92,7 +101,8 @@ inline BatchSequenceResult runRasterSequenceProcess(const RenderJob& job,
         const auto length = GetModuleFileNameW(nullptr, executable, 32768);
         if (!length || length >= 32768) throw std::runtime_error("Cannot locate Iris executable");
         // Filesystem paths cannot contain quotes; no shell expansion is involved.
-        auto command = std::wstring(L"\"") + executable + L"\" raster-sequence \"" + job.sourcePath.wstring()
+        const auto childExecutable=gpu?std::filesystem::path(executable).parent_path()/L"IrisBatch.exe":std::filesystem::path(executable);
+        auto command = L"\"" + childExecutable.wstring() + (gpu?L"\" render-sequence \"":L"\" raster-sequence \"") + job.sourcePath.wstring()
             + L"\" --cancel-event " + eventName + L" --job-fingerprint "
             + std::wstring(job.loadedSourceFingerprint.begin(), job.loadedSourceFingerprint.end());
         SIZE_T attributeBytes = 0;
@@ -113,9 +123,9 @@ inline BatchSequenceResult runRasterSequenceProcess(const RenderJob& job,
         startup.StartupInfo.hStdOutput = startup.StartupInfo.hStdError = writer.value;
         startup.lpAttributeList = attributes;
         PROCESS_INFORMATION info{};
-        if (!CreateProcessW(executable, command.data(), nullptr, nullptr, TRUE,
+        if (!CreateProcessW(childExecutable.c_str(), command.data(), nullptr, nullptr, TRUE,
             CREATE_NO_WINDOW | EXTENDED_STARTUPINFO_PRESENT, nullptr, nullptr, &startup.StartupInfo, &info))
-            throw std::runtime_error("Cannot launch Raster executor (Win32 " + std::to_string(GetLastError()) + ")");
+            throw std::runtime_error("Cannot launch Context process executor (Win32 " + std::to_string(GetLastError()) + ")");
         Handle process{info.hProcess}, thread{info.hThread};
         writer.close();
         struct ChildGuard {
@@ -127,14 +137,14 @@ inline BatchSequenceResult runRasterSequenceProcess(const RenderJob& job,
             } }
         } child{process.value,event.value,diagnostics};
         const auto collect = [&] {
-            // Publication order is PNG then report: count only completed pairs.
+            // A report is published last by Batch. Count the entire requested AOV set.
             while (result.completedFrames < result.totalFrames) {
                 const int frame = job.startFrame + result.completedFrames;
-                if (!std::filesystem::exists(renderJobFramePath(job, frame, ".png"))
-                    || !std::filesystem::exists(renderJobFramePath(job, frame, "-report.json"))) break;
-                result.lastFrame = frame; ++result.completedFrames; result.outputCount += 2;
+                const auto paths=pathsFor(frame);
+                if(!std::all_of(paths.begin(),paths.end(),[](const auto& path){return std::filesystem::is_regular_file(path);}))break;
+                result.lastFrame = frame; ++result.completedFrames; result.outputCount += paths.size();
                 if (progress) progress({frame, result.completedFrames, result.totalFrames,
-                    BatchFrameStatus::Complete, "Raster frame published"});
+                    BatchFrameStatus::Complete, "Context process frame published"});
             }
         };
         DWORD wait = WAIT_TIMEOUT;
@@ -146,14 +156,14 @@ inline BatchSequenceResult runRasterSequenceProcess(const RenderJob& job,
         } while (wait == WAIT_TIMEOUT);
         DWORD code = 1;
         if (wait != WAIT_OBJECT_0 || !GetExitCodeProcess(process.value, &code))
-            throw std::runtime_error("Cannot read Raster executor status");
+            throw std::runtime_error("Cannot read Context process executor status");
         collect(); // Include any last pair published before exit/cancellation.
         diagnostics.drain();
         if (code == 0) {
-            if(result.completedFrames!=result.totalFrames) throw std::runtime_error("Raster executor exited without all output pairs");
+            if(result.completedFrames!=result.totalFrames) throw std::runtime_error("Context process executor exited without all output pairs");
             result.status = BatchFrameStatus::Complete;
         } else if (code == 130) result.status = BatchFrameStatus::Cancelled;
-        else { result.failedFrames = 1; result.error = "Raster executor failed (exit " + std::to_string(code)
+        else { result.failedFrames = 1; result.error = "Context process executor failed (exit " + std::to_string(code)
             + ")\n" + diagnostics.text(); }
 #else
         result.error = "Raster Queue executor currently requires Windows; use Iris raster-sequence";

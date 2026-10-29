@@ -83,6 +83,9 @@ enum class SimulationCacheStatus {
 
 const char* simulationCacheStatusName(SimulationCacheStatus status);
 
+// Structural/numeric validation shared by the codec and transactional runtime replay.
+bool validateSimulationCacheFrame(const SimulationCacheFrame& frame, std::string& error);
+
 // Atomic write through `<path>.partial` + rename, matching the other runtimes.
 bool saveSimulationCache(
     const std::filesystem::path& path,

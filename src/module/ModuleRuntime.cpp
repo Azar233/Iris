@@ -191,6 +191,12 @@ bool ModuleRuntime::reset(
         return false;
     }
     configureTimeline(startFrame, endFrame, framesPerSecond);
+    for (const auto& entity : editScene.entities()) if (entity.rigidBody && report_.moduleId != rigidBodyModuleId) {
+        error = "Rigid body components require module iris.physics.rigid-body";
+        report_.status = ModuleRunStatus::Failed;
+        report_.error = error;
+        return false;
+    }
     runtimeScene_.resetFrom(editScene);
     report_.startFrame = timeline_.startFrame();
     report_.endFrame = timeline_.endFrame();
@@ -203,15 +209,16 @@ bool ModuleRuntime::reset(
     report_.status = ModuleRunStatus::Idle;
     context_.clearLog();
 
+    module_->reset();
     if (!module_->initialize(context_, error)) {
-        report_.status = ModuleRunStatus::Failed;
+        report_.status = context_.cancellationRequested() ? ModuleRunStatus::Cancelled : ModuleRunStatus::Failed;
         report_.error = error;
         return false;
     }
     // The start frame is evaluated as well, so a scrub to it is a real state and not
     // "the module has not run yet".
     if (!module_->fixedUpdate(context_, timeline_.fixedDeltaSeconds(), error)) {
-        report_.status = ModuleRunStatus::Failed;
+        report_.status = context_.cancellationRequested() ? ModuleRunStatus::Cancelled : ModuleRunStatus::Failed;
         report_.error = error;
         return false;
     }
@@ -219,6 +226,8 @@ bool ModuleRuntime::reset(
     report_.status = ModuleRunStatus::Ready;
     report_.contentHash = runtimeScene_.contentHash();
     report_.moduleState = module_->serializeState();
+    report_.simulation = module_->simulationStatistics();
+    report_.simulationConfiguration = module_->simulationConfiguration();
     return !failIfModuleLoggedError(error);
 }
 
@@ -246,16 +255,19 @@ bool ModuleRuntime::runToFrame(int frame, std::string& error) {
         if (!module_->fixedUpdate(context_, timeline_.fixedDeltaSeconds(), error)) {
             // A failing module must not take the editor scene or the render context
             // down with it: the runtime reports and stops publishing.
-            report_.status = ModuleRunStatus::Failed;
+            report_.status = context_.cancellationRequested() ? ModuleRunStatus::Cancelled : ModuleRunStatus::Failed;
             report_.error = error.empty() ? "Module fixedUpdate failed" : error;
+            timeline_.setFrame(report_.lastFrame);
             return false;
         }
         runtimeScene_.scene().updateWorldTransforms();
         report_.lastFrame = timeline_.frame();
+        report_.contentHash = runtimeScene_.contentHash();
+        report_.moduleState = module_->serializeState();
+        report_.simulation = module_->simulationStatistics();
     }
     report_.status = ModuleRunStatus::Ready;
-    report_.contentHash = runtimeScene_.contentHash();
-    report_.moduleState = module_->serializeState();
+    report_.error.clear();
     return !failIfModuleLoggedError(error);
 }
 
@@ -331,9 +343,14 @@ bool ModuleRuntime::bakeSimulation(
         return false;
     }
     if (!reset(editScene, startFrame, endFrame, framesPerSecond, error)) return false;
-    cache = SimulationCache{};
-    cache.key = cacheKey();
-    for (int frame = startFrame; frame <= endFrame; ++frame) {
+    SimulationCache prepared;
+    prepared.key = cacheKey();
+    for (int frame = timeline_.startFrame();; ++frame) {
+        if (context_.cancellationRequested()) {
+            report_.status = ModuleRunStatus::Cancelled;
+            report_.error = error = "Module bake cancelled";
+            return false;
+        }
         if (!runToFrame(frame, error)) return false;
         SimulationCacheFrame record;
         record.frame = frame;
@@ -346,8 +363,15 @@ bool ModuleRuntime::bakeSimulation(
                 entity.id, entity.transform, entity.tint, entity.light
             });
         }
-        cache.frames.push_back(std::move(record));
+        prepared.frames.push_back(std::move(record));
+        if (frame == timeline_.endFrame()) break;
     }
+    if (context_.cancellationRequested()) {
+        report_.status = ModuleRunStatus::Cancelled;
+        report_.error = error = "Module bake cancelled";
+        return false;
+    }
+    cache = std::move(prepared);
     error.clear();
     return true;
 }
@@ -357,7 +381,17 @@ bool ModuleRuntime::applyCachedFrame(const SimulationCacheFrame& frame, std::str
         error = "No module is configured";
         return false;
     }
-    Scene& scene = runtimeScene_.scene();
+    if (report_.status != ModuleRunStatus::Ready && report_.status != ModuleRunStatus::Cancelled) {
+        error = "Initialize the module successfully before replaying cached poses"; return false;
+    }
+    if (frame.frame < timeline_.startFrame() || frame.frame > timeline_.endFrame()) {
+        error = "Cached frame lies outside the active Timeline range"; return false;
+    }
+    if (!validateSimulationCacheFrame(frame, error)) return false;
+    if (frame.entities.size() != runtimeScene_.scene().size()) {
+        error = "Cached frame must contain every runtime entity exactly once"; return false;
+    }
+    Scene scene = runtimeScene_.scene();
     for (const SimulationCacheEntity& cached : frame.entities) {
         SceneEntity* entity = scene.find(cached.id);
         if (entity == nullptr) {
@@ -368,20 +402,30 @@ bool ModuleRuntime::applyCachedFrame(const SimulationCacheFrame& frame, std::str
         entity->transform = cached.transform;
         entity->tint = cached.tint;
         if (cached.lightRecorded) entity->light = cached.light;
+        if (entity->rigidBody) {
+            try {
+                validateRigidBody(*entity->rigidBody, entity->transform.translation, entity->transform.rotationDegrees,
+                    entity->transform.scale, entity->parent != invalidSceneEntityId, entity->light.has_value());
+            } catch (const std::exception& failure) { error = failure.what(); return false; }
+        }
         entity->motionHistoryValid = false;
     }
     scene.updateWorldTransforms();
-    const std::uint64_t actual = runtimeScene_.contentHash();
+    const std::uint64_t actual = sceneContentHash(scene);
     if (actual != frame.contentHash) {
         error = "Cached frame " + std::to_string(frame.frame)
             + " does not reproduce its recorded content hash";
         return false;
     }
+    runtimeScene_.scene() = std::move(scene);
+    runtimeScene_.markDirty();
     report_.lastFrame = frame.frame;
     timeline_.setFrame(frame.frame);
     report_.contentHash = actual;
     report_.moduleState = frame.moduleState;
+    report_.simulation = {};
     report_.status = ModuleRunStatus::Ready;
+    report_.error.clear();
     error.clear();
     return true;
 }

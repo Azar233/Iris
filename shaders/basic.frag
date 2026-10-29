@@ -490,20 +490,20 @@ vec3 sampleTransmittedRadiance(
 }
 
 void main() {
+    // Preserve the implicit normal-map lookup before any discard. Only defer
+    // the TBN/normal ALU so fully masked pixels do not execute that work.
+    bool mappedNormal = uNormalMappingEnabled && uHasNormalTexture && abs(vWorldTangent.w) > 0.5;
+    vec3 tangentNormal = vec3(0.0);
+    if (mappedNormal) tangentNormal = texture(uNormalTexture, vTexCoord0).xyz * 2.0 - 1.0;
+    vec4 baseColorSample = uBaseColor * texture(uBaseColorTexture, vTexCoord0);
+    if (uAlphaMode == 1 && baseColorSample.a < uAlphaCutoff) discard;
+
     vec3 normal = normalize(vWorldNormal);
-    if (uDoubleSided && !gl_FrontFacing) {
-        normal = -normal;
-    }
-    if (uNormalMappingEnabled && uHasNormalTexture && abs(vWorldTangent.w) > 0.5) {
+    if (uDoubleSided && !gl_FrontFacing) normal = -normal;
+    if (mappedNormal) {
         vec3 tangent = normalize(vWorldTangent.xyz - normal * dot(normal, vWorldTangent.xyz));
         vec3 bitangent = normalize(cross(normal, tangent)) * vWorldTangent.w;
-        vec3 tangentNormal = texture(uNormalTexture, vTexCoord0).xyz * 2.0 - 1.0;
         normal = normalize(mat3(tangent, bitangent, normal) * tangentNormal);
-    }
-
-    vec4 baseColorSample = uBaseColor * texture(uBaseColorTexture, vTexCoord0);
-    if (uAlphaMode == 1 && baseColorSample.a < uAlphaCutoff) {
-        discard;
     }
     float outputAlpha = uAlphaMode == 2 ? baseColorSample.a : 1.0;
     vec3 albedo = baseColorSample.rgb;

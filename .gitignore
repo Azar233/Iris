@@ -67,4 +67,8 @@ SKILL.md
 .DS_Store
 Thumbs.db
 
+# Generated Python bytecode and local-only licensed evaluation assets
+__pycache__/
+/assets/benchmarks/khronos-sponza/
+
 # Do not add a global *.obj rule: OBJ files under assets/models are source assets.

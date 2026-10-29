@@ -1,0 +1,15 @@
+{
+  "format": "MyRendererRenderJob",
+  "schemaVersion": 3,
+  "scene": "../scenes/fixtures/33_cpu_rigid_bodies.myscene",
+  "renderer": "raster",
+  "camera": "scene",
+  "resolution": [640, 360],
+  "frames": {"start": 0, "end": 120, "fps": 30},
+  "sampling": {"spp": 1, "maxDepth": 1, "seed": 20261025},
+  "aovs": ["beauty"],
+  "module": {"id": "iris.physics.rigid-body", "seed": 20261025, "parameters": {}},
+  "raster": {"determinism": true, "temporalAccumulation": false, "warmupFrames": 0},
+  "output": {"path": "../../.local/physics/rigid-bodies-raster/frame_{frame:04}", "formats": ["png"], "resume": false},
+  "failurePolicy": "stop"
+}

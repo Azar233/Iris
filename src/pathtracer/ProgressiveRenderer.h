@@ -144,7 +144,9 @@ enum class RenderOutput {
     Direct,
     Indirect,
     SampleCount,
-    Variance
+    Variance,
+    DenoisedBeauty, // Explicit GPU post-process output; Raw Beauty remains unchanged.
+    AccumulatedBeauty // Temporal Beauty; reported SPP remains the actual traced SPP.
 };
 enum class RenderFileFormat {
     Png,

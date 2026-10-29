@@ -5,6 +5,7 @@
 #include "runtime/RenderJob.h"
 #include "runtime/RasterFrameReport.h"
 #include "plugin/ShaderScene.h"
+#include "module/ModuleRuntime.h"
 namespace {
 void require(bool value,const char* message){if(!value)throw std::runtime_error(message);}
 std::string read(const std::filesystem::path& path){std::ifstream f(path);return std::string(std::istreambuf_iterator<char>(f),{});}
@@ -62,6 +63,29 @@ int main(){try{
     require(writeRasterFrameReport(root/"first.json",job,0,settings,"test GPU",error),error.c_str());
     require(writeRasterFrameReport(root/"second.json",job,0,settings,"test GPU",error),error.c_str());
     const auto report=read(root/"first.json");
+    ModuleRunReport moduleReport;
+    moduleReport.moduleId = "test.module";
+    moduleReport.moduleState = "quoted \"state\"\nnext";
+    moduleReport.simulationConfiguration.sdkVersion = "PhysX 5.6.1";
+    moduleReport.simulationConfiguration.cacheSemantics = "poses-only";
+    moduleReport.simulationConfiguration.substepsPerFrame = 4;
+    require(writeRasterFrameReport(root/"physics.json",job,0,settings,"test GPU",error,
+        nullptr,nullptr,nullptr,&moduleReport),error.c_str());
+    const auto physicsReport = read(root/"physics.json");
+    require(physicsReport.find("\"moduleRun\"") != std::string::npos
+        && physicsReport.find("quoted \\\"state\\\"\\nnext") != std::string::npos
+        && physicsReport.find("\"measured\": false") != std::string::npos
+        && physicsReport.find("lastAdvanceMilliseconds") == std::string::npos,
+        "Cache replay metadata must escape state and omit unmeasured timings");
+    moduleReport.simulation.measured = true;
+    moduleReport.simulation.totalSubsteps = 120;
+    moduleReport.simulation.lastAdvanceMilliseconds = 0.125;
+    require(writeRasterFrameReport(root/"solved.json",job,0,settings,"test GPU",error,
+        nullptr,nullptr,nullptr,&moduleReport),error.c_str());
+    const auto solvedReport = read(root/"solved.json");
+    require(solvedReport.find("\"totalSubsteps\": 120") != std::string::npos
+        && solvedReport.find("\"lastAdvanceMilliseconds\": 0.125") != std::string::npos,
+        "Solved metadata lost diagnostic measurements");
     require(report==read(root/"second.json"),"unchanged metadata must repeat exactly");
     require(report.find("\"surfaceOptics\": true")!=std::string::npos
         && report.find("\"cloudReflectionStrength\"")!=std::string::npos,
@@ -100,6 +124,17 @@ int main(){try{
         require(!std::filesystem::exists(root/"rejected.json"),"Invalid input must not publish a report");
     }
     require(!writeRasterFrameReport(root/"absent"/"report.json",job,0,settings,"test GPU",error),"report write failure must propagate");
+    {
+        auto vulkanJob=job;vulkanJob.schemaVersion=4;vulkanJob.rasterBackend="vulkan";vulkanJob.rasterDeterminism=false;
+        RendererSettings effective;effective.vulkanRaster=true;effective.temporalAaEnabled=true;
+        iris::vulkan::RasterStatistics statistics;statistics.device="metadata unit test";statistics.deviceLocalBytes=4096;
+        require(!writeRasterFrameReport(root/"missing-vulkan.json",vulkanJob,0,effective,"test GPU",error),"Vulkan report must require actual statistics");
+        require(!std::filesystem::exists(root/"missing-vulkan.json"),"Missing Vulkan statistics published a report");
+        require(writeRasterFrameReport(root/"vulkan.json",vulkanJob,0,effective,"test GPU",error,nullptr,nullptr,nullptr,nullptr,&statistics),error.c_str());
+        const auto metadata=read(root/"vulkan.json");
+        require(metadata.find("\"effectiveTaa\": false")!=std::string::npos && metadata.find("\"deviceLocalBytes\": 4096")!=std::string::npos,
+            "Vulkan report must record effective history and memory instead of requested OpenGL settings");
+    }
     {
         iris::ShaderScenePackage package;
         require(iris::loadShaderScenePackage(std::filesystem::path(MYRENDERER_SOURCE_DIR)

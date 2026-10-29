@@ -1,0 +1,72 @@
+{
+  "bunny": {
+    "repair": {
+      "source": {
+        "vertices": 8171,
+        "triangles": 16301,
+        "boundaries": 123,
+        "nonmanifold": 150,
+        "inconsistentWindingEdges": 125,
+        "degenerate": 0,
+        "signed_volume": 0.0007688513824830248
+      },
+      "repaired": {
+        "vertices": 8190,
+        "triangles": 16376,
+        "boundaries": 0,
+        "nonmanifold": 0,
+        "inconsistentWindingEdges": 0,
+        "degenerate": 0,
+        "signed_volume": 0.0007526256023971212
+      }
+    },
+    "scaledBounds": [
+      [
+        -0.7775350101292133,
+        0.0,
+        -0.6028199940919876
+      ],
+      [
+        0.7775350101292133,
+        1.5325400605797768,
+        0.6028199940919876
+      ]
+    ],
+    "glassBufferSha256": "43fc0ca83398805b0f00c0c3e5e5dae8ed8ecb6404fcc520015a9ac408ccc943"
+  },
+  "dragon": {
+    "repair": {
+      "source": {
+        "vertices": 22998,
+        "triangles": 47794,
+        "boundaries": 0,
+        "nonmanifold": 2094,
+        "inconsistentWindingEdges": 0,
+        "degenerate": 0,
+        "signed_volume": 0.0004761543583237662
+      },
+      "repaired": {
+        "vertices": 22411,
+        "triangles": 44822,
+        "boundaries": 0,
+        "nonmanifold": 0,
+        "inconsistentWindingEdges": 0,
+        "degenerate": 0,
+        "signed_volume": 0.0004763000818522355
+      }
+    },
+    "scaledBounds": [
+      [
+        -1.0182749852538109,
+        0.0,
+        -0.4543850012123585
+      ],
+      [
+        1.0182749852538109,
+        1.4386999234557152,
+        0.4543850012123585
+      ]
+    ],
+    "glassBufferSha256": "a0c2136ff41e28a417511dba9332029fae6dfed810a896cf4f53f0f55a299752"
+  }
+}

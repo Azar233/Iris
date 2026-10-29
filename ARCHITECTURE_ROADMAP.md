@@ -1,5 +1,33 @@
 # Iris 插件架构验证路线
 
+> **M3-C 本地收口完成（2026-10-27，新场景范围）**：GPU PT 已接通 PBR 纹理、显式灯/HDRI、发光面 NEE/MIS、Transmission 与单活动吸收介质、后台 Queue。Sponza / Stanford Glass / Opaque 的固定协议收敛及 Strict Core/Sync 通过；MSVC/GCC CPU 40/40、38/38，最终 GCC 八类 PNG 与 MSVC 一致，OFF 返回 70 无输出。三场景已按用户要求用铺满 Viewport 的 1920×1080 工作台、内部 1024×578、64 SPP 检查；Queue 实际按钮与 1440/1100 两尺寸通过。最终带 BLAS/TLAS Build 与 TraceRays 的 Capture、独立 ZIP 包内输入/48 AOV/大画幅保存重开同 PNG/缺失 SPV 拒绝均通过。旧 cube 一次 1.43×10⁻⁶ 的照明微差保留诊断及原断言，不改阈值或旧基线，不再追加旧 fixtures 图像套件。M3-C 四项完成，M3/M3-D 保持未完成；旧 ZIP 保留，未提交/推送。见 [M3-C](docs/m3c-gpu-path-tracer.md)。
+
+> **M3-C1 基础 GPU PT（2026-10-26）**：真实 Ray Tracing Pipeline 已接入不透明无纹理共享网格、Workspace 与 GPU Job 21。固定 Seed 渐进采样、Raw Beauty/八类 AOV、变化重启、取消及 PNG/HDR/EXR 导出通过。MSVC/GCC 全量 CPU 40/38、双生命周期 Core/Sync 零告警、双尺寸实际控件、GUI/Job 与独立 Runtime 保存重开同图通过；1/8/64 SPP 线性 RMSE 为 0.0568/0.0431/0.0172。OFF 明确拒绝 GPU 输出。M3-C 的三 Reference 场景、纹理/Transmission/介质、Queue 和阶段 Capture/发布仍未完成，M3-D 未开始。旧 ZIP 哈希保持不变；本轮未生成新 ZIP、提交或推送。见 [M3-C1](docs/m3c1-gpu-path-tracer.md)。
+
+> **M3-B Ray Query（2026-10-26）**：方向光硬阴影、可见性调试、共享局部 Mesh BLAS 与实例 TLAS 已接入 Workspace/Scene/Job 19/20，默认关闭。双编译器 Core/Sync、9856 像素 CPU oracle、双尺寸实际控件、GUI/Job、两轮 121 帧/P1 CPU 姿态哈希、Reset/回退/活动取消通过；刚体仅 UPDATE TLAS。既有完整回归、带 AS Build/Pass/Resource Label 的 Vulkan Capture 和独立安装保存重开同图已通过。CSM / Vulkan OFF / Ray Query 实测成本与最终 ZIP 见 [M3-B 验收](docs/m3b-ray-query-shadows.md)；本机 CSM 更快，保留同步回读/逐帧资源准备限制。M3-C/D 未开始，旧 P1/M3-A ZIP 保留；未提交/推送。
+
+> **M3-A Vulkan Raster（2026-10-26）**：共享静态/刚体 ModelData、Camera、PBR/Light/HDRI 已接入 Workspace 与 schema 4 Raster Job。MSVC/GCC 严格 Core/Sync、resize/失败恢复/销毁、双尺寸实际菜单往返与同图通过；P1 两轮 121 帧、CPU 姿态哈希、Reset/回退与取消通过。既有 63 次冻结图像比较、Stylized/Module/CPU PT、最终 gpu-smoke、性能/内存与带标签 Capture 已记录。独立安装验证包内资源、GUI 保存重开同图和 CPU Job，无 SDK/源码资产回退。最终 ZIP 和收口状态见 [M3-A 验收](docs/m3a-vulkan-raster.md)。M3-B/C/D 保持未完成，保留 P1 原归档；未提交/推送。
+
+> **M3-A2 同步验证（2026-10-26）**：补齐项目本地 Khronos Validation Layer 1.4.366，真实验证重现并修复 Acquire 后图像布局转换的 WRITE_AFTER_READ。新增严格同步入口及 tools/Verify-Vulkan.ps1；MSVC/GCC 各两轮 9 帧、两次 resize、回读与销毁通过，每轮 0 Warning / 0 Error，PNG 与 M3-A1 完全相同。缺失层/同步扩展均明确拒绝。见 [M3-A2](docs/m3a2-vulkan-validation.md)。共享 Mesh/glTF 绘制为下一工作包，M3-A 保持未完成；未打包、提交或推送。
+
+> **M3-A1 启动切片（2026-10-26）**：按用户要求进入下一阶段，新增可选 Vulkan 1.3 设备/交换链、Dynamic Rendering 清屏、双帧同步、resize、GPU 回读和重复销毁检查。MSVC/GCC 产品及开发目标构建通过，两编译器 RTX 4060 各两轮 9 帧，回读图像一致；OFF Timeline 1/1、核心 3/3 与既有 OpenGL smoke 通过。Khronos Validation Layer 缺失，严格入口明确拒绝，同步验证未完成；尚未实现共享场景/上传/Descriptor/PBR/Workspace/Job，M3-A 父项不勾选。见 [M3-A1](docs/m3a1-vulkan-bootstrap.md)。保留 P1 ZIP，本轮未打包、提交或推送。
+
+> **P1 本地收口完成（2026-10-26）**：按用户本轮要求恢复验收，P1-A～E 与首版父项已完成。MSVC ON 40/40、GCC OFF 38/38；真实 GPU、63 次渲染比较、Module/PT、GUI 保存重开、30/60/144 显示节奏、实际控件/TAA/取消、CPU/Raster 各两轮 121 帧、独立性能与 ZIP 均通过。修复 Batch 模型资源身份；最终发布版 121 帧姿态与已验收序列一致。范围仅声明的 CPU PhysX/Windows-MSVC，GCC 为 OFF；未提交/推送。见 [P1 收口](docs/p1-close-acceptance.md)。下一技术入口为 M3-A，本轮不自动执行。
+
+> **P1 收口验收恢复（2026-10-26）**：用户要求继续完成 P1，本轮恢复此前暂停的专项/GPU/图像/发布验收。已通过双配置全量 CTest（MSVC 40/40、GCC 38/38）、轨迹/帧率/缓存、真实工作台事件、GUI/Batch 保存重开同帧图像、实际 Ctrl+C、GPU smoke 与 63 次渲染比较；修复 Batch 模型资源身份与 GUI 不一致。其余序列、性能和发布仍在执行，不提前勾选整项。见 [收口记录](docs/p1-close-acceptance.md)。
+
+> **P1 独立夹具更新（2026-10-26）**：新增自由落体、弹跳、三箱堆叠三组独立 Scene/CPU Job，显式固定初始条件、Module 参数和独立输出/缓存目录；后续轨迹/性能测量标准已预先记录。MSVC ON、GCC OFF 相关目标构建与 physics-module 开发检查各 1/1 通过。没有执行新夹具序列、GUI/GPU/图像/性能/发布验收。P1 保持未收口，P1-E 继续暂停，未提交/推送。见 [夹具记录](docs/p1-physics-fixtures.md)。
+
+> **P1 运行报告更新（2026-10-26）**：CPU/Raster 共享结构化物理报告，记录有效固定步长、求解配置、数量与姿态缓存语义；缓存回放明确为未测量，不输出求解耗时。支持矩阵已补入 README。双配置产品构建通过，相关三项开发检查最终均通过（首次 MSVC 新测试输出冲突已修正并保留失败日志）。阶段 GUI/GPU/图像/性能/发布验收继续暂停，P1 不勾选；未提交/推送。见 [开发记录](docs/p1-physics-reports.md)。下一步按 P1 剩余开发缺口推进，不自动恢复验收。
+
+> **P1 缓存/运行边界更新（2026-10-25）**：恢复/烘焙成功后才提交，严格验证缓存结构及完整帧区间；修复 Reset 基准、Loop 重建、多帧取消报告和末帧溢出。双配置产品构建与相关开发检查各 5/5；实际 UI/GPU/图像/性能与发布验收继续暂停，P1 尚未收口。见本地 [开发记录](docs/p1-cache-runtime-boundaries.md)。
+
+> **P1-D 开发更新（2026-10-25）**：已接入刚体编辑面板/事务命令、Viewport 碰撞线框与求解统计、CLI 取消，以及连续运动/回退历史处理。双配置产品构建与四项相关开发检查通过，Raster 示例只校验配置，真实 GUI/GPU/图像/性能/发布验收仍暂停。详见本地 [P1-D](docs/p1d-physics-workbench.md)；P1 尚未收口。
+
+> **2026-10-25 用户调整执行顺序**：暂停验收工作，直接进入 P1 CPU 物理开发；本条覆盖下文 A4 → P1 的旧顺序。A4-C1 等剩余迁移后移，已有验收结论保留，未完成项不勾选。当前先做 P1-A SDK 接入，不执行阶段 GPU/图像/性能/发布验收。实现记录见本地 [P1-A](docs/p1a-physx-sdk.md)。
+
+> P1 后续开发：已接入 version 1 刚体组件、共享校验、Scene 往返/运行态复制与缓存身份，静态 `iris.physics.rigid-body` Module 按 1/120 s 输出球/箱/静态平面姿态；第 0 帧、Reset/缓存后补算、子步取消和 OFF 诊断已落地。示例 Job 的 simulate/bake 跑通。MSVC ON 与 GCC OFF 产品构建、相关开发检查各 3/3；仅为开发证据，阶段验收继续暂停。P1-B/C 的阶段状态及后续工作台缺口见本地 [实现记录](docs/p1b-rigid-body-module.md)，P1 不勾选完成。
+
 > 2026-10-07；用户决定暂停场景渲染/画质研发，优先完善通用引擎架构。
 > 当前渲染成果的 GitHub 检查点：`63039f207e5d6c8545326a1cfe5c6ac952b2e49d`，分支 `codex/m1-module-scene-persistence`。
 > 所有架构实验位于 `codex/plugin-architecture-validation`，不推送/合并到 `main`；验证失败可继续使用检查点。

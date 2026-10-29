@@ -111,6 +111,8 @@ std::unique_ptr<ISceneModule> ModuleRegistry::create(
         }
         return module;
     }
-    error = "unknown module id '" + id + "'";
+    error = id == rigidBodyModuleId
+        ? "Physics module unavailable: rebuild Iris with IRIS_ENABLE_PHYSX=ON (Windows/MSVC x64)"
+        : "unknown module id '" + id + "'";
     return nullptr;
 }

@@ -48,7 +48,9 @@ struct RenderJob {
     std::filesystem::path outputStemPattern;
     std::filesystem::path simulationCache;
     bool resume{false};
+    bool gpuTemporalDenoise{false};
     bool rasterDeterminism{true};
+    std::string rasterBackend{"opengl"};
     int rasterWarmupFrames{0};
     bool rasterTemporalAccumulation{false};
     // Explicit schema 4 opt-in: sequential fixed-time feedback, cleared once.

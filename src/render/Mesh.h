@@ -9,6 +9,7 @@
 #include <glm/vec3.hpp>
 
 #include "asset/ModelData.h"
+#include "render/SceneDrawList.h"
 
 class Mesh {
 public:
@@ -29,6 +30,8 @@ public:
     ) const;
     std::int32_t submeshMaterialIndex(std::size_t index) const;
     const glm::vec3& submeshCenter(std::size_t index) const;
+    const BoundingBox& submeshBounds(std::size_t index) const { return submeshBounds_.at(index); }
+    std::size_t submeshTriangleCount(std::size_t index) const { return submeshes_.at(index).indexCount / 3U; }
     std::size_t vertexCount() const { return vertexCount_; }
     std::size_t triangleCount() const { return indexCount_ / 3; }
     std::size_t lodTriangleCount(std::size_t lodLevel) const;
@@ -45,4 +48,5 @@ private:
     std::array<std::vector<SubmeshData>, 3> lodSubmeshes_;
     std::array<std::size_t, 3> lodTriangleCounts_{};
     std::vector<glm::vec3> submeshCenters_;
+    std::vector<BoundingBox> submeshBounds_;
 };

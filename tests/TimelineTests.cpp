@@ -1,6 +1,7 @@
 #include "runtime/Timeline.h"
 
 #include <cmath>
+#include <limits>
 #include <iostream>
 #include <stdexcept>
 
@@ -81,6 +82,18 @@ int main() {
                 && copy.fixedDeltaSeconds() == timeline.fixedDeltaSeconds(),
                 "identical timelines must agree, independent of how the frame was reached");
 
+        const int maximum = std::numeric_limits<int>::max();
+        timeline.setFrameRange(0, maximum);
+        require(timeline.frameCount() == static_cast<std::int64_t>(maximum) + 1, "full range count overflowed");
+        timeline.setLoop(false); timeline.setFrame(maximum - 1);
+        require(timeline.advance(maximum) && timeline.frame() == maximum, "terminal clamp overflowed");
+        require(!timeline.advance(), "terminal frame advanced again");
+        timeline.setLoop(true);
+        require(timeline.advance() && timeline.frame() == 0, "full range loop overflowed");
+        timeline.setFrameRange(maximum - 2, maximum); timeline.setFrame(maximum);
+        require(timeline.advance(4) && timeline.frame() == maximum - 2, "nonzero-start loop overflowed");
+        timeline.setFrameRange(maximum, maximum); timeline.setFrame(maximum);
+        require(!timeline.advance(maximum) && timeline.frame() == maximum, "single-frame loop overflowed");
         std::cout << "Deterministic timeline tests passed\n";
         return 0;
     } catch (const std::exception& error) {

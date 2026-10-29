@@ -1,5 +1,6 @@
 #include "asset/InputManifest.h"
 #include "runtime/RenderJob.h"
+#include "pathtracer/GpuRenderLimits.h"
 
 #include <algorithm>
 #include <fstream>
@@ -48,6 +49,8 @@ pathtracer::RenderOutput outputFromName(const std::string& name) {
     if (name == "indirect") return pathtracer::RenderOutput::Indirect;
     if (name == "sample-count") return pathtracer::RenderOutput::SampleCount;
     if (name == "variance") return pathtracer::RenderOutput::Variance;
+    if (name == "accumulated-beauty") return pathtracer::RenderOutput::AccumulatedBeauty;
+    if (name == "denoised-beauty") return pathtracer::RenderOutput::DenoisedBeauty;
     throw std::runtime_error("Unknown Render Job AOV: " + name);
 }
 
@@ -110,6 +113,8 @@ const char* renderOutputName(pathtracer::RenderOutput output) {
         case pathtracer::RenderOutput::Indirect: return "indirect";
         case pathtracer::RenderOutput::SampleCount: return "sample-count";
         case pathtracer::RenderOutput::Variance: return "variance";
+        case pathtracer::RenderOutput::AccumulatedBeauty: return "accumulated-beauty";
+        case pathtracer::RenderOutput::DenoisedBeauty: return "denoised-beauty";
     }
     return "unknown";
 }
@@ -155,6 +160,11 @@ bool loadRenderJob(const std::filesystem::path& path, RenderJob& job, std::strin
         loaded.sourcePath = std::filesystem::absolute(path).lexically_normal();
         loaded.scenePath = resolved(std::filesystem::u8path(required(root, "scene", job_json::kStringType).GetString()), loaded.sourcePath);
         loaded.renderer = required(root, "renderer", job_json::kStringType).GetString();
+        if(root.HasMember("gpuTemporalDenoise")){
+            unsigned count=0;for(auto it=root.MemberBegin();it!=root.MemberEnd();++it)if(std::string(it->name.GetString())=="gpuTemporalDenoise")++count;
+            if(count!=1 || !root["gpuTemporalDenoise"].IsBool() || loaded.schemaVersion!=4 || loaded.renderer!="gpu-path-traced")throw std::runtime_error("gpuTemporalDenoise requires a unique boolean in a schema 4 GPU job");
+            loaded.gpuTemporalDenoise=root["gpuTemporalDenoise"].GetBool();
+        }
         if (root.HasMember("shaderScene")) {
             int blocks = 0;
             for (auto it = root.MemberBegin(); it != root.MemberEnd(); ++it)
@@ -179,6 +189,12 @@ bool loadRenderJob(const std::filesystem::path& path, RenderJob& job, std::strin
             if (loaded.schemaVersion < 3 || loaded.renderer != "raster")
                 throw std::runtime_error("'raster' capture settings require a schema 3 raster job");
             const auto& capture = required(root, "raster", job_json::kObjectType);
+            if(capture.HasMember("backend")) {
+                if(loaded.schemaVersion<4)throw std::runtime_error("Raster backend selection requires schema 4");
+                int count=0;for(auto it=capture.MemberBegin();it!=capture.MemberEnd();++it)if(std::string(it->name.GetString())=="backend")++count;
+                if(count!=1)throw std::runtime_error("Duplicate raster backend");
+                loaded.rasterBackend=required(capture,"backend",job_json::kStringType).GetString();
+            }
             if (!capture.HasMember("determinism") || !capture["determinism"].IsBool()
                 || !capture.HasMember("temporalAccumulation") || !capture["temporalAccumulation"].IsBool())
                 throw std::runtime_error("raster determinism and temporalAccumulation must be boolean");
@@ -277,14 +293,24 @@ bool loadRenderJob(const std::filesystem::path& path, RenderJob& job, std::strin
 
 bool validateQueueRenderJob(const RenderJob& job, std::string& error) {
     if (!validateRenderJob(job, error)) return false;
-    if (job.renderer != "cpu-path-traced" && !job.shaderSceneSequence) {
-        error = "Render Queue supports CPU jobs only; run Raster jobs with Iris raster-sequence <job.renderjob>";
+    if (job.renderer != "cpu-path-traced" && job.renderer != "gpu-path-traced" && !job.shaderSceneSequence) {
+        error = "Render Queue supports CPU/GPU PT and ShaderScene sequences; run ordinary Raster jobs with Iris raster-sequence";
         return false;
     }
     return true;
 }
 
 bool validateRenderJob(const RenderJob& job, std::string& error) {
+    const auto has=[&](pathtracer::RenderOutput output){return std::find(job.outputs.begin(),job.outputs.end(),output)!=job.outputs.end();};
+    if(has(pathtracer::RenderOutput::AccumulatedBeauty) && !job.gpuTemporalDenoise){error="accumulated-beauty requires gpuTemporalDenoise";return false;}
+    if(job.gpuTemporalDenoise && (job.schemaVersion!=4 || job.renderer!="gpu-path-traced" || (!has(pathtracer::RenderOutput::AccumulatedBeauty) && !has(pathtracer::RenderOutput::DenoisedBeauty)))){error="gpuTemporalDenoise requires a schema 4 GPU job with accumulated-beauty or denoised-beauty";return false;}
+    if(job.gpuTemporalDenoise && job.resume){error="Temporal GPU jobs require resume=false to rebuild sequential history";return false;}
+    if(std::find(job.outputs.begin(),job.outputs.end(),pathtracer::RenderOutput::DenoisedBeauty)!=job.outputs.end() && job.renderer!="gpu-path-traced") {error="denoised-beauty requires the GPU Path Traced backend";return false;}
+    if(job.renderer=="gpu-path-traced" && (job.schemaVersion!=4 || job.resume || job.renderSettings.width>pathtracer::gpuMaximumDimension || job.renderSettings.height>pathtracer::gpuMaximumDimension || job.renderSettings.samplesPerPixel>65536 || job.renderSettings.maxDepth>16 || job.renderSettings.adaptiveSampling || job.renderSettings.ggxSamplingStrategy!=pathtracer::GgxSamplingStrategy::Distribution)) {error="GPU PT requires schema 4, no resume/adaptive/VNDF, resolution <=1280, SPP <=65536 and Depth <=16";return false;}
+    if(job.rasterBackend!="opengl" && job.rasterBackend!="vulkan") {error="Raster backend must be opengl or vulkan";return false;}
+    if(job.rasterBackend=="vulkan" && (job.schemaVersion<4 || job.renderer!="raster" || job.shaderSceneSequence || job.rasterTemporalAccumulation)) {
+        error="Vulkan requires schema 4 Raster without ShaderScene or temporal accumulation";return false;
+    }
     if (job.shaderSceneSequence && (job.schemaVersion != 4 || job.renderer != "raster"
         || !job.rasterDeterminism || job.rasterTemporalAccumulation || job.rasterWarmupFrames != 0
         || !job.module.id.empty() || job.failurePolicy != RenderJobFailurePolicy::Stop
@@ -301,8 +327,8 @@ bool validateRenderJob(const RenderJob& job, std::string& error) {
         error = "Render Job schemaVersion 1 cannot carry a module; use schemaVersion 2";
     } else if (!job.module.id.empty() && job.module.id.find_first_of(" \t\n") != std::string::npos) {
         error = "Render Job module id must not contain whitespace";
-    } else if (job.renderer != "cpu-path-traced" && job.renderer != "raster") {
-        error = "Render Job renderer must be 'cpu-path-traced' or 'raster'";
+    } else if (job.renderer != "cpu-path-traced" && job.renderer != "gpu-path-traced" && job.renderer != "raster") {
+        error = "Render Job renderer must be 'cpu-path-traced', 'gpu-path-traced' or 'raster'";
     } else if (job.renderer == "raster"
                && (job.outputs.size() != 1U || job.outputs.front() != pathtracer::RenderOutput::Beauty
                    || job.outputFormats.size() != 1U

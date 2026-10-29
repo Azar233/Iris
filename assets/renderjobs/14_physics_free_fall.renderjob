@@ -1,0 +1,42 @@
+{
+  "format": "MyRendererRenderJob",
+  "schemaVersion": 2,
+  "scene": "../scenes/fixtures/34_physics_free_fall.myscene",
+  "renderer": "cpu-path-traced",
+  "camera": "scene",
+  "resolution": [
+    320,
+    180
+  ],
+  "frames": {
+    "start": 0,
+    "end": 30,
+    "fps": 30
+  },
+  "sampling": {
+    "spp": 4,
+    "maxDepth": 4,
+    "seed": 20261026
+  },
+  "aovs": [
+    "beauty"
+  ],
+  "module": {
+    "id": "iris.physics.rigid-body",
+    "seed": 20261026,
+    "parameters": {
+      "gravityY": -9.81,
+      "positionIterations": 8,
+      "velocityIterations": 2
+    }
+  },
+  "simulationCache": "../../.local/physics/free-fall/cache.json",
+  "output": {
+    "path": "../../.local/physics/free-fall/frame_{frame:04}",
+    "formats": [
+      "png"
+    ],
+    "resume": false
+  },
+  "failurePolicy": "stop"
+}

@@ -1,0 +1,71 @@
+#version 460
+layout(local_size_x=8,local_size_y=8) in;
+struct Pixel {vec4 sum,albedo,normal,depth,direct,indirect,moments;uvec4 count;};
+struct Guide {vec4 motionDepth,normal,previousNormal;uvec4 identity;};
+layout(binding=0,std430) readonly buffer Raw {Pixel raw[];};
+layout(binding=1,std430) readonly buffer Guides {Guide guides[];};
+layout(binding=2,std430) readonly buffer Source {vec4 source[];};
+layout(binding=3,std430) writeonly buffer Target {vec4 target[];};
+layout(binding=4,std430) buffer Preview {uint preview[];};
+layout(push_constant) uniform Pass {uint width,height,iteration,tone;float exposure;} pass;
+const float kernel[5]=float[](1.0/16,4.0/16,6.0/16,4.0/16,1.0/16);
+float luminance(vec3 c){return dot(c,vec3(.2126,.7152,.0722));}
+bool finite3(vec3 c){return !any(isnan(c)) && !any(isinf(c));}
+vec3 inputAt(uint i){
+#ifdef IRIS_PT_TEMPORAL
+    return source[i].rgb;
+#else
+    return pass.iteration==0?raw[i].sum.rgb/float(max(raw[i].count.x,1)):source[i].rgb;
+#endif
+}
+bool eligible(uint i){
+    uint flags=uint(guides[i].normal.w);
+    // Front-surface guides do not describe the refracted background. Keep
+    // transmission and subpixel coverage edges untouched instead of inventing it.
+    #ifdef IRIS_PT_TEMPORAL
+    return (flags&1u)!=0 && (flags&4u)==0 && raw[i].count.x>0 && raw[i].count.y==raw[i].count.x;
+#else
+    return (flags&1u)!=0 && (flags&4u)==0 && raw[i].count.x>1 && raw[i].count.y==raw[i].count.x;
+#endif
+}
+void main(){
+    uvec2 xy=gl_GlobalInvocationID.xy;if(xy.x>=pass.width || xy.y>=pass.height)return;
+    uint i=xy.y*pass.width+xy.x;Pixel p=raw[i];Guide g=guides[i];vec3 center=inputAt(i),value=center;
+    if(!finite3(center) || !finite3(p.albedo.rgb) || !finite3(g.normal.xyz) || isnan(g.motionDepth.z) || isinf(g.motionDepth.z))atomicOr(preview[pass.width*pass.height],1u);
+    if(eligible(i)){
+        float n=float(p.count.x),mean=p.moments.x/n;
+        float variance=max((p.moments.y/n-mean*mean)*n/max(n-1,1),0);
+        #ifdef IRIS_PT_TEMPORAL
+        variance=source[i].a;
+#endif
+        float colorScale=max(4*sqrt(variance),.01);
+        vec3 albedo=p.albedo.rgb/float(max(p.count.y,1));vec3 sum=vec3(0);float weights=0;
+        for(int y=-2;y<=2;++y)for(int x=-2;x<=2;++x){
+            ivec2 q=ivec2(xy)+ivec2(x,y)*int(1u<<pass.iteration);
+            if(any(lessThan(q,ivec2(0))) || q.x>=int(pass.width) || q.y>=int(pass.height))continue;
+            uint j=uint(q.y)*pass.width+uint(q.x);Guide h=guides[j];
+            if(!eligible(j) || any(notEqual(g.identity,h.identity)) || g.previousNormal.w!=h.previousNormal.w)continue;
+            vec3 c=inputAt(j);vec3 da=raw[j].albedo.rgb/float(max(raw[j].count.y,1))-albedo;
+            float w=kernel[x+2]*kernel[y+2];
+            w*=exp(-abs(luminance(c)-luminance(center))/colorScale);
+            w*=exp(-dot(da,da)/.0625);
+            w*=pow(max(dot(g.normal.xyz,h.normal.xyz),0),64);
+            w*=exp(-abs(g.motionDepth.z-h.motionDepth.z)/max(g.motionDepth.z*.02,.00001));
+            sum+=c*w;weights+=w;
+        }
+        if(weights>0)value=sum/weights;
+    }
+    if(!finite3(value) || any(lessThan(value,vec3(0)))){atomicOr(preview[pass.width*pass.height],1u);value=vec3(0);}
+    #ifdef IRIS_PT_TEMPORAL
+    target[i]=vec4(value,source[i].a);
+#else
+    target[i]=vec4(value,1);
+#endif
+    if(pass.iteration==1){
+        vec3 c=value*pass.exposure;if(pass.tone!=0)c=c/(1+c);
+        if(!finite3(c)){atomicOr(preview[pass.width*pass.height],2u);c=vec3(0);}
+        c=clamp(c,0,1);c=mix(12.92*c,1.055*pow(c,vec3(1/2.4))-.055,greaterThan(c,vec3(.0031308)));
+        uvec3 bytes=uvec3(round(c*255));uint flipped=(pass.height-1-xy.y)*pass.width+xy.x;
+        preview[flipped]=bytes.r|(bytes.g<<8)|(bytes.b<<16)|0xff000000u;
+    }
+}

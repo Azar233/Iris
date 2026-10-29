@@ -1,0 +1,36 @@
+{
+  "format": "MyRendererRenderJob",
+  "schemaVersion": 4,
+  "scene": "../benchmarks/m3c/sponza-atrium.myscene",
+  "renderer": "gpu-path-traced",
+  "camera": "scene",
+  "resolution": [
+    1280,
+    720
+  ],
+  "frames": {
+    "start": 0,
+    "end": 1,
+    "fps": 30
+  },
+  "sampling": {
+    "spp": 4,
+    "maxDepth": 4,
+    "seed": 20261026
+  },
+  "gpuTemporalDenoise": true,
+  "aovs": [
+    "beauty",
+    "accumulated-beauty",
+    "denoised-beauty"
+  ],
+  "output": {
+    "path": "../../.local/renders/gpu-temporal-sponza-atrium/frame_{frame:04}",
+    "formats": [
+      "png",
+      "exr"
+    ],
+    "resume": false
+  },
+  "failurePolicy": "stop"
+}

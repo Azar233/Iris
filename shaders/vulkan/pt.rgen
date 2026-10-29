@@ -1,0 +1,227 @@
+#version 460
+#extension GL_EXT_ray_tracing : require
+layout(set=0,binding=0) uniform accelerationStructureEXT sceneAcceleration;
+struct Triangle {vec4 p0,p1,p2,n0,n1,n2,base,emission,parameters;vec4 uv0,uv1,uv2,tangent0,tangent1,tangent2;ivec4 textures;vec4 transmission,attenuation;uvec4 identity;};
+#ifdef IRIS_PT_INDEXED
+layout(set=0,binding=1,std430) readonly buffer Primitives {uvec4 primitives[];};
+struct Vertex {vec4 position,normal,uv,tangent;};
+struct Material {vec4 base,emission,parameters;ivec4 textures;vec4 transmission,attenuation;uvec4 identity;};
+layout(set=0,binding=11,std430) readonly buffer Vertices {Vertex vertices[];};
+layout(set=0,binding=12,std430) readonly buffer Materials {Material materials[];};
+// Reconstruct the same world-space fields; interpolation and estimator below
+// retain their original arithmetic and mirrored barycentric convention.
+Triangle loadTriangle(uint index){
+    uvec4 p=primitives[index];Vertex a=vertices[p.x],b=vertices[p.y],c=vertices[p.z];Material m=materials[p.w];
+    return Triangle(a.position,b.position,c.position,a.normal,b.normal,c.normal,m.base,m.emission,m.parameters,
+        a.uv,b.uv,c.uv,a.tangent,b.tangent,c.tangent,m.textures,m.transmission,m.attenuation,m.identity);
+}
+#else
+layout(set=0,binding=1,std430) readonly buffer Triangles {Triangle triangles[];};
+#endif
+layout(set=0,binding=2,std430) readonly buffer Instances {uvec4 instances[];};
+struct Pixel {vec4 sum,albedo,normal,depth,direct,indirect,moments;uvec4 count;};
+layout(set=0,binding=3,std430) buffer Pixels {Pixel pixels[];};
+layout(set=0,binding=4,std140) uniform Frame {
+    mat4 inverseView;
+    vec4 eyeScale;
+    uvec4 extent; // width, height, max depth, seed
+    uvec4 options; // roulette depth, NEE, environment visible, local-light count
+    uvec4 counts; // textures, emitters
+    vec4 background; // RGB, intensity
+    vec4 sunDirection,sunRadiance;
+    vec4 localPosition[16],localDirection[16],localRadiance[16];
+} frame;
+layout(set=0,binding=5) uniform sampler2D environmentMap;
+layout(set=0,binding=6,std430) readonly buffer Texels {uvec2 texels[];};
+layout(set=0,binding=7,std430) readonly buffer TextureInfo {uvec4 textureInfo[];};
+layout(set=0,binding=8,std430) readonly buffer Emitters {uvec4 emitters[];};
+layout(set=0,binding=9,std430) readonly buffer EnvironmentDistribution {vec2 environmentDistribution[];};
+layout(set=0,binding=10,std430) buffer Preview {uint preview[];};
+layout(push_constant) uniform Pass {uint sampleIndex;float exposure;uint toneMapping;uint displayOnly;} pass;
+struct Payload {ivec4 ids;vec4 data;};
+layout(location=0) rayPayloadEXT Payload hit;
+const float PI=3.141592653589793;
+uint state;
+uint mixBits(uint x){x^=x>>16;x*=0x7feb352du;x^=x>>15;x*=0x846ca68bu;return x^(x>>16);}
+float nextRandom(){state+=0x9e3779b9u;return float(mixBits(state)>>8)*(1.0/16777216.0);}
+vec3 environment(vec3 d){return max(textureLod(environmentMap,vec2(atan(d.z,d.x)/(2*PI)+.5,acos(clamp(d.y,-1,1))/PI),0).rgb,vec3(0))*frame.background.w;}
+float environmentPdf(vec3 direction){
+    if(frame.counts.z==0)return 1/(4*PI);
+    ivec2 size=textureSize(environmentMap,0);float theta=acos(clamp(direction.y,-1,1)),sine=sin(theta);
+    if(sine<=1e-12)return 0;
+    vec2 uv=vec2(atan(direction.z,direction.x)/(2*PI)+.5,theta/PI);
+    ivec2 xy=clamp(ivec2(uv*size),ivec2(0),size-1);
+    return environmentDistribution[xy.y*size.x+xy.x].y*float(size.x)*size.y/(2*PI*PI*sine);
+}
+vec3 sampleEnvironment(float u,float v,out float pdf){
+    if(frame.counts.z==0){float z=1-2*u,r=sqrt(max(0,1-z*z));pdf=1/(4*PI);return vec3(r*cos(2*PI*v),z,r*sin(2*PI*v));}
+    ivec2 size=textureSize(environmentMap,0);uint lo=0,hi=uint(size.x*size.y);
+    while(lo<hi){uint mid=lo+(hi-lo)/2;if(environmentDistribution[mid].x<=u)lo=mid+1;else hi=mid;}
+    uint index=min(lo,uint(size.x*size.y-1));float previous=index==0?0:environmentDistribution[index-1].x;
+    float x=(float(index%uint(size.x))+clamp((u-previous)/max(environmentDistribution[index].y,1e-30),0,.99999994))/size.x;
+    float y=(float(index/uint(size.x))+clamp(v,1e-7,.9999999))/size.y;
+    float theta=PI*y,phi=2*PI*(x-.5),sine=sin(theta);
+    pdf=environmentDistribution[index].y*float(size.x)*size.y/(2*PI*PI*max(sine,1e-12));
+    return normalize(vec3(cos(phi)*sine,cos(theta),sin(phi)*sine));
+}
+float powerWeight(float a,float b){return a*a/max(a*a+b*b,1e-20);}
+mat3 basis(vec3 n){vec3 t=normalize(cross(abs(n.z)<.999?vec3(0,0,1):vec3(0,1,0),n));return mat3(t,cross(n,t),n);}
+vec3 fresnel(vec3 f0,float c){return f0+(1-f0)*pow(1-clamp(c,0,1),5);}
+float g1(float x,float a2){return x<=0?0:2*x/max(x+sqrt(a2+(1-a2)*x*x),1e-7);}
+float probability(vec3 base,float metal){return clamp(dot(mix(vec3(.04),base,metal),vec3(.2126,.7152,.0722)),.1,.9);}
+vec3 bsdf(vec3 n,vec3 v,vec3 l,vec3 base,float metal,float rough,out float pdf){
+    pdf=0;float nv=dot(n,v),nl=dot(n,l);if(nv<=0 || nl<=0 || dot(v+l,v+l)<1e-12)return vec3(0);
+    vec3 h=normalize(v+l);float nh=max(dot(n,h),0),vh=max(dot(v,h),0);if(vh<=0)return vec3(0);
+    float a=rough*rough,a2=a*a,den=nh*nh*(a2-1)+1,D=a2/max(PI*den*den,1e-12);
+    float choose=probability(base,metal);pdf=choose*D*nh/(4*vh)+(1-choose)*nl/PI;
+    vec3 f=fresnel(mix(vec3(.04),base,metal),vh);
+    return (1-f)*base*(1-metal)/PI+f*(D*g1(nv,a2)*g1(nl,a2)/max(4*nv*nl,1e-7));
+}
+vec4 fetchTexel(uvec4 info,ivec2 xy){
+    ivec2 size=ivec2(info.yz);xy=(xy%size+size)%size;
+    uvec2 v=texels[info.x+uint(xy.y)*info.y+uint(xy.x)];return vec4(unpackHalf2x16(v.x),unpackHalf2x16(v.y));
+}
+vec4 sampleTexture(int id,vec2 uv){
+    if(id<0)return vec4(1);uvec4 info=textureInfo[id];
+    vec2 p=fract(uv)*vec2(info.yz)-.5;ivec2 xy=ivec2(floor(p));vec2 f=fract(p);
+    return mix(mix(fetchTexel(info,xy),fetchTexel(info,xy+ivec2(1,0)),f.x),mix(fetchTexel(info,xy+ivec2(0,1)),fetchTexel(info,xy+ivec2(1,1)),f.x),f.y);
+}
+float dielectricFresnel(float c,float ei,float et){
+    c=clamp(c,0,1);float st=ei/et*sqrt(max(1-c*c,0));if(st>=1)return 1;
+    float ct=sqrt(max(1-st*st,0));float a=(et*c-ei*ct)/max(et*c+ei*ct,1e-7),b=(ei*c-et*ct)/max(ei*c+et*ct,1e-7);
+    return clamp(.5*(a*a+b*b),0,1);
+}
+float emitterPdf(Triangle t,vec3 from,vec3 p){
+    vec3 crossProduct=cross(t.p1.xyz-t.p0.xyz,t.p2.xyz-t.p0.xyz);float area=.5*length(crossProduct);
+    if(frame.counts.y==0 || area<=5e-9 || !any(greaterThan(t.emission.rgb,vec3(0))))return 0;
+    vec3 delta=p-from;float d2=dot(delta,delta);if(d2<=1e-12)return 0;
+    float cosine=dot(normalize(crossProduct),-normalize(delta));if(t.parameters.z>.5)cosine=abs(cosine);
+    return cosine>1e-7?d2/(cosine*area*frame.counts.y):0;
+}
+bool visible(vec3 p,vec3 geometric,vec3 l,float distance,float epsilon){
+    hit.ids.x=0;
+    traceRayEXT(sceneAcceleration,gl_RayFlagsOpaqueEXT|gl_RayFlagsTerminateOnFirstHitEXT|gl_RayFlagsSkipClosestHitShaderEXT,2,0,0,0,p+geometric*epsilon,epsilon*.5,l,distance,0);
+    return hit.ids.x<0;
+}
+// Match the CPU Raw/AOV finite checks before publishing any preview sample.
+void stagePixel(Pixel p,uvec2 xy){
+    bool invalid=any(isnan(p.sum.xyz)) || any(isinf(p.sum.xyz)) || any(isnan(p.albedo.xyz)) || any(isinf(p.albedo.xyz))
+        || any(isnan(p.normal.xyz)) || any(isinf(p.normal.xyz)) || any(isnan(p.direct.xyz)) || any(isinf(p.direct.xyz))
+        || any(isnan(p.indirect.xyz)) || any(isinf(p.indirect.xyz)) || isnan(p.depth.x) || isinf(p.depth.x)
+        || any(isnan(p.moments.xy)) || any(isinf(p.moments.xy));
+    vec3 color=p.sum.xyz/max(float(p.count.x),1)*pass.exposure;
+    if(pass.toneMapping!=0)color=color/(vec3(1)+color);
+    bool invalidDisplay=any(isnan(color)) || any(isinf(color)) || any(lessThan(color,vec3(0)));
+    uint errors=(invalid?1u:0u)|(invalidDisplay?2u:0u);
+    if(errors!=0){atomicOr(preview[frame.extent.x*frame.extent.y],errors);color=vec3(0);}
+    color=clamp(color,0,1);
+    vec3 srgb=mix(1.055*pow(color,vec3(1/2.4))-.055,12.92*color,lessThanEqual(color,vec3(.0031308)));
+    uint flipped=(frame.extent.y-1-xy.y)*frame.extent.x+xy.x;
+    preview[flipped]=packUnorm4x8(vec4(srgb,1));
+}
+void main(){
+    uvec2 xy=gl_LaunchIDEXT.xy;uint index=xy.y*frame.extent.x+xy.x;
+    if(pass.displayOnly!=0){stagePixel(pixels[index],xy);return;}
+    state=mixBits(frame.extent.w^mixBits(index)^mixBits(pass.sampleIndex+0x9e3779b9u));
+    float jx=nextRandom(),jy=nextRandom();float aspect=float(frame.extent.x)/frame.extent.y;
+    vec3 direction=normalize(mat3(frame.inverseView)*vec3((2*(xy.x+jx)/frame.extent.x-1)*aspect*frame.eyeScale.w,(1-2*(xy.y+jy)/frame.extent.y)*frame.eyeScale.w,-1));
+    vec3 origin=frame.eyeScale.xyz,throughput=vec3(1),radiance=vec3(0),direct=vec3(0),indirect=vec3(0);
+    vec3 firstAlbedo=vec3(0),firstNormal=vec3(0);float firstDepth=0,previousPdf=0;uint primaryHit=0,pathRays=0,shadowRays=0;
+    float minimum=.0001;bool previousDelta=false,mediumActive=false;vec3 previousPosition=origin,mediumColor=vec3(1);float mediumDistance=0;uvec2 mediumIdentity=uvec2(0);
+    for(uint depth=0;depth<frame.extent.z;++depth){
+        hit.ids.x=-1;traceRayEXT(sceneAcceleration,gl_RayFlagsOpaqueEXT,1,0,0,0,origin,minimum,direction,1e30,0);++pathRays;
+        if(hit.ids.x<0){
+            float weight=depth>0 && !previousDelta && frame.options.y!=0?powerWeight(previousPdf,environmentPdf(direction)):1;
+            vec3 contribution=throughput*(depth==0 && frame.options.z==0?frame.background.rgb:environment(direction))*weight;
+            radiance+=contribution;if(depth==0)direct+=contribution;else indirect+=contribution;break;
+        }
+        #ifdef IRIS_PT_INDEXED
+Triangle triangle=loadTriangle(instances[hit.ids.x].x+hit.ids.y);
+#else
+Triangle triangle=triangles[instances[hit.ids.x].x+hit.ids.y];
+#endif
+        vec3 bary=vec3(1-hit.data.x-hit.data.y,hit.data.xy);
+        if(triangle.parameters.w>.5)bary.yz=bary.zy;
+        float distance=hit.data.z;vec3 p=origin+direction*distance;
+        if(mediumActive && mediumDistance>0 && !isinf(mediumDistance))throughput*=pow(clamp(mediumColor,vec3(1e-6),vec3(1)),vec3(distance/mediumDistance));
+        vec3 geometric=normalize(cross(triangle.p1.xyz-triangle.p0.xyz,triangle.p2.xyz-triangle.p0.xyz));
+        bool front=dot(geometric,-direction)>0;if(!front)geometric=-geometric;
+        vec3 rawGeometric=front?geometric:-geometric;
+        vec3 n=triangle.n0.xyz*bary.x+triangle.n1.xyz*bary.y+triangle.n2.xyz*bary.z;
+        n=dot(n,n)>1e-12?normalize(n):rawGeometric;if(dot(n,rawGeometric)<0)n=-n;if(!front)n=-n;
+        vec2 uv=triangle.uv0.xy*bary.x+triangle.uv1.xy*bary.y+triangle.uv2.xy*bary.z;
+        vec3 base=clamp(triangle.base.rgb*sampleTexture(triangle.textures.x,uv).rgb,0,1);
+        vec4 packed=sampleTexture(triangle.textures.y,uv);
+        float metal=clamp(triangle.parameters.x*packed.b,0,1),rough=clamp(triangle.parameters.y*packed.g,.045,1);
+        if(triangle.textures.z>=0){
+            vec4 tangent=triangle.tangent0*bary.x+triangle.tangent1*bary.y+triangle.tangent2*bary.z;
+            vec3 t=tangent.xyz-n*dot(n,tangent.xyz);
+            if(abs(tangent.w)>.5 && dot(t,t)>1e-12){t=normalize(t);vec3 m=sampleTexture(triangle.textures.z,uv).rgb*2-1;
+                vec3 mapped=t*m.x+cross(n,t)*sign(tangent.w)*m.y+n*m.z;
+                if(dot(mapped,mapped)>1e-12 && dot(mapped,geometric)>0)n=normalize(mapped);}
+        }
+        if(dot(n,-direction)<=0)n=geometric;
+        float transmission=clamp(triangle.transmission.x,0,1)*(1-metal),opaque=1-transmission;
+        float thickness=max(triangle.transmission.z*sampleTexture(triangle.textures.w,uv).g,0);
+        if(depth==0){firstAlbedo=base;firstNormal=n;firstDepth=distance;primaryHit=1;}
+        float emissionWeight=depth>0 && !previousDelta && frame.options.y!=0?powerWeight(previousPdf,emitterPdf(triangle,previousPosition,p)):1;
+        vec3 contribution=throughput*triangle.emission.rgb*(front || triangle.parameters.z>0.5?1:0)*emissionWeight;
+        radiance+=contribution;if(depth==0)direct+=contribution;else indirect+=contribution;
+        float epsilon=1e-4*max(1,max(max(abs(p.x),abs(p.y)),abs(p.z)));
+        if(frame.options.y!=0){
+            // Delta lights are evaluated exactly, rather than selected randomly.
+            for(uint light=0;light<=frame.options.w;++light){
+                vec3 l,energy;float maximum=1e30;
+                if(light==0){l=normalize(-frame.sunDirection.xyz);energy=frame.sunRadiance.rgb;}
+                else{uint i=light-1;vec3 delta=frame.localPosition[i].xyz-p;float d=length(delta);l=delta/max(d,1e-6);maximum=max(d-epsilon,epsilon*.5);
+                    float falloff=pow(clamp(1-pow(d/max(frame.localDirection[i].w,.001),4),0,1),2)/max(1+d*d,.0001);
+                    if(frame.localPosition[i].w>.5){float outer=clamp(frame.localRadiance[i].w,-.99,.99);falloff*=smoothstep(outer,min(outer+.1,.999),dot(-l,normalize(frame.localDirection[i].xyz)));}
+                    energy=frame.localRadiance[i].rgb*falloff;}
+                if(dot(n,l)>0 && dot(geometric,l)>0 && any(greaterThan(energy,vec3(0)))){
+                    ++shadowRays;if(visible(p,geometric,l,maximum,epsilon)){float pdf;contribution=throughput*bsdf(n,-direction,l,base,metal,rough,pdf)*opaque*energy*dot(n,l);radiance+=contribution;if(depth==0)direct+=contribution;else indirect+=contribution;}}
+            }
+            float u=nextRandom(),v=nextRandom(),lightPdf;vec3 l=sampleEnvironment(u,v,lightPdf);
+            if(dot(n,l)>0 && dot(geometric,l)>0){float pdf;vec3 value=bsdf(n,-direction,l,base,metal,rough,pdf)*opaque,energy=environment(l);pdf*=opaque;
+                if(any(greaterThan(energy,vec3(0)))){++shadowRays;if(visible(p,geometric,l,1e30,epsilon)){contribution=throughput*value*energy*(dot(n,l)/max(lightPdf,1e-30)*powerWeight(lightPdf,pdf));radiance+=contribution;if(depth==0)direct+=contribution;else indirect+=contribution;}}}
+            if(frame.counts.y>0){
+                uint emitter=emitters[min(uint(nextRandom()*frame.counts.y),frame.counts.y-1)].x;
+                #ifdef IRIS_PT_INDEXED
+Triangle t=loadTriangle(emitter);
+#else
+Triangle t=triangles[emitter];
+#endif
+float root=sqrt(nextRandom()),v=nextRandom();
+                vec3 target=(1-root)*t.p0.xyz+v*root*t.p1.xyz+(1-(1-root)-v*root)*t.p2.xyz;
+                vec3 delta=target-p;float d=length(delta);vec3 l=delta/max(d,1e-6);float lightPdf=emitterPdf(t,p,target);
+                if(lightPdf>0 && dot(n,l)>0 && dot(geometric,l)>0){float pdf;vec3 value=bsdf(n,-direction,l,base,metal,rough,pdf)*opaque;pdf*=opaque;
+                    ++shadowRays;if(visible(p,geometric,l,max(d-epsilon,epsilon*.5),epsilon)){
+                        contribution=throughput*value*t.emission.rgb*(dot(n,l)*powerWeight(lightPdf,pdf)/lightPdf);
+                        radiance+=contribution;if(depth==0)direct+=contribution;else indirect+=contribution;}}
+            }
+        }
+        if(depth+1==frame.extent.z)break;
+        float choose=nextRandom(),u=nextRandom(),v=nextRandom();vec3 l,weight;float pdf=0;bool transmitted=false,delta=false;
+        if(transmission>0 && choose<transmission){
+            float ior=max(triangle.transmission.y,1),ei=front?1:ior,et=front?ior:1,eta=ei/et;
+            float f=dielectricFresnel(dot(n,-direction),ei,et);delta=true;
+            if(choose/transmission<f){l=reflect(direction,n);weight=vec3(1);pdf=transmission*f;}
+            else{l=refract(direction,n,eta);if(dot(l,l)<=1e-12){l=reflect(direction,n);weight=vec3(1);pdf=transmission;}
+                else{l=normalize(l);weight=vec3(eta*eta);pdf=transmission*(1-f);transmitted=true;}}
+        }else{
+            if(opaque<=0)break;choose=clamp((choose-transmission)/opaque,0,.99999994);
+            if(choose<probability(base,metal)){float a=rough*rough,a2=a*a,cosine=sqrt((1-v)/(1+(a2-1)*v)),sine=sqrt(max(0,1-cosine*cosine));vec3 h=normalize(basis(n)*vec3(sine*cos(2*PI*u),sine*sin(2*PI*u),cosine));l=reflect(direction,h);}
+            else{float r=sqrt(u);l=normalize(basis(n)*vec3(r*cos(2*PI*v),r*sin(2*PI*v),sqrt(max(0,1-u))));}
+            if(dot(n,l)<=0)break;vec3 value=bsdf(n,-direction,l,base,metal,rough,pdf);if(pdf<=0)break;
+            weight=value*(dot(n,l)/pdf);pdf*=opaque;
+        }
+        if(pdf<=0 || (transmitted?dot(geometric,l)>=0:dot(geometric,l)<=0))break;
+        throughput*=weight;if(!any(greaterThan(throughput,vec3(0))))break;
+        if(frame.options.x>0 && depth+1>=frame.options.x){float survive=clamp(max(max(throughput.x,throughput.y),throughput.z),.05,.95);if(nextRandom()>=survive)break;throughput/=survive;}
+        if(transmitted){if(front && thickness>0){mediumActive=true;mediumColor=triangle.attenuation.rgb;mediumDistance=triangle.transmission.w;mediumIdentity=triangle.identity.xy;}
+            else if(!front && mediumActive && all(equal(mediumIdentity,triangle.identity.xy)))mediumActive=false;}
+        previousPosition=p;previousDelta=delta;previousPdf=pdf;origin=p+geometric*epsilon*(transmitted?-1:1);direction=l;minimum=epsilon*.5;
+    }
+    Pixel pixel=pixels[index];pixel.sum+=vec4(radiance,0);pixel.albedo+=vec4(firstAlbedo,0);pixel.normal+=vec4(firstNormal,0);pixel.depth.x+=firstDepth;
+    pixel.direct+=vec4(direct,0);pixel.indirect+=vec4(indirect,0);float lum=dot(radiance,vec3(.2126,.7152,.0722));pixel.moments.xy+=vec2(lum,lum*lum);
+    pixel.count+=uvec4(1,primaryHit,pathRays,shadowRays);pixels[index]=pixel;stagePixel(pixel,xy);
+}

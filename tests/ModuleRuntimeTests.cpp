@@ -8,6 +8,8 @@
 #include "render/Renderer.h"
 
 #include <cmath>
+#include <fstream>
+#include <limits>
 #include <iostream>
 #include <memory>
 #include <stdexcept>
@@ -599,6 +601,117 @@ void testCoastalSequence(const Scene& editScene) {
                  endRenderer.atmosphere.sunAzimuthDegrees, "reset and scrub must reproduce the sun");
 }
 
+void testCacheTransactions(const Scene& editScene) {
+    auto registry = createBuiltinModuleRegistry();
+    ModuleRuntime runtime(registry);
+    std::string error;
+    require(runtime.configure(BuiltinModules::turntableId, {}, 7U, error), error.c_str());
+    SimulationCache cache;
+    require(runtime.bakeSimulation(editScene, 0, 5, 24, cache, error), error.c_str());
+    require(runtime.reset(editScene, 0, 5, 24, error) && runtime.runToFrame(2, error), error.c_str());
+    const auto beforeHash = runtime.runtimeScene().contentHash();
+    const auto beforeState = runtime.report().moduleState;
+    const auto beforePrevious = runtime.runtimeScene().scene().entities().front().previousWorldTransform;
+    const bool beforeDirty = runtime.runtimeScene().dirty();
+    const auto rejectFrame = [&](const SimulationCacheFrame& frame) {
+        require(!runtime.applyCachedFrame(frame, error), "corrupt cache frame was accepted");
+        require(runtime.runtimeScene().contentHash() == beforeHash && runtime.report().contentHash == beforeHash
+            && runtime.report().moduleState == beforeState && runtime.report().lastFrame == 2
+            && runtime.timeline().frame() == 2 && runtime.runtimeScene().dirty() == beforeDirty
+            && runtime.runtimeScene().scene().entities().front().previousWorldTransform == beforePrevious,
+            "rejected cache frame changed runtime/report/timeline/history");
+    };
+    auto bad = cache.frames[4]; bad.entities.front().transform.translation.x += 5;
+    rejectFrame(bad);
+    bad = cache.frames[2]; bad.entities.pop_back(); rejectFrame(bad);
+    bad = cache.frames[2]; bad.entities.back().id = bad.entities.front().id; rejectFrame(bad);
+    bad = cache.frames[4]; bad.entities.back().id = 999999; rejectFrame(bad);
+    bad = cache.frames[2]; bad.entities.front().transform.translation.x = std::numeric_limits<float>::infinity(); rejectFrame(bad);
+    bad = cache.frames[2]; bad.frame = -1; rejectFrame(bad);
+    bad = cache.frames[2]; bad.frame = 6; rejectFrame(bad);
+    require(runtime.runToFrame(3, error) && runtime.report().contentHash == cache.frames[3].contentHash,
+        "solver could not continue after rejected replay");
+
+    SimulationCache hole = cache; hole.frames.erase(hole.frames.begin() + 2);
+    require(classifySimulationCache(hole, cache.key, error) == SimulationCacheStatus::Stale,
+        "cache with missing middle frame was a hit");
+    SimulationCache duplicate = cache; duplicate.frames[1].frame = 0;
+    require(classifySimulationCache(duplicate, cache.key, error) == SimulationCacheStatus::Stale,
+        "cache with duplicate frames was a hit");
+
+    const auto directory = std::filesystem::temp_directory_path() / "IrisCacheTransactions";
+    std::filesystem::create_directories(directory);
+    const auto path = directory / "cache.json", brokenPath = directory / "broken.json";
+    const auto read = [](const std::filesystem::path& file) {
+        std::ifstream input(file, std::ios::binary);
+        return std::string(std::istreambuf_iterator<char>(input), {});
+    };
+    require(saveSimulationCache(path, cache, error), error.c_str());
+    const std::string json = read(path);
+    SimulationCache loaded = cache;
+    const auto rejectJson = [&](const std::string& text) {
+        { std::ofstream output(brokenPath); output << text; }
+        require(!loadSimulationCache(brokenPath, loaded, error), "corrupt cache JSON was accepted");
+        require(loaded.key == cache.key && loaded.frames.size() == cache.frames.size()
+            && loaded.frames.back().contentHash == cache.frames.back().contentHash,
+            "failed cache load replaced existing cache");
+    };
+    std::string broken = json;
+    auto position = broken.find("\"translation\"");
+    require(position != std::string::npos, "test cache omitted translation");
+    broken.replace(position, std::string("\"translation\"").size(), "\"missingTranslation\""); rejectJson(broken);
+    broken = json; position = broken.find('[', broken.find("\"translation\""));
+    broken.replace(position, broken.find(']', position) - position + 1, "[1e300, 0, 0]"); rejectJson(broken);
+    broken = json; position = broken.find('[', broken.find("\"assetTransform\"")) + 1;
+    broken.replace(position, broken.find(',', position) - position, "1e300"); rejectJson(broken);
+    broken = json; position = broken.find("\"frame\"", broken.find("\"frame\"") + 7);
+    position = broken.find(':', position) + 1;
+    broken.replace(position, broken.find(',', position) - position, "0"); rejectJson(broken);
+    broken = json; position = broken.find("\"id\"", broken.find("\"id\"") + 4);
+    position = broken.find(':', position) + 1;
+    broken.replace(position, broken.find(',', position) - position, std::to_string(cache.frames[0].entities.front().id)); rejectJson(broken);
+    broken = json; position = broken.find("\"frames\""); broken.replace(position, 8, "\"missingFrames\""); rejectJson(broken);
+    broken = json; position = broken.find("\"parameterHash\""); broken.replace(position, 15, "\"legacyParameterHash\"");
+    { std::ofstream output(brokenPath); output << broken; }
+    SimulationCache legacy;
+    require(loadSimulationCache(brokenPath, legacy, error) && legacy.key.parameterHash == 0
+        && classifySimulationCache(legacy, cache.key, error) == SimulationCacheStatus::Stale,
+        "legacy missing parameter fingerprint did not load as stale");
+    const auto partial = std::filesystem::path(path.string() + ".partial");
+    { std::ofstream output(partial); output << "preserve existing partial"; }
+    require(!saveSimulationCache(path, duplicate, error) && read(path) == json && read(partial) == "preserve existing partial",
+        "invalid save overwrote committed or partial cache");
+
+    require(runtime.reset(editScene, 0, 5, 24, error), error.c_str());
+    int advancePolls = 0;
+    runtime.setCancellationCheck([&advancePolls] { return ++advancePolls >= 3; });
+    require(!runtime.runToFrame(5, error) && runtime.report().lastFrame == 2
+        && runtime.report().contentHash == cache.frames[2].contentHash
+        && runtime.report().contentHash == runtime.runtimeScene().contentHash(),
+        "cancelled multi-frame advance reported a stale pose hash");
+    int polls = 0;
+    runtime.setCancellationCheck([&polls] { return ++polls >= 5; });
+    SimulationCache target = cache;
+    require(!runtime.bakeSimulation(editScene, 0, 5, 24, target, error) && runtime.report().lastFrame == 1
+        && target.key == cache.key && target.frames.size() == cache.frames.size()
+        && target.frames.back().contentHash == cache.frames.back().contentHash,
+        "cancelled bake replaced the prior complete cache");
+    ModuleRegistry failing;
+    require(failing.add(FailingModule(false).manifest(), [] { return std::make_unique<FailingModule>(false); }, error), error.c_str());
+    ModuleRuntime failed(failing);
+    require(failed.configure("test.failing", {}, 7, error), error.c_str());
+    require(!failed.bakeSimulation(editScene, 0, 5, 24, target, error)
+        && target.key == cache.key && target.frames.size() == cache.frames.size(), "failed bake replaced prior cache");
+    runtime.setCancellationCheck({});
+    Scene revised = editScene;
+    const auto firstId = revised.entities().front().id;
+    revised.find(firstId)->transform.translation.x += 9.0f;
+    revised.updateWorldTransforms();
+    require(runtime.reset(revised, 10, 15, 24, error), error.c_str());
+    requireClose(runtime.runtimeScene().scene().find(firstId)->transform.translation.x,
+        revised.find(firstId)->transform.translation.x, "reset reused a previous scene baseline/start frame");
+}
+
 } // namespace
 
 int main() {
@@ -612,6 +725,7 @@ int main() {
         testRuntimeScene(first, second, stage, editScene);
         testTurntableModule(first, second, stage, editScene);
         testSimulationCache(first, second, stage, editScene);
+        testCacheTransactions(editScene);
         testModuleCancellation(editScene);
         testModuleFailureIsolation(first, editScene);
         testCoastalSequence(editScene);

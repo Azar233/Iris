@@ -2,6 +2,7 @@
 #include "plugin/ShaderScene.h"
 #include "app/StatePaths.h"
 #include "app/WorkspaceFileActions.h"
+#include "app/RigidBodyEditing.h"
 #include "optics/CloudNoiseVolume.h"
 #include "optics/CloudLightingLut.h"
 
@@ -32,10 +33,12 @@
 
 #include <imgui.h>
 #include <imgui_internal.h>
+#include <GLFW/glfw3.h>
 #include "asset/StbImageCompat.h"
 #include "app/EditorDomain.h"
 #include "module/BuiltinModules.h"
 #include "app/EditorUi.h"
+#include <cstring>
 #include "pathtracer/SceneSnapshotCapture.h"
 
 #include "app/FileDialog.h"
@@ -62,6 +65,7 @@ const char* backendName(EditorRenderBackend backend) {
         case EditorRenderBackend::Raster: return "Raster";
         case EditorRenderBackend::CpuPathTraced: return "CPU Path Traced";
         case EditorRenderBackend::GpuPathTraced: return "GPU Path Traced";
+        case EditorRenderBackend::VulkanRaster: return "Vulkan Raster";
     }
     return "Unknown";
 }
@@ -152,21 +156,50 @@ void Application::drawWorkspaceToolbar() {
     if (ImGui::BeginMenuBar()) {
         ImGui::TextDisabled("Backend");
         ImGui::SetNextItemWidth(150.0f);
-        if (ImGui::BeginCombo("##WorkspaceBackend", backendName(editorSession_.backend()))) {
-            for (int index = 0; index < 3; ++index) {
+        static int vulkanInteractionPhase=0;
+        const int vulkanInteractionRound=vulkanInteractionPhase/4;
+        const auto clickBackendItem=[&](int phase,ImVec2 a,ImVec2 b) {
+            if((!std::getenv("IRIS_VULKAN_UI_TEST") && !std::getenv("IRIS_GPU_PT_UI_TEST")) || ImGui::GetFrameCount()<8 || vulkanInteractionRound>=3)return;
+            if(phase%4==2 && ImGui::IsWindowAppearing())return;
+            auto& io=ImGui::GetIO();
+            if(vulkanInteractionPhase==phase) {
+                std::cout<<"Vulkan Workspace input phase "<<phase<<" frame "<<ImGui::GetFrameCount()<<" at "<<(a.x+b.x)*0.5f<<","<<(a.y+b.y)*0.5f<<'\n';
+                io.AddFocusEvent(true);io.AddMousePosEvent((a.x+b.x)*0.5f,(a.y+b.y)*0.5f);io.AddMouseButtonEvent(0,true);++vulkanInteractionPhase;
+            }
+            else if(vulkanInteractionPhase==phase+1){io.AddMouseButtonEvent(0,false);++vulkanInteractionPhase;}
+        };
+        static ImVec2 comboMin,comboMax;
+        const bool backendCombo=ImGui::BeginCombo("##WorkspaceBackend", backendName(editorSession_.backend()));
+        // BeginCombo changes the current window when open. Retain the actual
+        // closed control rectangle for the next automated opening click.
+        if(!backendCombo) {comboMin=ImGui::GetItemRectMin();comboMax=ImGui::GetItemRectMax();}
+        if (backendCombo) {
+            for (int index = 0; index < 4; ++index) {
                 const auto backend = static_cast<EditorRenderBackend>(index);
-                const bool available = backend != EditorRenderBackend::GpuPathTraced;
+                bool available = true;
+#ifndef IRIS_HAS_VULKAN
+                if(backend==EditorRenderBackend::VulkanRaster || backend==EditorRenderBackend::GpuPathTraced)available=false;
+#endif
                 ImGui::BeginDisabled(!available);
                 if (ImGui::Selectable(backendName(backend), editorSession_.backend() == backend)) {
                     editorSession_.requestBackend(backend);
+                    if(std::getenv("IRIS_GPU_PT_UI_TEST"))std::cout<<"GPU PT actual Workspace backend selection: "<<backendName(backend)<<" PASS\n";
+                    if(std::getenv("IRIS_VULKAN_UI_TEST") && backend==EditorRenderBackend::VulkanRaster)
+                        std::cout<<"Vulkan actual Workspace backend selection PASS\n";
+                    if(std::getenv("IRIS_VULKAN_UI_TEST") && backend==EditorRenderBackend::Raster)
+                        std::cout<<"Vulkan Workspace return to Raster PASS\n";
                 }
+                const auto testedBackend=std::getenv("IRIS_GPU_PT_UI_TEST")?EditorRenderBackend::GpuPathTraced:EditorRenderBackend::VulkanRaster;
+                const auto interactionTarget=vulkanInteractionRound==1?EditorRenderBackend::Raster:testedBackend;
+                if(backend==interactionTarget && available)clickBackendItem(vulkanInteractionRound*4+2,ImGui::GetItemRectMin(),ImGui::GetItemRectMax());
                 ImGui::EndDisabled();
                 if (!available && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
-                    ImGui::SetTooltip("GPU Path Tracing is scheduled after the Vulkan raster baseline.");
+                    ImGui::SetTooltip("Vulkan backend unavailable; configure IRIS_ENABLE_VULKAN=ON.");
                 }
             }
             ImGui::EndCombo();
         }
+        clickBackendItem(vulkanInteractionRound*4,comboMin,comboMax);
 
         ImGui::Separator();
         const char* activityLabels[] = {"Edit", "Preview", "Bake", "Render"};
@@ -335,6 +368,8 @@ void Application::processEditorCommands() {
                     editorSession_.requestBackend(EditorRenderBackend::Raster);
                     break;
                 }
+                renderer_->invalidateTemporalHistory();
+                renderer_->clearBufferPreviews();
                 if (viewportRenderMode_ == requested) break;
                 viewportRenderMode_ = requested;
                 if (viewportRenderMode_ == 0) {
@@ -495,6 +530,17 @@ void Application::processEditorCommands() {
                 statusMessage_ = "Added editable light entity.";
                 break;
             }
+            case EditorCommandType::SetEntityRigidBody: {
+                std::string error;
+                if (!setEntityRigidBody(scene_, command.entity, command.rigidBody, activeModuleId_, error)) {
+                    statusMessage_ = "Rigid body edit rejected: " + error; break;
+                }
+                ++moduleInputRevision_;
+                editedEntities_.insert(command.entity);
+                cpuPreviewRestartRequested_ = true;
+                renderer_->invalidateTemporalHistory();
+                break;
+            }
             case EditorCommandType::SetLightEntitySettings: {
                 auto* entity = scene_.find(static_cast<SceneEntityId>(command.entity));
                 SceneLightComponent light;
@@ -528,6 +574,15 @@ void Application::processEditorCommands() {
                     statusMessage_ = "Inspector rejected an invalid entity transform.";
                     break;
                 }
+                if (entity->rigidBody) {
+                    try {
+                        validateRigidBody(*entity->rigidBody,
+                            glm::vec3(command.transform.translation.x, command.transform.translation.y, command.transform.translation.z),
+                            glm::vec3(command.transform.rotationDegrees.x, command.transform.rotationDegrees.y, command.transform.rotationDegrees.z),
+                            glm::vec3(command.transform.scale.x, command.transform.scale.y, command.transform.scale.z),
+                            entity->parent != invalidSceneEntityId, entity->light.has_value());
+                    } catch (const std::exception& failure) { statusMessage_ = failure.what(); break; }
+                }
                 entity->transform.translation = glm::vec3(
                     command.transform.translation.x,
                     command.transform.translation.y,
@@ -543,7 +598,7 @@ void Application::processEditorCommands() {
                     command.transform.scale.y,
                     command.transform.scale.z
                 );
-                if (scene_.lightEntityCount()) ++moduleInputRevision_;
+                if (scene_.lightEntityCount() || activeModuleId_ == rigidBodyModuleId) ++moduleInputRevision_;
                 editedEntities_.insert(entity->id);
                 entity->motionHistoryValid = false;
                 cpuPreviewRestartRequested_ = true;
@@ -598,7 +653,7 @@ void Application::processEditorCommands() {
                     std::clamp(command.color.y, 0.0f, 1.0f),
                     std::clamp(command.color.z, 0.0f, 1.0f)
                 );
-                if (scene_.lightEntityCount()) ++moduleInputRevision_;
+                if (scene_.lightEntityCount() || activeModuleId_ == rigidBodyModuleId) ++moduleInputRevision_;
                 editedEntities_.insert(entity->id);
                 cpuPreviewRestartRequested_ = true;
                 if (renderer_ != nullptr) renderer_->invalidateTemporalHistory();
@@ -607,7 +662,7 @@ void Application::processEditorCommands() {
             case EditorCommandType::SetEntityCastsShadow:
                 if (SceneEntity* entity = scene_.find(static_cast<SceneEntityId>(command.entity))) {
                     entity->castsShadow = command.flag;
-                    if (scene_.lightEntityCount()) ++moduleInputRevision_;
+                    if (scene_.lightEntityCount() || activeModuleId_ == rigidBodyModuleId) ++moduleInputRevision_;
                     editedEntities_.insert(entity->id);
                     cpuPreviewRestartRequested_ = true;
                     if (renderer_ != nullptr) renderer_->invalidateTemporalHistory();
@@ -1381,6 +1436,10 @@ void Application::processEditorCommands() {
                 break;
             }
             case EditorCommandType::SetActiveModule: {
+                if (command.text != rigidBodyModuleId && std::any_of(scene_.entities().begin(), scene_.entities().end(),
+                    [](const auto& entity) { return entity.rigidBody.has_value(); })) {
+                    statusMessage_ = "Remove rigid body components before selecting a different module."; break;
+                }
                 if (!command.text.empty() && scene_.hasShaderMaterials()) {
                     statusMessage_ = "ShaderMaterial does not support Module-generated scenes"; break;
                 }
@@ -1470,6 +1529,15 @@ void Application::processEditorCommands() {
                 break;
             }
             case EditorCommandType::DuplicateEntity:
+                if (const auto* source = scene_.find(command.entity); source && source->rigidBody) {
+                    std::size_t total = 0, dynamic = 0;
+                    for (const auto& entity : scene_.entities()) if (entity.rigidBody) {
+                        ++total; if (entity.rigidBody->type == RigidBodyType::Dynamic) ++dynamic;
+                    }
+                    if (total >= 128 || (source->rigidBody->type == RigidBodyType::Dynamic && dynamic >= 16)) {
+                        statusMessage_ = "Physics body limit reached."; break;
+                    }
+                }
                 if (const auto* source = scene_.find(command.entity); source && source->light
                     && scene_.lightEntityCount() + rendererSettings_.localLights.size() >= 64U) {
                     statusMessage_ = "Local light limit reached (64)."; break;
@@ -1483,7 +1551,7 @@ void Application::processEditorCommands() {
             case EditorCommandType::SetEntityVisibility:
                 if (SceneEntity* entity = scene_.find(static_cast<SceneEntityId>(command.entity))) {
                     entity->visible = command.flag;
-                    if (scene_.lightEntityCount()) ++moduleInputRevision_;
+                    if (scene_.lightEntityCount() || activeModuleId_ == rigidBodyModuleId) ++moduleInputRevision_;
                     editedEntities_.insert(entity->id);
                     cpuPreviewRestartRequested_ = true;
                     if (renderer_ != nullptr) renderer_->invalidateTemporalHistory();
@@ -1494,6 +1562,9 @@ void Application::processEditorCommands() {
                 const auto childId = static_cast<SceneEntityId>(command.entity);
                 const auto parentId = static_cast<SceneEntityId>(command.value);
                 const SceneEntity* child = scene_.find(childId);
+                if (child && child->rigidBody && parentId != invalidSceneEntityId) {
+                    statusMessage_ = "Rigid bodies require root entities."; break;
+                }
                 const SceneEntityId previousParent = child == nullptr
                     ? invalidSceneEntityId : child->parent;
                 if (child == nullptr || !scene_.setParent(childId, parentId)) {
@@ -1501,7 +1572,7 @@ void Application::processEditorCommands() {
                     break;
                 }
                 if (previousParent != parentId) {
-                    if (scene_.lightEntityCount()) ++moduleInputRevision_;
+                    if (scene_.lightEntityCount() || activeModuleId_ == rigidBodyModuleId) ++moduleInputRevision_;
                     // A parent change affects the whole subtree, including temporal data.
                     for (const SceneEntity& candidate : scene_.entities()) {
                         SceneEntityId ancestor = candidate.id;
@@ -1950,6 +2021,19 @@ void Application::drawModulePanel() {
     }
 
     const ModuleRunReport& report = moduleRuntime_.report();
+    if (activeModuleId_ == rigidBodyModuleId) {
+        EditorUi::propertyRow("Show collision shapes", [&](const char* id) {
+            const bool changed = ImGui::Checkbox(id, &showPhysicsColliders_);
+            if (const char* test = std::getenv("IRIS_PHYSICS_UI_TEST"))
+                if (std::strcmp(test, "module") == 0) interactPhysicsControl(changed);
+            return changed;
+        });
+        const auto& stats = report.simulation;
+        ImGui::TextWrapped("Bodies: %zu | substeps: %llu | last advance: %llu / %.3f ms", stats.bodyCount,
+            static_cast<unsigned long long>(stats.totalSubsteps),
+            static_cast<unsigned long long>(stats.lastAdvanceSubsteps), stats.lastAdvanceMilliseconds);
+        ImGui::TextWrapped("%s", EditorUi::chinese ? "碰撞线框仅显示在视口；平面网格表示无限平面。" : "Collision overlay is viewport-only; the plane grid represents an infinite plane.");
+    }
     if (moduleRuntime_.active()) {
         ImGui::TextDisabled(
             "frame %d / %d | input %llu | content %llu",
@@ -2564,12 +2648,24 @@ void Application::drawAssetsPanel() {
             ImGui::EndTabItem();
         }
 
-        const ImGuiTabItemFlags renderQueueTabFlags = focusRenderQueueTab_
+        const char* gpuQueueTest = std::getenv("IRIS_GPU_PT_QUEUE_TEST");
+        const ImGuiTabItemFlags renderQueueTabFlags = (focusRenderQueueTab_ || gpuQueueTest)
             ? ImGuiTabItemFlags_SetSelected
             : ImGuiTabItemFlags_None;
         if (ImGui::BeginTabItem("Render Queue", nullptr, renderQueueTabFlags)) {
-            ImGui::TextWrapped("Queue: CPU jobs support PNG / HDR / EXR, AOVs, Resume and module Cache. ShaderScene sequences support Beauty PNG, fixed FPS and cancellation. Native Raster uses CLI raster-sequence. Raster Resume / Cache are unavailable.");
+            ImGui::TextWrapped("Queue: CPU and GPU PT support PNG / HDR / EXR, AOVs and cancellation. GPU PT runs in IrisBatch; Resume is unavailable. CPU jobs also support Resume and module Cache. ShaderScene sequences support Beauty PNG and fixed FPS. Native Raster uses CLI raster-sequence.");
             focusRenderQueueTab_ = false;
+            static int gpuQueueTestPhase = 0;
+            static const auto gpuQueueTestStarted = std::chrono::steady_clock::now();
+            if (gpuQueueTest && gpuQueueTestPhase == 0) {
+                std::snprintf(renderJobPathBuffer_.data(), renderJobPathBuffer_.size(), "%s", gpuQueueTest);
+                gpuQueueTestPhase = 1;
+            }
+            if (gpuQueueTest && gpuQueueTestPhase < 5) {
+                pendingEditorScreenshotWarmupFrames_ = 2;
+                if (std::chrono::steady_clock::now() - gpuQueueTestStarted > std::chrono::seconds(60))
+                    throw std::runtime_error("GPU Queue UI timed out before child completion");
+            }
             ImGui::SetNextItemWidth(std::max(240.0f, ImGui::GetContentRegionAvail().x - 230.0f));
             ImGui::InputText("##RenderJobPath", renderJobPathBuffer_.data(), renderJobPathBuffer_.size());
             ImGui::SameLine();
@@ -2587,14 +2683,45 @@ void Application::drawAssetsPanel() {
             ImGui::SameLine();
             ImGui::BeginDisabled(renderJobPathBuffer_[0] == '\0');
             if (ImGui::Button("Enqueue Sequence")) {
+                if (gpuQueueTest) std::cout << "GPU Queue UI button activated\n";
                 EditorCommand command{EditorCommandType::SubmitRenderJob};
                 command.text = renderJobPathBuffer_.data();
                 editorSession_.request(std::move(command));
+            }
+            if (gpuQueueTest && ImGui::GetFrameCount() >= 10) {
+                auto& io = ImGui::GetIO();
+                if (gpuQueueTestPhase == 1 || gpuQueueTestPhase == 2) {
+                    const auto a = ImGui::GetItemRectMin(), b = ImGui::GetItemRectMax();
+                    io.AddFocusEvent(true);
+                    io.AddMousePosEvent((a.x + b.x) * .5f, (a.y + b.y) * .5f);
+                    if (gpuQueueTestPhase == 2 && ImGui::IsItemHovered()) {
+                        io.AddMouseButtonEvent(0, true);
+                        gpuQueueTestPhase = 3;
+                    } else {
+                        gpuQueueTestPhase = 2;
+                    }
+                } else if (gpuQueueTestPhase == 3) {
+                    io.AddMouseButtonEvent(0, false);
+                    gpuQueueTestPhase = 4;
+                }
             }
             ImGui::EndDisabled();
 
             ImGui::Separator();
             const auto queueEntries = renderQueue_->entries();
+            if (gpuQueueTest && !queueEntries.empty()) {
+                const auto& entry = queueEntries.back();
+                if (entry.status == RenderQueueStatus::Failed)
+                    throw std::runtime_error("GPU Queue UI failed: " + entry.message);
+                if (entry.status == RenderQueueStatus::Complete && gpuQueueTestPhase == 4) {
+                    std::cout << "GPU Queue actual Enqueue Sequence button / child completion PASS: outputs="
+                              << entry.outputCount << "\n";
+                    pendingEditorScreenshotWarmupFrames_ = 2;
+                    gpuQueueTestPhase = 5;
+                }
+                if (gpuQueueTestPhase == 5 && pendingEditorScreenshotPath_.empty())
+                    glfwSetWindowShouldClose(window_, GLFW_TRUE);
+            }
             if (!queueEntries.empty() && ImGui::BeginTable(
                     "RenderQueueTable", 5,
                     ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg
@@ -2946,6 +3073,7 @@ SceneDocument Application::captureSceneDocument() const {
         }
         entity.transform = source.transform;
         entity.light = source.light;
+        entity.rigidBody = source.rigidBody;
         entity.tint = source.tint;
         entity.shaderMaterial=source.shaderMaterial;
         entity.visible = source.visible && source.enabledByPreset;
@@ -3158,6 +3286,7 @@ bool Application::openScene(const std::filesystem::path& path) {
             SceneEntity* entity = scene_.find(id);
             entity->transform = saved.transform;
             entity->light = saved.light;
+            entity->rigidBody = saved.rigidBody;
             entity->tint = saved.tint;
             entity->shaderMaterial=saved.shaderMaterial;
             entity->visible = saved.visible;

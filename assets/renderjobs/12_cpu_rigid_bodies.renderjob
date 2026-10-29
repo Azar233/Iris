@@ -1,0 +1,15 @@
+{
+  "format": "MyRendererRenderJob",
+  "schemaVersion": 2,
+  "scene": "../scenes/fixtures/33_cpu_rigid_bodies.myscene",
+  "renderer": "cpu-path-traced",
+  "camera": "scene",
+  "resolution": [320, 180],
+  "frames": {"start": 0, "end": 120, "fps": 30},
+  "sampling": {"spp": 4, "maxDepth": 4, "seed": 20261025},
+  "aovs": ["beauty"],
+  "module": {"id": "iris.physics.rigid-body", "seed": 20261025, "parameters": {}},
+  "simulationCache": "../../.local/physics/rigid-bodies/cache.json",
+  "output": {"path": "../../.local/physics/rigid-bodies/frame_{frame:04}", "formats": ["png"], "resume": false},
+  "failurePolicy": "stop"
+}

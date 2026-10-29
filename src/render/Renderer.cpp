@@ -38,6 +38,7 @@
 #include "render/SsaoRenderer.h"
 #include "render/SpectralBeamRenderer.h"
 #include "render/Texture2D.h"
+#include "pathtracer/SceneSnapshotCapture.h"
 
 namespace {
 
@@ -198,7 +199,12 @@ void Renderer::render(
     int width,
     int height
 ) {
+    rasterVisibility_ = {}; shadowVisibility_ = {}; shadowDepthReused_ = false;
     RendererSettings settings = requestedSettings;
+    if(settings.vulkanRaster || settings.vulkanPathTraced) {shadowDepthCacheValid_=false;shadowCacheCasters_.clear();renderVulkan(renderItems,camera,settings,std::max(width,1),std::max(height,1));return;}
+#ifdef IRIS_HAS_VULKAN
+    vulkanRaster_.reset();vulkanPathTracer_.reset();
+#endif
     settings.shaderSceneResource = iris::shaderSceneResourceFor(requestedSettings);
     if (!settings.shaderSceneResource.empty()) settings.enscapeCubeShaderEnabled = false;
     std::string pluginError;
@@ -917,7 +923,24 @@ shader_->setMat4("uView", view);
             if (cloudShadow_->updatedThisFrame()) ++drawCallCount_;
         });
     }
-    if (objectShadowsActive) {
+    std::vector<std::pair<std::shared_ptr<const ModelData>, glm::mat4>> shadowCasters;
+    bool staticShadowCasters = true;
+    if (objectShadowsActive) for (const auto& item : renderItems) {
+        if (!item.visible || !item.castsShadow || !item.model) continue;
+        shadowCasters.emplace_back(item.model->sourceData(), item.modelMatrix);
+        staticShadowCasters &= !item.model->hasSkinning() && item.shaderMaterial.resource.empty();
+    }
+    shadowDepthReused_ = objectShadowsActive && staticShadowCasters && shadowDepthCacheValid_
+        && !std::getenv("IRIS_SHADOW_CACHE_DISABLE")
+        && shadowCacheCulling_ == settings.frustumCullingEnabled
+        && shadowCacheShaderRevision_ == shadowShader_->revision()
+        && shadowCacheCascadeCount_ == cascadeCount && shadowCacheCamera_ == currentViewProjection
+        && shadowCacheLight_ == lightDirection && shadowCacheMatrices_ == cascadeMatrices
+        && shadowCacheCasters_ == shadowCasters;
+    // Commit only after the complete pass sequence succeeds. Dynamic/skinned
+    // casters redraw rather than relying on bind-pose keys or approximate hashes.
+    if (!shadowDepthReused_) shadowDepthCacheValid_ = false;
+    if (objectShadowsActive && !shadowDepthReused_) {
 sequence.add("Shadow maps", [&] {
             glViewport(0, 0, shadowMap_->resolution(), shadowMap_->resolution());
             glEnable(GL_DEPTH_TEST);
@@ -940,8 +963,9 @@ sequence.add("Shadow maps", [&] {
                         continue;
                     }
                     shadowShader_->setMat4("uModel", item.modelMatrix);
-                    item.model->drawDepth(*shadowShader_);
-                    drawCallCount_ += item.model->opaqueSubmeshCount();
+                    const auto modelToClip = cascades[cascade].lightViewProjection * item.modelMatrix;
+                    drawCallCount_ += item.model->drawDepth(*shadowShader_,
+                        settings.frustumCullingEnabled && item.shaderMaterial.resource.empty() ? &modelToClip : nullptr, &shadowVisibility_[cascade]);
                 }
             }
             glCullFace(GL_BACK);
@@ -1111,16 +1135,17 @@ sequence.add("Shadow maps", [&] {
                 if (settings.instanceOptimizationEnabled && item.instanceCandidate && item.shaderMaterial.resource.empty()) continue;
                 if(item.shaderMaterial.resource.empty()) {
                     shader_->setMat4("uModel", item.modelMatrix);
-                    item.model->drawOpaque(*shader_, item.tint, settings.cullBackFaces);
+                    const auto modelToClip = currentViewProjection * item.modelMatrix;
+                    drawCallCount_ += item.model->drawOpaque(*shader_, item.tint, settings.cullBackFaces,
+                        settings.frustumCullingEnabled && item.shaderMaterial.resource.empty() ? &modelToClip : nullptr, &rasterVisibility_);
                 }else {
                     auto& materialShader=shaderMaterials_->bind(item,camera,settings,width,height);
                     const bool labels=GLAD_GL_KHR_debug && glPushDebugGroup && glPopDebugGroup;
                     if(labels)glPushDebugGroup(GL_DEBUG_SOURCE_APPLICATION,0,-1,"ShaderMaterial opaque model");
-                    item.model->drawOpaque(materialShader,item.tint,settings.cullBackFaces);
+                    drawCallCount_ += item.model->drawOpaque(materialShader,item.tint,settings.cullBackFaces);
                     if(labels)glPopDebugGroup();
                     bindSceneShader();
                 }
-                drawCallCount_ += item.model->opaqueSubmeshCount();
             }
             for (const InstanceBatch& batch : instanceBatches) {
                 batch.model->drawOpaqueInstanced(
@@ -1181,8 +1206,9 @@ sequence.add("Shadow maps", [&] {
                     item.motionHistoryValid
                         && (transformMoved || item.model->hasSkinningMotion())
                 );
-                item.model->drawOpaque(*gBufferShader_, item.tint, settings.cullBackFaces);
-                drawCallCount_ += item.model->opaqueSubmeshCount();
+                const auto modelToClip = currentViewProjection * item.modelMatrix;
+                drawCallCount_ += item.model->drawOpaque(*gBufferShader_, item.tint, settings.cullBackFaces,
+                    settings.frustumCullingEnabled && item.shaderMaterial.resource.empty() ? &modelToClip : nullptr, &rasterVisibility_);
             }
             for (const InstanceBatch& batch : instanceBatches) {
                 gBufferShader_->setBool("uMotionHistoryValid", false);
@@ -1773,6 +1799,13 @@ deferredLightingShader_->setVec3("uCameraPosition", camera.position());
     previousWaterTime_ = settings.water.timeSeconds;
     previousWaterMediumValid_ = settings.water.enabled && settings.water.surfaceOptics;
     previousCameraUnderwater_ = surfaceUnderwater;
+    if (objectShadowsActive && staticShadowCasters) {
+        shadowCacheCasters_ = std::move(shadowCasters);
+        shadowCacheCamera_ = currentViewProjection; shadowCacheLight_ = lightDirection;
+        shadowCacheMatrices_ = cascadeMatrices; shadowCacheCascadeCount_ = cascadeCount;
+        shadowCacheShaderRevision_ = shadowShader_->revision();
+        shadowCacheCulling_ = settings.frustumCullingEnabled; shadowDepthCacheValid_ = true;
+    } else {shadowDepthCacheValid_ = false; shadowCacheCasters_.clear();}
 }
 
 bool Renderer::hasRenderPluginInstance(const std::string& id) const {
@@ -1782,11 +1815,175 @@ bool Renderer::hasRenderPluginInstance(const std::string& id) const {
         : id == iris::waterPluginId && waterRenderer_ != nullptr;
 }
 
+void Renderer::renderVulkan(const std::vector<RenderItem>& items,const Camera& camera,const RendererSettings& settings,int width,int height) {
+#ifdef IRIS_HAS_VULKAN
+    cpuPassTimings_.clear();gpuPassTimings_.clear();
+    auto intervalStart=std::chrono::steady_clock::now();
+    const auto recordCpu=[&](const char* name){
+        const auto now=std::chrono::steady_clock::now();
+        cpuPassTimings_.emplace_back(name,std::chrono::duration<double,std::milli>(now-intervalStart).count());
+        intervalStart=now;
+    };
+    if(!iris::shaderSceneResourceFor(settings).empty() || settings.enscapeCubeShaderEnabled || settings.water.enabled || settings.atmosphere.enabled)
+        throw std::runtime_error("Vulkan baseline requires a mesh scene without ShaderScene, Enscape, water or atmosphere");
+    if(settings.vulkanPathTraced){const float scale=std::min(1.0f,static_cast<float>(pathtracer::gpuMaximumDimension)/std::max(width,height));width=std::max(1,static_cast<int>(width*scale));height=std::max(1,static_cast<int>(height*scale));}
+    pathtracer::SnapshotCamera snapshotCamera;
+    snapshotCamera.verticalFieldOfViewRadians=glm::radians(camera.fieldOfView());
+    snapshotCamera.position=camera.position();snapshotCamera.view=camera.viewMatrix();
+    snapshotCamera.aspectRatio=static_cast<float>(width)/height;snapshotCamera.projection=camera.projectionMatrix(snapshotCamera.aspectRatio);
+    pathtracer::SceneSnapshotBuilder builder(snapshotCamera,pathtracer::captureSceneLighting(settings,camera.position().y));
+    for(const auto& item:items) {
+        if(!item.shaderMaterial.resource.empty())throw std::runtime_error("Vulkan baseline does not support GLSL ShaderMaterial");
+        if(item.model && item.visible)builder.addModel(item.model->sourceData(),item.entityId,"",item.modelMatrix,item.tint,item.castsShadow);
+    }
+    auto snapshot=builder.finish();std::vector<std::uint8_t> rgba;bool measured=true,initialized=false,displayUpdated=true,historyRestarted=false;
+    recordCpu("Vulkan.Snapshot");
+    if(settings.vulkanPathTraced) {
+        vulkanRaster_.reset();
+        // Hash only consumed immutable scene inputs, with explicit fields to avoid padding.
+        std::string bytes;
+        const auto append=[&](const auto& value){bytes.append(reinterpret_cast<const char*>(&value),sizeof(value));};
+        append(width);append(height);append(settings.gpuPathTracingSpp);append(settings.gpuPathTracingDepth);append(settings.gpuPathTracingSeed);
+        append(snapshotCamera.view);append(snapshotCamera.verticalFieldOfViewRadians);
+        const auto& light=snapshot.lighting();append(light.directional.direction);append(light.directional.radiance);
+        append(light.environment.backgroundColor);append(light.environment.intensity);append(light.environment.visibleToCamera);
+        bytes+=light.environment.sourcePath.generic_u8string();
+        for(const auto& l:light.localLights){append(l.type);append(l.position);append(l.direction);append(l.radiance);append(l.radius);append(l.outerConeCosine);}
+        for(const auto& asset:snapshot.assets()){const auto pointer=reinterpret_cast<std::uintptr_t>(asset.model.get());append(pointer);}
+        for(const auto& instance:snapshot.instances()){append(instance.entityId);append(instance.assetIndex);append(instance.meshIndex);append(instance.objectToWorld);append(instance.tint);append(instance.castsShadow);}
+        const auto key=capture::fingerprintBytes(bytes);
+        const auto oldCompletion=vulkanPathTracer_?vulkanPathTracer_->statistics().completedSampleDispatches:0;
+        if(!vulkanPathTracer_ || key!=vulkanPathTracingKey_) {
+            pathtracer::RenderSettings sampling;sampling.width=width;sampling.height=height;sampling.samplesPerPixel=settings.gpuPathTracingSpp;sampling.maxDepth=settings.gpuPathTracingDepth;sampling.seed=settings.gpuPathTracingSeed;
+            if(!vulkanPathTracer_ || !vulkanPathTracer_->restart(snapshot,sampling)) {
+                auto candidate=std::make_unique<iris::vulkan::VulkanPathTracer>(shaderDirectory_/"vulkan",snapshot,sampling,std::getenv("IRIS_VULKAN_REQUIRE_VALIDATION")!=nullptr);
+                vulkanPathTracer_=std::move(candidate);initialized=true;
+            }
+            vulkanPathTracingKey_=key;historyRestarted=true;
+            ++vulkanBackendGeneration_;
+        }
+        recordCpu("Vulkan.PrepareBackend");
+        vulkanPathTracer_->setTemporalFrame(gpuTemporalFrame_,gpuTemporalFps_);
+        vulkanPathTracer_->setTemporalDenoise(settings.gpuTemporalDenoise);
+        vulkanPathTracer_->setSpatialDenoise(settings.gpuSpatialDenoise);
+        const auto previousSamples=vulkanPathTracer_->completedSamples();
+        // Frozen benchmarks deliberately step one complete SPP per measured frame.
+        // Interactive frames only poll the fence and keep the latest completed image.
+        displayUpdated=vulkanPathTracer_->renderPreview(settings.exposure,settings.toneMapping,std::getenv("MYRENDERER_BENCHMARK_OUTPUT")!=nullptr && !std::getenv("IRIS_GPU_PT_ASYNC_TEST"));
+        measured=vulkanPathTracer_->completedSamples()>previousSamples || vulkanPathTracer_->statistics().completedSampleDispatches>(initialized?0:oldCompletion);
+        vulkanStatistics_=vulkanPathTracer_->statistics();
+        // Only consume guides after renderPreview publishes a completed preview.
+        // Draining its in-flight sample here would bypass displayUpdated and leave
+        // the viewport showing an older SPP even after accumulation finishes.
+        if(std::getenv("IRIS_GPU_PT_GUIDES") && displayUpdated && vulkanPathTracer_->completedSamples())vulkanPathTracer_->temporalGuides();
+        recordCpu(measured?"Vulkan.ActivePass":"Vulkan.CompletedPass");
+        if(displayUpdated)rgba=vulkanPathTracer_->previewRgba();
+        else if(historyRestarted){rgba=vulkanPathTracer_->previewRgba();displayUpdated=true;}
+        // Display conversion is part of the GPU ray-generation/resolve dispatch.
+    } else {
+        vulkanPathTracer_.reset();
+        if(!vulkanRaster_){vulkanRaster_=std::make_unique<iris::vulkan::VulkanRaster>(shaderDirectory_/"vulkan",std::getenv("IRIS_VULKAN_REQUIRE_VALIDATION")!=nullptr);initialized=true;++vulkanBackendGeneration_;}
+        recordCpu("Vulkan.PrepareBackend");
+        rgba=vulkanRaster_->render(snapshot,width,height,settings.exposure,settings.toneMapping,settings.cullBackFaces,settings.vulkanRayQueryShadows,settings.vulkanShadowDebug,settings.frustumCullingEnabled);
+        vulkanStatistics_=vulkanRaster_->statistics();
+        rasterVisibility_=vulkanStatistics_.visibility;
+        recordCpu("Vulkan.ActivePass");
+    }
+    vulkanStatistics_.backendGeneration=vulkanBackendGeneration_;
+    vulkanStatistics_.backendInitializedThisFrame=initialized;
+    if(measured) {
+        hasGpuFrameTime_=true;gpuFrameTimeMilliseconds_=latestGpuFrameMeasurementMilliseconds_=vulkanStatistics_.gpuMilliseconds;
+        ++gpuFrameMeasurementSerial_;
+        const auto gpuPass=[&](const char* name,double value){gpuPassTimings_.push_back({name,value,value,gpuFrameMeasurementSerial_});};
+        if(settings.vulkanPathTraced)gpuPass("Vulkan.TraceRaysAndBarrier",vulkanStatistics_.gpuMilliseconds);
+        else {
+            gpuPass("Vulkan.Upload",vulkanStatistics_.uploadGpuMilliseconds);
+            gpuPass("Vulkan.Draw",vulkanStatistics_.drawGpuMilliseconds);
+            gpuPass("Vulkan.ReadbackCopy",vulkanStatistics_.readbackGpuMilliseconds);
+            if(settings.vulkanRayQueryShadows)gpuPass("Vulkan.Acceleration",vulkanStatistics_.accelerationGpuMilliseconds);
+        }
+    }
+    // Vulkan's upper-left readback becomes the existing OpenGL presentation
+    // texture's lower-left storage. The host only displays the Vulkan result.
+    const auto stride=static_cast<std::size_t>(width)*4;
+    if(!settings.vulkanPathTraced)for(int y=0;y<height/2;++y)for(std::size_t x=0;x<stride;++x)std::swap(rgba[static_cast<std::size_t>(y)*stride+x],rgba[static_cast<std::size_t>(height-1-y)*stride+x]);
+    vulkanStatistics_.displayUploads=displayUpdated?1U:0U;
+    if(displayUpdated){
+    renderTarget_->resize(width,height,1);
+    GLint previousTexture=0;glGetIntegerv(GL_TEXTURE_BINDING_2D,&previousTexture);
+    glBindTexture(GL_TEXTURE_2D,renderTarget_->colorTexture());glTexSubImage2D(GL_TEXTURE_2D,0,0,0,width,height,GL_RGBA,GL_UNSIGNED_BYTE,rgba.data());
+    glBindTexture(GL_TEXTURE_2D,static_cast<GLuint>(previousTexture));
+    recordCpu("Vulkan.DisplayUpload");
+    }
+    drawCallCount_=vulkanStatistics_.draws;
+    if(measured) {
+        const auto& s=vulkanStatistics_;
+        // Nested intervals of ActivePass, not additional independent frame costs.
+        cpuPassTimings_.emplace_back("Vulkan.Pass.Geometry",s.geometryPreparationMilliseconds);
+        cpuPassTimings_.emplace_back("Vulkan.Pass.Resources",s.resourcePreparationMilliseconds);
+        cpuPassTimings_.emplace_back("Vulkan.Detail.AssetFingerprint",s.assetFingerprintMilliseconds);
+        cpuPassTimings_.emplace_back("Vulkan.Detail.MeshFingerprint",s.meshFingerprintMilliseconds);
+        cpuPassTimings_.emplace_back("Vulkan.Detail.TextureFingerprint",s.textureFingerprintMilliseconds);
+        cpuPassTimings_.emplace_back("Vulkan.Detail.TextureInput",s.textureInputMilliseconds);
+        cpuPassTimings_.emplace_back("Vulkan.Detail.Environment",s.environmentPreparationMilliseconds);
+        cpuPassTimings_.emplace_back("Vulkan.Detail.ShaderInput",s.shaderInputMilliseconds);
+        cpuPassTimings_.emplace_back("Vulkan.Pass.PipelineSubset",s.pipelineCreationMilliseconds);
+        cpuPassTimings_.emplace_back("Vulkan.Pass.SubmitWait",s.submitWaitMilliseconds);
+        cpuPassTimings_.emplace_back("Vulkan.Pass.Readback",s.readbackMilliseconds);
+        cpuPassTimings_.emplace_back("Vulkan.Pass.Release",s.resourceReleaseMilliseconds);
+    }
+#else
+    (void)items;(void)camera;(void)settings;(void)width;(void)height;
+    throw std::runtime_error("Vulkan backend unavailable; configure IRIS_ENABLE_VULKAN=ON");
+#endif
+}
 unsigned int Renderer::colorTexture() const {
     return renderTarget_->colorTexture();
 }
 
+const pathtracer::RenderImage* Renderer::gpuPathTracedImage() const {
+#ifdef IRIS_HAS_VULKAN
+    return vulkanPathTracer_?&vulkanPathTracer_->image():nullptr;
+#else
+    return nullptr;
+#endif
+}
+const pathtracer::RenderImage* Renderer::gpuAccumulatedImage() const {
+#ifdef IRIS_HAS_VULKAN
+    return vulkanPathTracer_?&vulkanPathTracer_->accumulatedImage():nullptr;
+#else
+    return nullptr;
+#endif
+}
+const pathtracer::RenderImage* Renderer::gpuSpatialImage() const {
+#ifdef IRIS_HAS_VULKAN
+    return vulkanPathTracer_?&vulkanPathTracer_->spatialImage():nullptr;
+#else
+    return nullptr;
+#endif
+}
+std::optional<unsigned> Renderer::gpuPathTracedSamples() const {
+#ifdef IRIS_HAS_VULKAN
+    if(vulkanPathTracer_)return vulkanPathTracer_->completedSamples();
+#endif
+    return {};
+}
+void Renderer::setTemporalFrame(int frame,int fps) {
+    if(fps<=0)throw std::runtime_error("Temporal FPS must be positive");
+    gpuTemporalFrame_=frame;gpuTemporalFps_=fps;
+}
+const iris::vulkan::TemporalGuideFrame* Renderer::gpuTemporalGuides() const {
+#ifdef IRIS_HAS_VULKAN
+    return vulkanPathTracer_?&vulkanPathTracer_->temporalGuides():nullptr;
+#else
+    return nullptr;
+#endif
+}
 void Renderer::invalidateTemporalHistory() {
+#ifdef IRIS_HAS_VULKAN
+    vulkanPathTracingKey_.clear();
+    if(vulkanPathTracer_)vulkanPathTracer_->invalidateTemporalHistory();
+#endif
     ++historyInvalidationRevision_;
     if (shaderSceneRenderer_) shaderSceneRenderer_->invalidateHistory();
     if (postProcessor_) postProcessor_->invalidateHistory();
@@ -1994,6 +2191,9 @@ void Renderer::clearBufferPreviews() {
 }
 
 bool Renderer::updateBufferPreviews(int width, int height) {
+#ifdef IRIS_HAS_VULKAN
+    if(vulkanRaster_ || vulkanPathTracer_) {clearBufferPreviews();return false;}
+#endif
     if (enscapeCubeActive_ || activeRenderPath_ != RenderPath::Deferred || gBuffer_->framebuffer() == 0U) {
         clearBufferPreviews();
         return false;

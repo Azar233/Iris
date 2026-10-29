@@ -206,6 +206,8 @@ std::vector<glm::vec3> displayPixels(const RenderImage& image, RenderOutput outp
     std::vector<glm::vec3> pixels;
     bool reinhard = false;
     switch (output) {
+    case RenderOutput::AccumulatedBeauty:
+    case RenderOutput::DenoisedBeauty: throw std::invalid_argument("GPU denoised output must be resolved before staging");
     case RenderOutput::Beauty:
         pixels = image.linearPixels();
         reinhard = true;
@@ -338,6 +340,8 @@ void writeRenderOutput(const RenderImage& image, RenderOutput output,
 
     std::vector<glm::vec3> hdrPixels;
     switch (output) {
+    case RenderOutput::AccumulatedBeauty:
+    case RenderOutput::DenoisedBeauty: throw std::invalid_argument("GPU denoised output must be resolved before export");
     case RenderOutput::Beauty:
         hdrPixels = image.linearPixels();
         break;

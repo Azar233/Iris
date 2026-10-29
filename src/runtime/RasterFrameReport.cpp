@@ -1,5 +1,6 @@
 #include "runtime/RasterFrameReport.h"
 #include "runtime/ShaderSceneSequence.h"
+#include "runtime/ModuleRunReportJson.h"
 #include "plugin/ShaderScene.h"
 #include "plugin/RenderPlugin.h"
 #include "optics/CloudNoiseVolume.h"
@@ -32,7 +33,8 @@ std::string fileFingerprint(const std::filesystem::path& path) {
 }
 bool writeRasterFrameReport(const std::filesystem::path& path,const RenderJob& job,
     int frame,const RendererSettings& settings,const std::string& gpu,std::string& error,const capture::InputManifest* manifest,
-    const iris::ShaderScenePackage* package, const SceneDocument* scene) {
+    const iris::ShaderScenePackage* package, const SceneDocument* scene, const ModuleRunReport* moduleReport,
+    const iris::vulkan::RasterStatistics* vulkan) {
     try {
         if(manifest) manifest->validate();
         json::StringBuffer buffer;json::PrettyWriter<json::StringBuffer> w(buffer);
@@ -40,6 +42,30 @@ bool writeRasterFrameReport(const std::filesystem::path& path,const RenderJob& j
         w.Key("format");w.String("MyRendererRasterFrameReport");
         w.Key("schemaVersion");w.Int(1);
         w.Key("jobSchemaVersion");w.Int(job.schemaVersion);
+        w.Key("backend");w.String(job.rasterBackend.c_str());
+        if(job.rasterBackend=="vulkan") {
+            if(!vulkan)throw std::runtime_error("Vulkan frame report requires actual GPU statistics");
+            w.Key("vulkan");w.StartObject();
+            w.Key("device");w.String(vulkan->device.c_str());
+            w.Key("cpuMilliseconds");w.Double(vulkan->cpuMilliseconds);
+            w.Key("gpuMilliseconds");w.Double(vulkan->gpuMilliseconds);
+            w.Key("allocatedBytes");w.Uint64(vulkan->allocatedBytes);
+            w.Key("deviceLocalBytes");w.Uint64(vulkan->deviceLocalBytes);
+            w.Key("swapchainPayloadEstimateBytes");w.Uint64(vulkan->swapchainPayloadEstimateBytes);
+            w.Key("triangles");w.Uint(vulkan->triangles);w.Key("draws");w.Uint(vulkan->draws);
+            w.Key("validationEnabled");w.Bool(vulkan->validationEnabled);
+            w.Key("synchronizationValidation");w.Bool(vulkan->synchronizationValidation);
+            w.Key("validationWarnings");w.Uint(vulkan->validationWarnings);w.Key("validationErrors");w.Uint(vulkan->validationErrors);
+            w.Key("presentation");w.String("synchronous-readback-to-host-texture");
+            w.Key("shadows");w.Bool(vulkan->rayQueryShadows);w.Key("temporalAccumulation");w.Bool(false);
+            w.Key("rayQueryAvailable");w.Bool(vulkan->rayQueryAvailable);w.Key("shadowDebug");w.Bool(vulkan->shadowDebug);
+            w.Key("shadowMethod");w.String(vulkan->rayQueryShadows?"ray-query-directional-hard":"none");
+            w.Key("blasCount");w.Uint(vulkan->blasCount);w.Key("instanceCount");w.Uint(vulkan->instanceCount);
+            w.Key("blasBuilds");w.Uint(vulkan->blasBuilds);w.Key("tlasBuilds");w.Uint(vulkan->tlasBuilds);w.Key("tlasUpdates");w.Uint(vulkan->tlasUpdates);
+            w.Key("accelerationBytes");w.Uint64(vulkan->accelerationBytes);
+            w.Key("accelerationCpuMilliseconds");w.Double(vulkan->accelerationCpuMilliseconds);
+            w.Key("accelerationGpuMilliseconds");w.Double(vulkan->accelerationGpuMilliseconds);w.EndObject();
+        }
         w.Key("frame");w.Int(frame);
         w.Key("timeSeconds");w.Double(static_cast<double>(job.shaderSceneSequence ? frame : frame-job.startFrame)/job.framesPerSecond);
         w.Key("fps");w.Int(job.framesPerSecond);
@@ -133,6 +159,7 @@ bool writeRasterFrameReport(const std::filesystem::path& path,const RenderJob& j
         w.EndArray();w.EndObject();
         w.Key("module");w.String(job.module.id.c_str());
         w.Key("moduleSeed");w.Uint(job.module.seed);
+        if(moduleReport) { w.Key("moduleRun"); writeModuleRunReportJson(w, *moduleReport); }
         w.Key("samplingSeed");w.Uint(job.renderSettings.seed);
         w.Key("capture");w.StartObject();
         w.Key("determinism");w.Bool(job.rasterDeterminism);
@@ -140,7 +167,7 @@ bool writeRasterFrameReport(const std::filesystem::path& path,const RenderJob& j
         w.Key("renderedFramesAtFixedTime");w.Int(job.rasterWarmupFrames+1);
         w.Key("temporalAccumulation");w.Bool(job.rasterTemporalAccumulation);
         w.Key("historyResetPerOutput");w.Bool(!job.shaderSceneSequence);
-        w.Key("effectiveTaa");w.Bool(settings.enscapeCubeShaderEnabled || (!job.rasterDeterminism && settings.temporalAaEnabled));
+        w.Key("effectiveTaa");w.Bool(!settings.vulkanRaster && (settings.enscapeCubeShaderEnabled || (!job.rasterDeterminism && settings.temporalAaEnabled)));
         w.Key("effectiveCloudHistory");w.Bool(!settings.enscapeCubeShaderEnabled && !job.rasterDeterminism && settings.atmosphere.enabled
             && settings.atmosphere.cloudsEnabled && settings.atmosphere.cloudTemporalEnabled);
         w.Key("cloudJitterSequence");w.String(job.rasterTemporalAccumulation ? "frame-index-within-output" : "fixed-spatial");

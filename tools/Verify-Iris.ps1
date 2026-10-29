@@ -1,6 +1,6 @@
 param(
     [ValidateSet('msvc','gcc','plugins-off')][string]$Compiler='msvc',
-    [ValidateSet('core','state','scene','assets','jobs','plugins','shader-scene','path-tracing','optics')][string]$Area='core',
+    [ValidateSet('core','state','scene','assets','jobs','plugins','shader-scene','path-tracing','optics','physics')][string]$Area='core',
     [ValidateSet('Focused','Integration','Release')][string]$Level='Focused',
     [string[]]$GpuTargets=@(),
     [int]$Jobs=8,
@@ -17,9 +17,12 @@ New-Item -ItemType Directory -Force $out | Out-Null
 Push-Location $root
 try {
     $indexPath=Join-Path $build 'iris-test-targets.json'
-    $staleIndex=-not(Test-Path $indexPath)
+    $generationStamp=Join-Path $build 'CMakeFiles/generate.stamp'
+    $staleIndex= -not(Test-Path $indexPath) -or -not(Test-Path $generationStamp)
     if(-not $staleIndex){
-        $indexTime=(Get-Item -LiteralPath $indexPath).LastWriteTimeUtc
+        # file(GENERATE) does not rewrite an unchanged owner index on every
+        # configure; CMake's generation stamp records the successful refresh.
+        $indexTime=(Get-Item -LiteralPath $generationStamp).LastWriteTimeUtc
         foreach($registrationFile in @('CMakeLists.txt','CMakePresets.json','cmake/IrisVerification.cmake')){
             if((Get-Item -LiteralPath (Join-Path $root $registrationFile)).LastWriteTimeUtc -gt $indexTime){$staleIndex=$true;break}
         }

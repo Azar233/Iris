@@ -1,0 +1,118 @@
+{
+  "format": "MyRendererScene",
+  "version": 2,
+  "camera": {
+    "target": [
+      0,
+      1.48,
+      -0.2
+    ],
+    "yawDegrees": 0,
+    "pitchDegrees": 5.3,
+    "distance": 9,
+    "fieldOfViewDegrees": 38
+  },
+  "renderer": {
+    "showGrid": false,
+    "showAxes": false,
+    "pbrEnabled": true,
+    "shadowsEnabled": true,
+    "bloom": false,
+    "temporalAaEnabled": false,
+    "gpuPathTracingSpp": 64,
+    "gpuPathTracingDepth": 8,
+    "gpuPathTracingSeed": 20261026,
+    "backgroundColor": [
+      0.4,
+      0.46,
+      0.53
+    ],
+    "iblEnabled": false,
+    "skyboxEnabled": true,
+    "environmentIntensity": 0.7,
+    "diffuseStrength": 0.7,
+    "lightDirection": [
+      -0.4,
+      -1,
+      0.4
+    ],
+    "localLights": [
+      {
+        "type": 0,
+        "position": [
+          -2.5,
+          3.5,
+          3.0
+        ],
+        "radius": 10,
+        "color": [
+          1,
+          0.83,
+          0.67
+        ],
+        "intensity": 8.0
+      },
+      {
+        "type": 0,
+        "position": [
+          2.4,
+          2.7,
+          2.2
+        ],
+        "radius": 8,
+        "color": [
+          0.65,
+          0.81,
+          1
+        ],
+        "intensity": 5.0
+      }
+    ]
+  },
+  "entities": [
+    {
+      "id": 1,
+      "name": "Stanford Bunny opaque",
+      "model": "stanford/bunny-opaque.gltf",
+      "transform": {
+        "translation": [
+          -1.5,
+          0,
+          0
+        ]
+      }
+    },
+    {
+      "id": 2,
+      "name": "Stanford Dragon opaque",
+      "model": "stanford/dragon-opaque.gltf",
+      "transform": {
+        "translation": [
+          1.5,
+          0,
+          0
+        ]
+      }
+    },
+    {
+      "id": 3,
+      "name": "Alternating tile backdrop A",
+      "model": "stanford/pattern-0.gltf"
+    },
+    {
+      "id": 4,
+      "name": "Alternating tile backdrop B",
+      "model": "stanford/pattern-1.gltf"
+    },
+    {
+      "id": 5,
+      "name": "Matte ground",
+      "model": "builtin:ground-plane",
+      "tint": [
+        0.45,
+        0.47,
+        0.51
+      ]
+    }
+  ]
+}

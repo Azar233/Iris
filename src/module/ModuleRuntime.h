@@ -48,6 +48,8 @@ struct ModuleRunReport {
     std::uint64_t contentHash{0U};
     std::string moduleState;
     std::string error;
+    ModuleSimulationStatistics simulation;
+    ModuleSimulationConfiguration simulationConfiguration;
 };
 
 // Applies parameter values coming from a job file or a scene to a module registry.

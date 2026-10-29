@@ -110,6 +110,7 @@ Mesh::Mesh(const MeshData& data)
             boundsMax = glm::max(boundsMax, position);
             hasVertex = true;
         }
+        submeshBounds_.push_back(hasVertex ? BoundingBox{boundsMin, boundsMax} : BoundingBox{});
         submeshCenters_.push_back(hasVertex ? 0.5f * (boundsMin + boundsMax) : glm::vec3(0.0f));
     }
 

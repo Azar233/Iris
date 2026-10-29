@@ -1,8 +1,10 @@
+#include "asset/RuntimePaths.h"
 #include "app/Application.h" // Raster capture metadata is published with each frame.
 #include "plugin/ShaderScene.h"
 #include "plugin/ShaderSceneInput.h"
 #include "runtime/ShaderSceneSequence.h"
 #include "app/StatePaths.h"
+#include "scene/RigidBodyDebug.h"
 #include "runtime/RasterFrameReport.h"
 #include "optics/CloudLightingLut.h"
 #include "optics/CloudNoiseVolume.h"
@@ -20,6 +22,7 @@
 #include <iomanip>
 #include <iostream>
 #include <stdexcept>
+#include <sstream>
 
 #ifdef _WIN32
 #ifndef WIN32_LEAN_AND_MEAN
@@ -66,32 +69,44 @@
 
 namespace {
 
-std::filesystem::path findRuntimeRoot() {
-    std::vector<std::filesystem::path> candidates;
-#ifdef _WIN32
-    std::wstring executablePath(32768, L'\0');
-    const DWORD length = GetModuleFileNameW(
-        nullptr,
-        executablePath.data(),
-        static_cast<DWORD>(executablePath.size())
-    );
-    if (length > 0 && length < executablePath.size()) {
-        executablePath.resize(length);
-        candidates.push_back(std::filesystem::path(executablePath).parent_path());
-    }
-#endif
-    std::error_code error;
-    candidates.push_back(std::filesystem::current_path(error));
-    candidates.emplace_back(MYRENDERER_SOURCE_DIR);
-    for (const std::filesystem::path& candidate : candidates) {
-        if (!candidate.empty()
-            && std::filesystem::is_directory(candidate / "shaders", error)
-            && std::filesystem::is_directory(candidate / "assets", error)) {
-            return std::filesystem::absolute(candidate, error).lexically_normal();
-        }
-    }
-    return std::filesystem::path(MYRENDERER_SOURCE_DIR);
+struct GuideCutTestInput {
+    int phase{0};
+    ImVec2 button{-1.0f, -1.0f};
+    bool mouseDown{false};
+};
+
+GuideCutTestInput& guideCutTestInput() {
+    static GuideCutTestInput input;
+    return input;
 }
+struct SpatialUiTestInput {
+    ImVec2 button{-1,-1};
+    int phase{0};
+    int temporalMotionPhase{0};
+    bool mouseDown{false};
+};
+SpatialUiTestInput& spatialUiTestInput(){static SpatialUiTestInput input;return input;}
+
+std::string rasterVisibilityJson(const Renderer& renderer) {
+    std::ostringstream out;
+    const auto write = [&](const RasterVisibilityStatistics& v) {
+        out << "{\"submittedDraws\":" << v.submittedDraws
+            << ",\"culledDraws\":" << v.culledDraws
+            << ",\"submittedTriangles\":" << v.submittedTriangles
+            << ",\"drawnTriangles\":" << v.drawnTriangles << '}';
+    };
+    out << "{\"shadowDepthReused\":" << (renderer.shadowDepthReused()?"true":"false") << ",\"main\":"; write(renderer.rasterVisibility());
+    out << ",\"cascades\":[";
+    const auto& cascades = renderer.shadowVisibility();
+    for (std::size_t i = 0; i < cascades.size(); ++i) {
+        if (i) out << ',';
+        write(cascades[i]);
+    }
+    out << "]}";
+    return out.str();
+}
+
+using iris::findRuntimeRoot;
 
 std::string lowercase(std::string value) {
     std::transform(value.begin(), value.end(), value.begin(), [](unsigned char character) {
@@ -160,6 +175,7 @@ Application::Application(bool offlineCapture)
     renderQueue_ = std::make_unique<RenderQueue>(offlineCapture ? std::filesystem::path{} : renderQueueStatePath());
     renderQueue_->setModuleRegistry(&moduleRegistry_);
     renderQueue_->setRasterRunner(runRasterSequenceProcess);
+    renderQueue_->setGpuRunner(runRasterSequenceProcess);
     if (offlineCapture) return; // The worker must never restore/write the GUI Queue state.
     std::string restoreError;
     if (!renderQueue_->restore(restoreError)) {
@@ -196,6 +212,9 @@ int Application::runRasterSequence(const RenderJob& job, const std::string& canc
         std::cerr << "raster-sequence requires a Render Job with renderer 'raster'\n";
         return 65;
     }
+#ifndef IRIS_HAS_VULKAN
+    if(job.rasterBackend=="vulkan") {std::cerr<<"Vulkan backend unavailable; configure IRIS_ENABLE_VULKAN=ON\n";return 65;}
+#endif
     capture::InputManifest inputManifest;
     SceneDocument authoredScene;
     std::string sceneError;
@@ -318,6 +337,7 @@ int Application::runRasterSequence(const RenderJob& job, const std::string& canc
         const auto lights = frameScene.buildLocalLights();
         frameSettings.localLights.insert(frameSettings.localLights.end(), lights.begin(), lights.end());
         const auto frameItems = frameScene.buildRenderItems();
+        frameSettings.vulkanRaster=job.rasterBackend=="vulkan";
         for (int sample = 0; sample <= job.rasterWarmupFrames; ++sample) {
             renderer_->render(frameItems, camera, frameSettings,
                 static_cast<int>(job.renderSettings.width),
@@ -353,7 +373,9 @@ int Application::runRasterSequence(const RenderJob& job, const std::string& canc
             return 74;
         }
         if (!writeRasterFrameReport(partialReport, job, frame, frameSettings, gpuDescription_, error, &inputManifest,
-                renderer_->activeShaderScenePackage(), &authoredScene)) {
+                renderer_->activeShaderScenePackage(), &authoredScene,
+                job.module.id.empty() ? nullptr : &runtime.report(),
+                frameSettings.vulkanRaster?&renderer_->vulkanStatistics():nullptr)) {
             std::cerr << "Raster report failed: " << error << '\n';
             return 74;
         }
@@ -370,12 +392,15 @@ int Application::runRasterSequence(const RenderJob& job, const std::string& canc
 }
 
 int Application::run(const std::filesystem::path& initialModel) {
+    const auto benchmarkStartup=std::chrono::steady_clock::now();
+    const bool benchmarkTransitions=std::getenv("IRIS_BENCHMARK_TRANSITIONS")!=nullptr;
+    const bool benchmarkTrace=benchmarkTransitions || std::getenv("IRIS_BENCHMARK_FRAME_TRACE")!=nullptr;
     benchmarkMode_ = std::getenv("MYRENDERER_BENCHMARK_FRAMES") != nullptr
         || std::getenv("MYRENDERER_BENCHMARK_OUTPUT") != nullptr;
     if (benchmarkMode_) {
         vsync_ = false;
         if (const char* value = std::getenv("MYRENDERER_BENCHMARK_FRAMES")) {
-            benchmarkMeasurementFrames_ = std::max(std::atoi(value), 30);
+            benchmarkMeasurementFrames_ = std::max(std::atoi(value), benchmarkTransitions?18:30);
         }
         if (const char* value = std::getenv("MYRENDERER_BENCHMARK_WARMUP")) {
             benchmarkWarmupFrames_ = std::max(std::atoi(value), 4);
@@ -383,6 +408,7 @@ int Application::run(const std::filesystem::path& initialModel) {
         benchmarkOutputPath_ = std::getenv("MYRENDERER_BENCHMARK_OUTPUT") == nullptr
             ? sourceRoot_ / ".local" / "benchmarks" / "prism.json"
             : std::filesystem::absolute(std::getenv("MYRENDERER_BENCHMARK_OUTPUT"));
+        if(benchmarkTransitions){benchmarkWarmupFrames_=0;benchmarkMeasurementFrames_=18;}
     }
     if (const char* value = std::getenv("MYRENDERER_PRISM_REEL_DIR")) {
         prismReelMode_ = true;
@@ -395,14 +421,14 @@ int Application::run(const std::filesystem::path& initialModel) {
     }
     if (const char* value = std::getenv("MYRENDERER_RENDER_WIDTH")) {
         renderWidthOverride_ = std::clamp(std::atoi(value), 64, 7680);
-    } else if (benchmarkMode_) {
+    } else if (benchmarkMode_ && !std::getenv("IRIS_BENCHMARK_NATIVE_VIEWPORT")) {
         renderWidthOverride_ = 1920;
     } else if (prismReelMode_) {
         renderWidthOverride_ = 1280;
     }
     if (const char* value = std::getenv("MYRENDERER_RENDER_HEIGHT")) {
         renderHeightOverride_ = std::clamp(std::atoi(value), 64, 4320);
-    } else if (benchmarkMode_) {
+    } else if (benchmarkMode_ && !std::getenv("IRIS_BENCHMARK_NATIVE_VIEWPORT")) {
         renderHeightOverride_ = 1080;
     } else if (prismReelMode_) {
         renderHeightOverride_ = 720;
@@ -411,6 +437,8 @@ int Application::run(const std::filesystem::path& initialModel) {
         editorSession_.requestBackend(std::atoi(value) != 0
             ? EditorRenderBackend::CpuPathTraced : EditorRenderBackend::Raster);
     }
+    if(std::getenv("IRIS_VULKAN_PATH_TRACER"))editorSession_.requestBackend(EditorRenderBackend::GpuPathTraced);
+    if(std::getenv("IRIS_VULKAN_RASTER"))editorSession_.requestBackend(EditorRenderBackend::VulkanRaster);
     auto startupCpuSettings = cpuPreviewSettings();
     if (const char* value = std::getenv("MYRENDERER_CPU_PREVIEW_SCALE")) {
         startupCpuSettings.scaleMode = std::clamp(std::atoi(value), 0, 3);
@@ -1108,9 +1136,15 @@ int Application::run(const std::filesystem::path& initialModel) {
     if (std::getenv("IRIS_SHADER_MATERIAL_UI_TEST")) smokeTestFrames = 32;
     if (std::getenv("IRIS_SHADER_MATERIAL_WORKSPACE_DIRECTORY")) smokeTestFrames = 48;
     if (std::getenv("IRIS_NPR_UI_TEST") || std::getenv("IRIS_WATER_UI_TEST")) smokeTestFrames = 64;
+    if (std::getenv("IRIS_PHYSICS_UI_TEST")) smokeTestFrames = 48;
+    if (std::getenv("IRIS_VULKAN_UI_TEST") || std::getenv("IRIS_GPU_PT_UI_TEST")) smokeTestFrames = 28;
+    if (std::getenv("IRIS_VULKAN_RAY_QUERY_UI_TEST")) smokeTestFrames = 28;
+    // The Queue hook closes after its asynchronous child and screenshot finish.
+    if (std::getenv("IRIS_GPU_PT_QUEUE_TEST") || std::getenv("IRIS_GPU_PT_EXPORT")) smokeTestFrames = -1;
     const auto cpuPreviewSmokeDeadline = std::chrono::steady_clock::now()
         + std::chrono::seconds(30);
     const auto thumbnailDeadline = std::chrono::steady_clock::now() + std::chrono::seconds(30);
+    const auto gpuScreenshotDeadline = std::chrono::steady_clock::now() + std::chrono::seconds(60);
     bool thumbnailLayoutChecked = false;
     bool thumbnailLayoutPassed = true;
     if (const char* extra = std::getenv("MYRENDERER_APPEND_TEST")) {
@@ -1121,6 +1155,25 @@ int Application::run(const std::filesystem::path& initialModel) {
     // overrides so the first UI frame cannot resume a requested fixed frame.
     processEditorCommands();
     applyModuleEnvironmentOverrides();
+    const auto applyBenchmarkOverrides=[&](){if(benchmarkMode_) {
+        if(const char* value=std::getenv("IRIS_BENCHMARK_SHADOWS"))rendererSettings_.shadowsEnabled=std::atoi(value)!=0;
+        if(const char* value=std::getenv("IRIS_BENCHMARK_RAY_QUERY"))rendererSettings_.vulkanRayQueryShadows=std::atoi(value)!=0;
+        if(const char* value=std::getenv("IRIS_BENCHMARK_PT_SPP"))rendererSettings_.gpuPathTracingSpp=std::clamp(std::atoi(value),1,65536);
+    }};
+    applyBenchmarkOverrides();
+    const auto benchmarkOriginalScene=currentScenePath_;
+    const auto benchmarkOriginalCamera=camera_.orbitState();
+    const auto benchmarkOriginalLight=rendererSettings_.lightDirection;
+    const int benchmarkOriginalWidth=renderWidthOverride_,benchmarkOriginalHeight=renderHeightOverride_;
+    const char* alternate=std::getenv("IRIS_BENCHMARK_ALTERNATE_SCENE");
+    if(benchmarkTransitions && (benchmarkOriginalScene.empty() || !alternate || scene_.entities().empty()))
+        throw std::runtime_error("Transition benchmark requires an original mesh Scene and IRIS_BENCHMARK_ALTERNATE_SCENE");
+    const auto benchmarkEntity=scene_.entities().empty()?invalidSceneEntityId:scene_.entities().front().id;
+    const auto benchmarkTranslation=scene_.entities().empty()?glm::vec3(0):scene_.entities().front().transform.translation;
+    std::string benchmarkPhase="static";
+    double benchmarkSceneLoadMilliseconds=0,benchmarkGenerationStart=0;
+    std::uint64_t benchmarkLastGeneration=0;
+    if (std::getenv("IRIS_PHYSICS_WORKBENCH_TEST")) runPhysicsWorkbenchAcceptance();
     if (const char* destination = std::getenv("MYRENDERER_SCENE_ROUNDTRIP")) {
         const auto path = std::filesystem::absolute(std::filesystem::u8path(destination)).lexically_normal();
         EditorCommand save{EditorCommandType::SaveScene};
@@ -1172,6 +1225,46 @@ int Application::run(const std::filesystem::path& initialModel) {
     }
     while (!glfwWindowShouldClose(window_)) {
         const double cpuFrameStart = glfwGetTime();
+        benchmarkSceneLoadMilliseconds=0;
+        if(benchmarkMode_ && benchmarkTransitions) {
+            const auto frame=benchmarkRenderedFrames_;
+            benchmarkPhase="warm";
+            if(frame==0)benchmarkPhase="cold";
+            if(frame>=2 && frame<=4) {
+                auto pose=benchmarkOriginalCamera;
+                const float yawStep=std::getenv("IRIS_BENCHMARK_VISIBILITY_PATH")?35.0f:2.0f;
+                pose.yawDegrees+=frame==2?yawStep:frame==3?-yawStep:0.0f;
+                camera_.setOrbitState(pose);
+                benchmarkPhase=frame==4?"camera-restore":"camera-move";
+            }
+            if(frame==6 || frame==8) {
+                renderWidthOverride_=frame==6?800:benchmarkOriginalWidth;
+                renderHeightOverride_=frame==6?450:benchmarkOriginalHeight;
+                benchmarkPhase=frame==6?"resize-down":"resize-restore";
+            }
+            if(frame==10 || frame==12) {
+                auto* entity=scene_.find(benchmarkEntity);
+                if(!entity)throw std::runtime_error("Transition benchmark lost its original entity");
+                entity->transform.translation=benchmarkTranslation+glm::vec3(frame==10?0.2f:0.0f,0,0);
+                benchmarkPhase=frame==10?"rigid-move":"rigid-restore";
+            }
+            if (std::getenv("IRIS_BENCHMARK_VISIBILITY_PATH")) {
+                if (frame==5 || frame==7) rendererSettings_.lightDirection = frame==5
+                    ? glm::vec3(.6f,-.5f,-.3f) : benchmarkOriginalLight;
+                if (auto* entity=scene_.find(benchmarkEntity)) {
+                    if (frame==9 || frame==11) entity->castsShadow=frame==11;
+                    if (frame==13) entity->visible=false;
+                }
+            }
+            if(frame==14 || frame==16) {
+                const auto loadStart=std::chrono::steady_clock::now();
+                if(!openScene(frame==14?std::filesystem::path(alternate):benchmarkOriginalScene))
+                    throw std::runtime_error("Transition scene load failed: "+statusMessage_);
+                processEditorCommands();applyBenchmarkOverrides();
+                benchmarkSceneLoadMilliseconds=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-loadStart).count();
+                benchmarkPhase=frame==14?"scene-away":"scene-return";
+            }
+        }
         glfwPollEvents();
         if (!droppedModelPaths_.empty() && !pendingModelImport_.has_value()) {
             const std::filesystem::path dropped = std::move(droppedModelPaths_.front());
@@ -1203,7 +1296,10 @@ int Application::run(const std::filesystem::path& initialModel) {
         if (cameraHeightDemoStep_ != 0.0f) {
             camera_.moveLocal(0.0f, 0.0f, cameraHeightDemoStep_);
         }
-        if (temporalMotionDemoEnabled_) {
+        if(benchmarkMode_ && std::getenv("IRIS_BENCHMARK_PT_MOTION")){
+            auto pose=benchmarkOriginalCamera;pose.yawDegrees+=.2f*static_cast<float>(benchmarkRenderedFrames_+1);
+            camera_.setOrbitState(pose);
+        }else if (temporalMotionDemoEnabled_) {
             camera_.orbit(0.012f, 0.0f);
         }
         if (animationEnabled_ && (rendererSettings_.water.enabled
@@ -1254,6 +1350,28 @@ int Application::run(const std::filesystem::path& initialModel) {
         }
         ImGui_ImplOpenGL3_NewFrame();
         ImGui_ImplGlfw_NewFrame();
+        if(std::getenv("IRIS_GPU_PT_SPATIAL_UI_TEST") || std::getenv("IRIS_GPU_PT_TEMPORAL_UI_TEST")){
+            auto& input=spatialUiTestInput();
+            if(input.phase>0){auto& io=ImGui::GetIO();io.ClearEventsQueue();io.ConfigInputTrickleEventQueue=false;
+                io.AddFocusEvent(true);io.AddMousePosEvent(input.button.x,input.button.y);
+                input.mouseDown=input.phase<7 && input.phase%2==1 && !input.mouseDown;
+                io.AddMouseButtonEvent(0,input.mouseDown);
+            }
+        }
+        if (std::getenv("IRIS_GPU_PT_GUIDE_CUT_TEST")) {
+            auto& input = guideCutTestInput();
+            if (input.phase >= 3) {
+                auto& io = ImGui::GetIO();
+                // Inject after GLFW polling so its physical cursor fallback cannot
+                // overwrite the test's position between mouse press and release.
+                io.ClearEventsQueue();
+                io.ConfigInputTrickleEventQueue = false;
+                io.AddFocusEvent(true);
+                io.AddMousePosEvent(input.button.x, input.button.y);
+                input.mouseDown = input.phase == 4 && !input.mouseDown;
+                io.AddMouseButtonEvent(0, input.mouseDown);
+            }
+        }
         ImGui::NewFrame();
 
         drawMainMenu();
@@ -1355,15 +1473,20 @@ int Application::run(const std::filesystem::path& initialModel) {
             }
         }
 
+        const auto captureSamples=renderer_->gpuPathTracedSamples();
+        const bool gpuViewportActive=editorSession_.backend()==EditorRenderBackend::GpuPathTraced
+            && (viewportRenderMode_!=1 || benchmarkMode_ || prismReelMode_ || referenceComparisonMode_);
+        const bool gpuCaptureReady=(!gpuViewportActive || (captureSamples && *captureSamples>0))
+            && (!std::getenv("IRIS_GPU_PT_EXPORT") || (captureSamples && *captureSamples>=static_cast<unsigned>(rendererSettings_.gpuPathTracingSpp)));
         const bool thumbnailReady = std::any_of(uploadedThumbnails_.begin(), uploadedThumbnails_.end(),
             [](const auto& entry) { return entry.second.texture != 0U; });
-        if (!pendingEditorScreenshotPath_.empty() && !pendingModelImport_.has_value()
+        if (!pendingEditorScreenshotPath_.empty() && gpuCaptureReady && !pendingModelImport_.has_value()
             && !cpuPreviewSingleFrameRefresh_
             && (!cpuPreviewSmoke || cpuPreviewUploadedSamples_ > 0U)
             && (!thumbnailAcceptance || thumbnailReady)
             && pendingEditorScreenshotWarmupFrames_ > 0) {
             --pendingEditorScreenshotWarmupFrames_;
-        } else if (!pendingEditorScreenshotPath_.empty() && !pendingModelImport_.has_value()
+        } else if (!pendingEditorScreenshotPath_.empty() && gpuCaptureReady && !pendingModelImport_.has_value()
                    && !cpuPreviewSingleFrameRefresh_
                    && (!cpuPreviewSmoke || cpuPreviewUploadedSamples_ > 0U)
                    && (!thumbnailAcceptance || thumbnailReady)) {
@@ -1389,10 +1512,79 @@ int Application::run(const std::filesystem::path& initialModel) {
         if (benchmarkMode_ && (model_ != nullptr || rendererSettings_.water.enabled || loadedSceneDocument_)
             && !pendingModelImport_.has_value()) {
             ++benchmarkRenderedFrames_;
+            // Optional correctness evidence; kept out of measured frame timings.
+            if (const char* directory = std::getenv("IRIS_BENCHMARK_FRAME_IMAGES")) {
+                const auto folder = std::filesystem::u8path(directory);
+                std::filesystem::create_directories(folder);
+                std::string error;
+                if (!renderer_->saveScreenshot(folder / ("frame-" + std::to_string(benchmarkRenderedFrames_-1) + ".png"), error))
+                    throw std::runtime_error("Benchmark frame image: " + error);
+            }
+            if(benchmarkRenderedFrames_==1) {
+                benchmarkStartupMilliseconds_=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-benchmarkStartup).count();
+                benchmarkFirstFrameMilliseconds_=measuredCpuTime;
+                benchmarkFirstFrameCpuPasses_=renderer_->cpuPassTimings();
+            }
+            const bool freshGpuMeasurement=renderer_->gpuFrameMeasurementSerial()!=lastBenchmarkGpuFrameSerial_;
+            // Advance during warmup too: a completed PT must not reuse its final
+            // warmup sample as a measured dispatch.
+            lastBenchmarkGpuFrameSerial_=renderer_->gpuFrameMeasurementSerial();
+            const auto ptSamples=renderer_->gpuPathTracedSamples();
+            const auto& frameStats=renderer_->vulkanStatistics();
+            if(ptSamples && frameStats.backendGeneration!=benchmarkLastGeneration) {
+                benchmarkLastGeneration=frameStats.backendGeneration;benchmarkGenerationStart=cpuFrameStart;
+            }
+            if(ptSamples && *ptSamples>=static_cast<unsigned>(rendererSettings_.gpuPathTracingSpp)
+                && benchmarkPtTargetFromRunMilliseconds_==0) {
+                benchmarkPtTargetFromRunMilliseconds_=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-benchmarkStartup).count();
+                benchmarkPtTargetGenerationMilliseconds_=(glfwGetTime()-benchmarkGenerationStart)*1000;
+            }
+            if(benchmarkTrace) {
+                const bool vk=editorSession_.backend()==EditorRenderBackend::VulkanRaster || ptSamples;
+                const auto pose=camera_.orbitState();
+                std::ostringstream row;row<<std::fixed<<std::setprecision(6)
+                    <<"{\"frame\":"<<benchmarkRenderedFrames_-1<<",\"phase\":"<<std::quoted(benchmarkPhase)
+                    <<",\"scene\":"<<std::quoted(currentScenePath_.generic_u8string())
+                    <<",\"width\":"<<renderer_->renderWidth()<<",\"height\":"<<renderer_->renderHeight()
+                    <<",\"yaw\":"<<pose.yawDegrees<<",\"entityX\":"<<(scene_.find(benchmarkEntity)?scene_.find(benchmarkEntity)->transform.translation.x:0)
+                    <<",\"cpuMs\":"<<measuredCpuTime<<",\"sceneLoadMs\":"<<benchmarkSceneLoadMilliseconds
+                    <<",\"gpuTimingValid\":"<<(freshGpuMeasurement?"true":"false")
+                    <<",\"gpuTimingSynchronous\":"<<(vk && !std::getenv("IRIS_GPU_PT_ASYNC_TEST")?"true":"false")
+                    <<",\"gpuMs\":"<<(freshGpuMeasurement?renderer_->latestGpuFrameMeasurementMilliseconds():0)
+                    <<",\"completedSampleDispatches\":"<<(ptSamples?frameStats.completedSampleDispatches:0)
+                    <<",\"spp\":"<<(ptSamples?*ptSamples:0)
+                    <<",\"backendGeneration\":"<<(vk?frameStats.backendGeneration:0)
+                    <<",\"backendInitialized\":"<<(vk && frameStats.backendInitializedThisFrame?"true":"false")
+                    <<",\"initialBlasBuilds\":"<<(ptSamples && frameStats.backendInitializedThisFrame?frameStats.blasBuilds:0)
+                    <<",\"initialTlasBuilds\":"<<(ptSamples && frameStats.backendInitializedThisFrame?frameStats.tlasBuilds:0)
+                    <<",\"dispatchBlasBuilds\":"<<(vk?frameStats.dispatchBlasBuilds:0)
+                    <<",\"dispatchTlasBuilds\":"<<(vk?frameStats.dispatchTlasBuilds:0)
+                    <<",\"dispatchTlasUpdates\":"<<(vk?frameStats.dispatchTlasUpdates:0)
+                    <<",\"asCpuMs\":"<<(vk?frameStats.accelerationCpuMilliseconds:0)
+                    <<",\"asGpuMs\":"<<(vk?frameStats.accelerationGpuMilliseconds:0)
+                    <<",\"readbackBytes\":"<<(vk?frameStats.readbackBytes:0)
+                    <<",\"guideGpuMs\":"<<(ptSamples && frameStats.displayUploads?frameStats.guideGpuMilliseconds:0)
+                    <<",\"temporalGpuMs\":"<<(ptSamples && frameStats.displayUploads && rendererSettings_.gpuTemporalDenoise?frameStats.temporalGpuMilliseconds:0)
+                    <<",\"spatialGpuMs\":"<<(ptSamples && frameStats.displayUploads && rendererSettings_.gpuSpatialDenoise?frameStats.spatialGpuMilliseconds:0)
+                    <<",\"temporalAccepted\":"<<(ptSamples && frameStats.displayUploads?frameStats.temporalAccepted:0)
+                    <<",\"rawReadbackBytes\":"<<(vk?frameStats.rawReadbackBytes:0)
+                    <<",\"rasterVisibility\":"<<rasterVisibilityJson(*renderer_)
+                    <<",\"displayUploads\":"<<(vk?frameStats.displayUploads:0)
+                    <<",\"readbackMemoryType\":"<<(vk?frameStats.readbackMemoryType:0)
+                    <<",\"readbackMemoryFlags\":"<<(vk?frameStats.readbackMemoryFlags:0)
+                    <<",\"validationEnabled\":"<<(vk && frameStats.validationEnabled?"true":"false")
+                    <<",\"validationWarnings\":"<<(vk?frameStats.validationWarnings:0)
+                    <<",\"validationErrors\":"<<(vk?frameStats.validationErrors:0)<<",\"cpuPasses\":{";
+                const auto& passes=renderer_->cpuPassTimings();
+                for(std::size_t i=0;i<passes.size();++i)row<<std::quoted(passes[i].first)<<":"<<passes[i].second<<(i+1<passes.size()?",":"");
+                row<<"}}";benchmarkFrameTrace_.push_back(row.str());
+            }
             if (benchmarkRenderedFrames_ > benchmarkWarmupFrames_) {
                 benchmarkCpuFrameTimes_.push_back(measuredCpuTime);
-                if (renderer_->gpuFrameMeasurementSerial() != lastBenchmarkGpuFrameSerial_) {
-                    lastBenchmarkGpuFrameSerial_ = renderer_->gpuFrameMeasurementSerial();
+                const bool gpuPt=editorSession_.backend()==EditorRenderBackend::GpuPathTraced;
+                if(!gpuPt || freshGpuMeasurement || (ptSamples && *ptSamples<static_cast<unsigned>(rendererSettings_.gpuPathTracingSpp)))benchmarkActiveCpuFrameTimes_.push_back(measuredCpuTime);
+                else benchmarkCompletedCpuFrameTimes_.push_back(measuredCpuTime);
+                if (freshGpuMeasurement) {
                     benchmarkGpuFrameTimes_.push_back(
                         renderer_->latestGpuFrameMeasurementMilliseconds()
                     );
@@ -1420,6 +1612,30 @@ int Application::run(const std::filesystem::path& initialModel) {
                 for (const auto& [name, milliseconds] : renderer_->cpuPassTimings()) {
                     benchmarkPassCpuTimes_[name].push_back(milliseconds);
                 }
+                if((editorSession_.backend()==EditorRenderBackend::VulkanRaster || gpuPt) && (!gpuPt || freshGpuMeasurement)) {
+                    const auto& s=renderer_->vulkanStatistics();
+                    const auto count=[&](const char* name,double value){benchmarkVulkanCounters_[name].push_back(value);};
+                    count("hostUploadBytes",static_cast<double>(s.hostUploadBytes));
+                    count("readbackBytes",static_cast<double>(s.readbackBytes));
+                    count("rawReadbackBytes",static_cast<double>(s.rawReadbackBytes));count("previewReadbackBytes",static_cast<double>(s.previewReadbackBytes));count("previewDispatches",s.previewDispatches);count("displayUploads",s.displayUploads);
+                    count("fileContentCacheBytes",static_cast<double>(s.fileContentCacheBytes));
+                    count("fileContentReadBytes",static_cast<double>(s.fileContentReadBytes));
+                    count("fileContentHashBytes",static_cast<double>(s.fileContentHashBytes));
+                    count("pipelineCreations",s.pipelineCreations);count("textureDecodes",s.textureDecodes);count("textureUploads",s.textureUploads);
+                    count("triangles",s.triangles);count("draws",s.draws);count("allocatedBytes",static_cast<double>(s.allocatedBytes));
+                    count("deviceLocalBytes",static_cast<double>(s.deviceLocalBytes));
+                    if(gpuPt){
+                        const double guide=(rendererSettings_.gpuTemporalDenoise || rendererSettings_.gpuSpatialDenoise)?s.guideGpuMilliseconds:0;
+                        const double temporal=rendererSettings_.gpuTemporalDenoise?s.temporalGpuMilliseconds:0;
+                        const double spatial=rendererSettings_.gpuSpatialDenoise?s.spatialGpuMilliseconds:0;
+                        count("guideGpuMs",guide);count("temporalGpuMs",temporal);count("spatialGpuMs",spatial);
+                        // Sum the disjoint Vulkan intervals; excludes GL/UI/present.
+                        count("gpuActivePassMs",s.completedSampleGpuMilliseconds);
+                    }
+                    count("blasBuilds",s.blasBuilds);count("tlasBuilds",s.tlasBuilds);count("tlasUpdates",s.tlasUpdates);
+                    count("dispatchBlasBuilds",s.dispatchBlasBuilds);count("dispatchTlasBuilds",s.dispatchTlasBuilds);count("dispatchTlasUpdates",s.dispatchTlasUpdates);
+                    count("readbackMemoryType",s.readbackMemoryType);count("readbackMemoryFlags",s.readbackMemoryFlags);
+                }
             }
             if (benchmarkRenderedFrames_
                 >= benchmarkWarmupFrames_ + benchmarkMeasurementFrames_) {
@@ -1439,6 +1655,8 @@ int Application::run(const std::filesystem::path& initialModel) {
                     std::cerr << "CPU preview smoke timed out before an OpenGL upload\n";
                     glfwSetWindowShouldClose(window_, GLFW_TRUE);
                 }
+            } else if (gpuViewportActive && (!pendingScreenshotPath_.empty() || !pendingEditorScreenshotPath_.empty())) {
+                if(std::chrono::steady_clock::now()>=gpuScreenshotDeadline)throw std::runtime_error("GPU preview screenshot timed out before a completed image");
             } else if (--smokeTestFrames == 0) {
                 glfwSetWindowShouldClose(window_, GLFW_TRUE);
             }
@@ -1457,6 +1675,8 @@ int Application::run(const std::filesystem::path& initialModel) {
         appendPassed = appendPassed && items.size() >= 2;
         std::cout << "Append scene validation: " << (appendPassed ? "PASS" : "FAIL") << '\n';
     }
+    if (std::getenv("IRIS_PHYSICS_UI_TEST") && physicsUiPhase_ != 3)
+        throw std::runtime_error("Physics ImGui control interaction did not complete");
     const bool interactionsPassed = !std::getenv("MYRENDERER_EDITOR_INTERACTION_TEST") || editorInteractionRegression();
     const bool pluginsPassed = !std::getenv("MYRENDERER_PLUGIN_ACTIVATION_TEST") || pluginActivationRegression();
     const bool pluginParametersPassed = !std::getenv("MYRENDERER_PLUGIN_PARAMETER_TEST") || pluginParameterRegression();
@@ -1915,6 +2135,7 @@ void Application::drawMainMenu() {
     if (ImGui::BeginMenu(EditorUi::label("View"))) {
         if (ImGui::MenuItem(EditorUi::label("Reset camera"), "F")) {
             camera_.reset();
+            if(editorSession_.backend()==EditorRenderBackend::GpuPathTraced)renderer_->invalidateTemporalHistory();
         }
         if (ImGui::MenuItem("Prism spectrum preset")) {
             editorSession_.request(EditorCommand{EditorCommandType::ApplyScenePreset, 0U, 0U});
@@ -2011,7 +2232,7 @@ void Application::drawInspectorPanel() {
                     SceneTransform editedTransform = selectedEntity->transform;
                     bool edited = EditorUi::DragFloat3(EditorUi::label("Position"), &editedTransform.translation.x, 0.01f);
                     edited |= EditorUi::DragFloat3(EditorUi::label("Rotation"), &editedTransform.rotationDegrees.x, 0.25f);
-                    if (!selectedEntity->light) edited |= EditorUi::DragFloat3(EditorUi::label("Scale"), &editedTransform.scale.x, 0.01f, 0.01f, 100.0f);
+                    if (!selectedEntity->light && !selectedEntity->rigidBody) edited |= EditorUi::DragFloat3(EditorUi::label("Scale"), &editedTransform.scale.x, 0.01f, 0.01f, 100.0f);
                     if (ImGui::Button(EditorUi::label("Reset transform"), ImVec2(-1.0f, 0.0f))) {
                         editedTransform.translation = glm::vec3(0.0f);
                         editedTransform.rotationDegrees = glm::vec3(0.0f);
@@ -2040,6 +2261,7 @@ void Application::drawInspectorPanel() {
                 }
             }
 
+            if (selectedEntity && !selectedEntity->light) drawRigidBodyInspector(*selectedEntity);
             if (selectedEntity && selectedEntity->light && EditorUi::section("Light", true)) {
                 auto light = *selectedEntity->light;
                 const char* types[]{"Point", "Spot"}; int type = static_cast<int>(light.type);
@@ -2136,6 +2358,73 @@ void Application::drawInspectorPanel() {
                 nullptr,
                 showRenderer ? ImGuiTabItemFlags_SetSelected : 0
             )) {
+            if(editorSession_.backend()==EditorRenderBackend::GpuPathTraced) {
+                if(EditorUi::section("GPU Path Traced",true)) {
+                    bool changed=ImGui::InputInt("SPP",&rendererSettings_.gpuPathTracingSpp);
+                    changed|=ImGui::InputInt("Depth",&rendererSettings_.gpuPathTracingDepth);
+                    changed|=ImGui::InputInt("Seed",&rendererSettings_.gpuPathTracingSeed);
+                    rendererSettings_.gpuPathTracingSpp=std::clamp(rendererSettings_.gpuPathTracingSpp,1,65536);
+                    rendererSettings_.gpuPathTracingDepth=std::clamp(rendererSettings_.gpuPathTracingDepth,1,16);
+                    rendererSettings_.gpuPathTracingSeed=std::max(rendererSettings_.gpuPathTracingSeed,0);
+                    changed|=ImGui::Button(EditorUi::chinese?"重新采样":"Restart sampling");
+                    if(std::getenv("IRIS_GPU_PT_UI_TEST") && ImGui::GetFrameCount()>=22) {
+                        static int phase=0;auto& io=ImGui::GetIO();
+                        if(phase==0){const auto a=ImGui::GetItemRectMin(),b=ImGui::GetItemRectMax();io.AddFocusEvent(true);io.AddMousePosEvent((a.x+b.x)*.5f,(a.y+b.y)*.5f);io.AddMouseButtonEvent(0,true);++phase;}
+                        else if(phase==1){io.AddMouseButtonEvent(0,false);++phase;}
+                        if(changed)std::cout<<"GPU PT actual Restart sampling button PASS\n";
+                    }
+                    if(changed)renderer_->invalidateTemporalHistory();
+                    const bool spatialChanged=EditorUi::propertyRow(EditorUi::chinese?"空间降噪 (A-Trous)":"Spatial denoise (A-Trous)",[&](const char* id){
+                        const bool value=ImGui::Checkbox(id,&rendererSettings_.gpuSpatialDenoise);
+                        if(std::getenv("IRIS_GPU_PT_SPATIAL_UI_TEST")){const auto a=ImGui::GetItemRectMin(),b=ImGui::GetItemRectMax();spatialUiTestInput().button={(a.x+b.x)*.5f,(a.y+b.y)*.5f};}
+                        return value;
+                    });
+                    if(std::getenv("IRIS_GPU_PT_SPATIAL_UI_TEST")){
+                        auto& input=spatialUiTestInput();
+                        if(spatialChanged){if(input.phase!=1 && input.phase!=3 && input.phase!=5)throw std::runtime_error("Unexpected spatial UI input");
+                            const bool expected=input.phase!=3;if(rendererSettings_.gpuSpatialDenoise!=expected)throw std::runtime_error("Spatial checkbox selected wrong view");++input.phase;
+                            std::cout<<"GPU PT actual Spatial checkbox enabled="<<expected<<" PASS"<<std::endl;
+                        }
+                    }
+                    const bool temporalChanged=EditorUi::propertyRow(EditorUi::chinese?"时间重投影":"Temporal reprojection",[&](const char* id){
+                        const bool changed=ImGui::Checkbox(id,&rendererSettings_.gpuTemporalDenoise);
+                        if(std::getenv("IRIS_GPU_PT_TEMPORAL_UI_TEST")){const auto a=ImGui::GetItemRectMin(),b=ImGui::GetItemRectMax();spatialUiTestInput().button={(a.x+b.x)*.5f,(a.y+b.y)*.5f};}
+                        return changed;
+                    });
+                    if(std::getenv("IRIS_GPU_PT_TEMPORAL_UI_TEST") && temporalChanged){
+                        auto& input=spatialUiTestInput();if(input.phase!=1 && input.phase!=3 && input.phase!=5)throw std::runtime_error("Unexpected temporal UI input");
+                        if(rendererSettings_.gpuTemporalDenoise!=(input.phase!=3))throw std::runtime_error("Temporal checkbox selected wrong view");
+                        ++input.phase;
+                        std::cout<<"GPU PT temporal checkbox phase "<<input.phase<<" PASS\n";
+                    }
+                    const char* view=rendererSettings_.gpuTemporalDenoise?(rendererSettings_.gpuSpatialDenoise?"Denoised":"Accumulated"):(rendererSettings_.gpuSpatialDenoise?"Spatial":"Raw");
+                    ImGui::TextDisabled("View: %s | transmission: Raw",view);
+                    if(rendererSettings_.gpuTemporalDenoise){const auto& stats=renderer_->vulkanStatistics();ImGui::Text("Temporal GPU %.2f ms | Accept %u",stats.temporalGpuMilliseconds,stats.temporalAccepted);}
+                    if(rendererSettings_.gpuSpatialDenoise){const auto& stats=renderer_->vulkanStatistics();ImGui::Text("Spatial GPU %.2f ms | Guide %.2f ms",stats.spatialGpuMilliseconds,stats.guideGpuMilliseconds);}
+                    ImGui::TextWrapped(EditorUi::chinese?"支持 PBR 纹理、折射与单一吸收介质；预览最长边 1280，实际尺寸受 Viewport 和设备容量限制。Raw/AOV 与后台 Queue 使用 GPU Job。":"PBR textures, dielectric refraction and single absorbing medium; preview longest edge 1280, subject to viewport size and device capacity. GPU jobs export Raw/AOVs through IrisBatch or Queue.");
+                }
+            }
+            if(editorSession_.backend()==EditorRenderBackend::VulkanRaster) {
+                const bool interaction=std::getenv("IRIS_VULKAN_RAY_QUERY_UI_TEST")!=nullptr;
+                if(interaction)ImGui::SetNextItemOpen(true,ImGuiCond_Always);
+                if(EditorUi::section("Vulkan Ray Query",true)) {
+                    static int phase=0;
+                    const auto click=[&](int target) {
+                        if(!interaction || ImGui::GetFrameCount()<8+target*2)return;
+                        auto& io=ImGui::GetIO();
+                        if(phase==target){const auto a=ImGui::GetItemRectMin(),b=ImGui::GetItemRectMax();io.AddFocusEvent(true);io.AddMousePosEvent((a.x+b.x)*.5f,(a.y+b.y)*.5f);io.AddMouseButtonEvent(0,true);++phase;}
+                        else if(phase==target+1){io.AddMouseButtonEvent(0,false);++phase;}
+                    };
+                    bool changed=EditorUi::Checkbox(EditorUi::chinese?"方向光阴影":"Sun shadows",&rendererSettings_.vulkanRayQueryShadows);
+                    click(0);click(2);
+                    ImGui::BeginDisabled(!rendererSettings_.vulkanRayQueryShadows);
+                    changed|=EditorUi::Checkbox(EditorUi::chinese?"阴影可见性调试":"Shadow visibility debug",&rendererSettings_.vulkanShadowDebug);
+                    if(rendererSettings_.vulkanRayQueryShadows)click(4);
+                    ImGui::EndDisabled();
+                    if(changed){renderer_->invalidateTemporalHistory();if(interaction)std::cout<<"Ray Query shadows UI: enabled="<<rendererSettings_.vulkanRayQueryShadows<<" debug="<<rendererSettings_.vulkanShadowDebug<<'\n';}
+                    if(!renderer_->vulkanStatistics().rayQueryAvailable)ImGui::TextWrapped("Ray Query unavailable. Disable shadows or select Raster (CSM).");
+                }
+            }
             if (rendererSettings_.enscapeCubeShaderEnabled && pendingGlslControlsScrollFrames_ > 0) {
                 ImGui::SetScrollY(0.0f);
                 --pendingGlslControlsScrollFrames_;
@@ -2323,6 +2612,15 @@ void Application::drawInspectorPanel() {
                 );
                 ImGui::EndDisabled();
             }
+            if (EditorUi::section("Raster visibility")) {
+                EditorUi::Checkbox("CPU frustum culling", &rendererSettings_.frustumCullingEnabled);
+                const auto& visibility = renderer_->rasterVisibility();
+                ImGui::TextDisabled("Submesh draws %llu / %llu | culled %llu",
+                    static_cast<unsigned long long>(visibility.submittedDraws-visibility.culledDraws),
+                    static_cast<unsigned long long>(visibility.submittedDraws),
+                    static_cast<unsigned long long>(visibility.culledDraws));
+                ImGui::TextDisabled("Static depth shadows: %s", renderer_->shadowDepthReused()?"reused":"rendered / inactive");
+            }
             if (EditorUi::section("Instance submission stress")) {
                 bool instanceStressEnabled = instanceStressDemoEnabled_;
                 if (EditorUi::Checkbox("Enable 2,500-instance scene", &instanceStressEnabled)) {
@@ -2340,7 +2638,6 @@ void Application::drawInspectorPanel() {
                 &rendererSettings_.instanceOptimizationEnabled
                 );
                 ImGui::BeginDisabled(!rendererSettings_.instanceOptimizationEnabled);
-                EditorUi::Checkbox("CPU frustum culling", &rendererSettings_.frustumCullingEnabled);
                 EditorUi::Checkbox("Projected-size LOD", &rendererSettings_.lodSelectionEnabled);
                 ImGui::EndDisabled();
                 const auto& lodCounts = renderer_->lodInstanceCounts();
@@ -2366,7 +2663,7 @@ void Application::drawInspectorPanel() {
             EditorUi::Checkbox("Metallic-roughness PBR", &rendererSettings_.pbrEnabled);
             EditorUi::Checkbox("Image-based lighting", &rendererSettings_.iblEnabled);
             EditorUi::Checkbox(EditorUi::label("Skybox"), &rendererSettings_.skyboxEnabled);
-            EditorUi::Checkbox(EditorUi::label("Shadow mapping"), &rendererSettings_.shadowsEnabled);
+            if(editorSession_.backend()!=EditorRenderBackend::VulkanRaster)EditorUi::Checkbox(EditorUi::label("Shadow mapping"), &rendererSettings_.shadowsEnabled);
             {
                 auto cascades = EditorDomain::capturePbrEnvironmentSettings(rendererSettings_);
                 const char* skyEnvironments[] = {
@@ -2920,6 +3217,7 @@ void Application::drawInspectorPanel() {
                 }
                 if (ImGui::Button(EditorUi::label("Frame model"), ImVec2(-1.0f, 0.0f))) {
                     camera_.reset(modelPosition_);
+                    if(editorSession_.backend()==EditorRenderBackend::GpuPathTraced)renderer_->invalidateTemporalHistory();
                 }
             }
 
@@ -3297,6 +3595,11 @@ void Application::applyModuleEnvironmentOverrides() {
     if (const char* seed = std::getenv("MYRENDERER_MODULE_SEED")) {
         moduleSeed_ = static_cast<std::uint32_t>(std::max(std::atoi(seed), 0));
     }
+    if (const char* fps = std::getenv("MYRENDERER_TIMELINE_FPS")) {
+        const int value = std::atoi(fps);
+        if (value < 1 || value > 240) throw std::runtime_error("Timeline FPS must be in 1..240");
+        editorSession_.setFramesPerSecond(value);
+    }
     if (const char* frame = std::getenv("MYRENDERER_TIMELINE_FRAME")) {
         editorSession_.setFrame(std::atoi(frame));
         // Explicit capture frames must remain deterministic even if the loaded
@@ -3318,6 +3621,8 @@ void Application::synchronizeModulePlayback() {
     const auto& timeline = editorSession_.timeline();
     const double requested = std::floor(double(animationTimeSeconds_) * timeline.framesPerSecond() + 1.0e-5);
     if (requested > timeline.endFrame() && timeline.loop()) {
+        // A whole-cycle skip can wrap to a numerically later frame as well.
+        if (activeModuleId_ == rigidBodyModuleId) ++moduleInputRevision_;
         const double wrapped = std::fmod(double(animationTimeSeconds_) * timeline.framesPerSecond()
             - timeline.startFrame(), double(timeline.frameCount()));
         editorSession_.setFrame(timeline.startFrame() + static_cast<int>(wrapped));
@@ -3364,6 +3669,8 @@ void Application::updateModulePreview() {
         moduleBuiltEntityCount_ = scene_.size();
     }
 
+    const bool physics = activeModuleId_ == rigidBodyModuleId;
+    const bool rewinding = moduleRuntime_.timeline().frame() > editorSession_.frame();
     // The runtime is deliberately forward-only. Scrubbing backwards reconstructs the
     // discardable scene from the authored scene, then deterministically steps forward.
     if (moduleRuntime_.timeline().frame() > editorSession_.frame()) {
@@ -3375,6 +3682,14 @@ void Application::updateModulePreview() {
             statusMessage_ = moduleMessage_;
             return;
         }
+    }
+    if (physics) {
+        auto& runtimeScene = moduleRuntime_.runtimeScene().scene();
+        if (inputsChanged || rewinding || editorSession_.frame() > moduleRuntime_.report().lastFrame + 1) {
+            for (const auto& entity : runtimeScene.entities()) runtimeScene.find(entity.id)->motionHistoryValid = false;
+            renderer_->invalidateTemporalHistory();
+            cpuPreviewRestartRequested_ = true;
+        } else runtimeScene.beginFrame();
     }
     if (!moduleRuntime_.runToFrame(editorSession_.frame(), error)) {
         moduleMessage_ = "Module step failed: " + error;
@@ -3400,12 +3715,26 @@ void Application::drawViewportPanel() {
     }
 
     ImGui::SetCursorPos(ImVec2(8.0f, 30.0f));
+    const bool guideCutTest=std::getenv("IRIS_GPU_PT_GUIDE_CUT_TEST")!=nullptr;
+    auto& guideCutInput=guideCutTestInput();
+    int& guideCutPhase=guideCutInput.phase;
+    if(guideCutTest && guideCutPhase==0){
+        const auto* selected=scene_.find(selectedSceneEntity_);
+        camera_.reset(selected?glm::vec3(selected->worldTransform[3]):modelPosition_);
+        guideCutPhase=1;
+    }
     if (ImGui::SmallButton(EditorUi::label("Frame"))) {
         const SceneEntity* selected = scene_.find(selectedSceneEntity_);
         camera_.reset(selected ? glm::vec3(selected->worldTransform[3]) : modelPosition_);
+        if(editorSession_.backend()==EditorRenderBackend::GpuPathTraced)renderer_->invalidateTemporalHistory();
+        if(guideCutTest && guideCutPhase==4){guideCutPhase=5;std::cout<<"GPU PT actual Frame camera-cut button activated"<<std::endl;}
     }
     const ImVec2 frameButton((ImGui::GetItemRectMin().x + ImGui::GetItemRectMax().x)*.5f,
         (ImGui::GetItemRectMin().y + ImGui::GetItemRectMax().y)*.5f);
+    if(guideCutTest){
+        guideCutInput.button=frameButton;
+        if(guideCutPhase==3 && ImGui::IsItemHovered())guideCutPhase=4;
+    }
     ImGui::SameLine();
     ImGui::SetNextItemWidth(142.0f);
     if (ImGui::SmallButton(viewportRenderMode_ == 0
@@ -3540,6 +3869,7 @@ void Application::drawViewportPanel() {
     std::vector<RenderItem> renderItems;
     scene_.beginFrame();
     syncSceneEntities(normalization);
+    advancePhysicsTemporalAcceptance();
     updateModulePreview();
     if (model_ != nullptr && instanceStressDemoEnabled_) {
         static constexpr std::array<glm::vec3, 6> instanceTints{
@@ -3642,6 +3972,8 @@ void Application::drawViewportPanel() {
         previewCamera.setOrbitState(animatedCamera);
     }
     const auto entityLights = viewportScene().buildLocalLights();
+    previewSettings.vulkanRaster=editorSession_.backend()==EditorRenderBackend::VulkanRaster;
+    previewSettings.vulkanPathTraced=editorSession_.backend()==EditorRenderBackend::GpuPathTraced;
     previewSettings.localLights.insert(previewSettings.localLights.end(), entityLights.begin(), entityLights.end());
     if (!presentationSnapshotCaptured_) {
         if (const char* destination = std::getenv("MYRENDERER_PRESENTATION_SNAPSHOT")) {
@@ -3699,7 +4031,112 @@ void Application::drawViewportPanel() {
             }
         }
     } else {
-        renderer_->render(renderItems, previewCamera, previewSettings, width, height);
+        renderer_->setTemporalFrame(editorSession_.frame(),editorSession_.framesPerSecond());
+        try {renderer_->render(renderItems, previewCamera, previewSettings, width, height);}
+        catch(const std::exception& error) {
+            if(!previewSettings.vulkanRaster && !previewSettings.vulkanPathTraced)throw;
+            if(std::getenv("IRIS_VULKAN_RASTER") || std::getenv("IRIS_VULKAN_PATH_TRACER"))throw;
+            statusMessage_=error.what();
+        }
+        if(previewSettings.vulkanPathTraced && guideCutTest){
+            const auto samples=renderer_->gpuPathTracedSamples();
+            if(samples && *samples>=2 && guideCutPhase==1){camera_.pan(12,0);guideCutPhase=2;}
+            else if(samples && *samples>0 && guideCutPhase==2){
+                const auto* guides=renderer_->gpuTemporalGuides();
+                if(*samples!=1 || !guides || !guides->historyValid)throw std::runtime_error("Smooth pan did not preserve guide history before Frame cut");
+                if(previewSettings.gpuTemporalDenoise && !renderer_->vulkanStatistics().temporalAccepted)throw std::runtime_error("Smooth pan lost temporal accumulation");
+                std::cout<<"GPU PT smooth pan guide history valid=1 PASS"<<std::endl;guideCutPhase=3;
+            }else if(samples && *samples>0 && guideCutPhase==5){
+                const auto* guides=renderer_->gpuTemporalGuides();
+                if(*samples!=1 || !guides || guides->historyValid)throw std::runtime_error("Frame button reused history across a translation-only camera cut");
+                if(previewSettings.gpuTemporalDenoise && renderer_->vulkanStatistics().temporalAccepted)throw std::runtime_error("Frame cut accepted temporal history");
+                std::cout<<"GPU PT actual Frame translation-only cut history valid=0 PASS"<<std::endl;guideCutPhase=6;glfwSetWindowShouldClose(window_,GLFW_TRUE);
+            }
+        }
+        if(previewSettings.vulkanPathTraced && std::getenv("IRIS_GPU_PT_HISTORY_TEST")) {
+            static int phase=0;const auto samples=renderer_->gpuPathTracedSamples();
+            if(samples && *samples>0 && phase%2==1) {
+                if(*samples!=1)throw std::runtime_error("GPU PT history did not restart at 1 SPP");
+                const char* input=phase==1?"camera":phase==3?"seed":phase==5?"light":phase==7?"tint":"entity";
+                std::cout<<"GPU PT history reset: "<<input<<" -> 1 SPP PASS\n";++phase;
+                if(std::getenv("IRIS_GPU_PT_GUIDES")){
+                    const auto* guides=renderer_->gpuTemporalGuides();
+                    if(!guides || guides->historyValid!=(phase==2))throw std::runtime_error("GPU PT guide history did not follow camera/seed/light/tint inputs");
+                    std::cout<<"GPU PT guide history: "<<input<<" valid="<<guides->historyValid<<" PASS\n";
+                }
+                if(phase==(std::getenv("IRIS_GPU_PT_GUIDES")?10:8))glfwSetWindowShouldClose(window_,GLFW_TRUE);
+            }
+            if(samples && *samples>=8 && phase%2==0 && phase<(std::getenv("IRIS_GPU_PT_GUIDES")?10:8)) {
+                if(phase==0)camera_.orbit(.04f,0);
+                else if(phase==2)++rendererSettings_.gpuPathTracingSeed;
+                else if(phase==4)rendererSettings_.lightDirection.x+=.2f;
+                else {auto* entity=scene_.find(2);if(!entity)throw std::runtime_error("GPU PT history fixture requires entity 2");
+                    if(phase==6)entity->tint.r*=.8f;
+                    else entity->id=1002; // Same geometry/pose/tint: exercise the identity-only key input.
+                }
+                ++phase;
+            }
+        }
+        if(previewSettings.vulkanPathTraced)if(const char* destination=std::getenv("IRIS_GPU_PT_EXPORT")) {
+            const auto samples=renderer_->gpuPathTracedSamples();
+            if(std::getenv("IRIS_GPU_PT_SPATIAL_UI_TEST") && samples && *samples>=static_cast<unsigned>(previewSettings.gpuPathTracingSpp)){
+                auto& input=spatialUiTestInput();if(*samples!=static_cast<unsigned>(previewSettings.gpuPathTracingSpp))throw std::runtime_error("Spatial toggle advanced sampling");
+                if(input.phase==0){if(previewSettings.gpuSpatialDenoise)throw std::runtime_error("Spatial UI test must start Raw");input.phase=1;}
+                else if((input.phase==2 || input.phase==4 || input.phase==6) && renderer_->vulkanStatistics().displayUploads){
+                    if(input.phase!=4 && renderer_->vulkanStatistics().spatialDispatches==0)throw std::runtime_error("Spatial UI did not dispatch filter");
+                    if(input.phase==4){std::string error;if(!renderer_->saveScreenshot(std::filesystem::u8path(std::string(destination)+"-raw-viewport.png"),error))throw std::runtime_error(error);}
+                    ++input.phase;
+                }
+            }
+            if(std::getenv("IRIS_GPU_PT_TEMPORAL_UI_TEST") && samples && *samples>=static_cast<unsigned>(previewSettings.gpuPathTracingSpp)){
+                auto& input=spatialUiTestInput();if(*samples!=static_cast<unsigned>(previewSettings.gpuPathTracingSpp))throw std::runtime_error("Temporal toggle advanced sampling");
+                if(input.phase==0){if(previewSettings.gpuTemporalDenoise)throw std::runtime_error("Temporal UI test must start disabled");input.phase=1;}
+                else if((input.phase==2 || input.phase==4 || input.phase==6) && renderer_->vulkanStatistics().displayUploads){
+                    if(input.phase==2 && input.temporalMotionPhase==0){camera_.pan(12,0);input.temporalMotionPhase=1;}
+                    else {
+                        const auto& stats=renderer_->vulkanStatistics();
+                        if(input.phase!=4 && !stats.temporalDispatches)throw std::runtime_error("Temporal UI did not dispatch");
+                        if(input.phase==2){
+                            if(stats.temporalAccepted<1000)throw std::runtime_error("Temporal UI pan did not accept history");
+                            const auto exportImage=[&](const pathtracer::RenderImage* image,const char* suffix){pathtracer::writeRenderOutput(*image,pathtracer::RenderOutput::Beauty,std::filesystem::u8path(std::string(destination)+suffix),{pathtracer::RenderFileFormat::Png,pathtracer::RenderFileFormat::OpenExr});};
+                            exportImage(renderer_->gpuPathTracedImage(),"-motion-raw");exportImage(renderer_->gpuAccumulatedImage(),"-motion-accumulated");
+                            if(previewSettings.gpuSpatialDenoise)exportImage(renderer_->gpuSpatialImage(),"-motion-denoised");
+                            std::cout<<"GPU PT temporal actual pan accepted="<<stats.temporalAccepted<<" PASS\n";input.temporalMotionPhase=2;
+                        }
+                        if(input.phase==6 && stats.temporalAccepted)throw std::runtime_error("Reenabled temporal UI reused old history");
+                        std::string error;if(!renderer_->saveScreenshot(std::filesystem::u8path(std::string(destination)+"-temporal-toggle-"+std::to_string(input.phase)+".png"),error))throw std::runtime_error(error);
+                        std::cout<<"GPU PT temporal workspace phase "<<input.phase<<" actual GL upload PASS\n";++input.phase;
+                    }
+                }
+            }
+            if(samples && *samples>=static_cast<unsigned>(previewSettings.gpuPathTracingSpp) && (!(std::getenv("IRIS_GPU_PT_SPATIAL_UI_TEST") || std::getenv("IRIS_GPU_PT_TEMPORAL_UI_TEST")) || spatialUiTestInput().phase==7)) {
+                const auto* image=renderer_->gpuPathTracedImage();
+                pathtracer::writeRenderOutput(*image,pathtracer::RenderOutput::Beauty,std::filesystem::u8path(destination),{pathtracer::RenderFileFormat::Png,pathtracer::RenderFileFormat::OpenExr});
+                if(previewSettings.gpuTemporalDenoise){
+                    const auto* accumulated=renderer_->gpuAccumulatedImage();
+                    pathtracer::writeRenderOutput(*accumulated,pathtracer::RenderOutput::Beauty,std::filesystem::u8path(std::string(destination)+"-accumulated-beauty"),{pathtracer::RenderFileFormat::Png,pathtracer::RenderFileFormat::OpenExr});
+                    std::cout<<"GPU PT temporal workspace export PASS: SPP="<<accumulated->completedSamples<<"\n";
+                }
+                if(previewSettings.gpuSpatialDenoise){
+                    const auto* spatial=renderer_->gpuSpatialImage();
+                    pathtracer::writeRenderOutput(*spatial,pathtracer::RenderOutput::Beauty,std::filesystem::u8path(std::string(destination)+"-denoised-beauty"),{pathtracer::RenderFileFormat::Png,pathtracer::RenderFileFormat::OpenExr});
+                    std::string error;if(!renderer_->saveScreenshot(std::filesystem::u8path(std::string(destination)+"-spatial-viewport.png"),error))throw std::runtime_error(error);
+                    std::cout<<"GPU PT spatial workspace export PASS: SPP="<<spatial->completedSamples<<"\n";
+                }
+                // A requested workspace capture must show the completed accumulation.
+                if (!pendingEditorScreenshotPath_.empty()) pendingEditorScreenshotWarmupFrames_ = 0;
+                if (!pendingScreenshotPath_.empty()) pendingScreenshotWarmupFrames_ = 0;
+                std::cout<<"GPU PT workspace export PASS: SPP="<<image->completedSamples<<"\n";glfwSetWindowShouldClose(window_,GLFW_TRUE);
+                if(std::getenv("IRIS_GPU_PT_GUIDES")){
+                    const auto* guides=renderer_->gpuTemporalGuides();
+                    if(!guides || guides->width!=image->width || guides->height!=image->height)throw std::runtime_error("GPU PT workspace guide extent mismatch");
+                    auto displayPath=std::filesystem::u8path(destination);displayPath+="-viewport.png";std::string displayError;
+                    if(!renderer_->saveScreenshot(displayPath,displayError))throw std::runtime_error(displayError);
+                    std::cout<<"GPU PT workspace guides PASS: "<<guides->width<<"x"<<guides->height<<" frame="<<guides->frame<<" history="<<guides->historyValid<<" bytes="<<guides->allocatedBytes<<" gpuMs="<<guides->gpuMilliseconds<<"\n";
+                }
+            }
+        }
+        capturePhysicsTemporalAcceptance();
     }
     if (referenceComparisonMode_ && !referenceComparisonComplete_
         && !pendingModelImport_.has_value() && !scene_.entities().empty()) {
@@ -3710,7 +4147,7 @@ void Application::drawViewportPanel() {
         }
     }
     if (!cpuPreviewVisible && !benchmarkMode_ && !prismReelMode_ && !referenceComparisonMode_
-        && !hideSelectionOutlineForAutomation_) {
+        && !hideSelectionOutlineForAutomation_ && !previewSettings.vulkanRaster && !previewSettings.vulkanPathTraced) {
         renderer_->drawSelectionOutline(renderItems, previewCamera, selectedSceneEntity_, previewSettings.cullBackFaces);
     }
 
@@ -3732,12 +4169,15 @@ void Application::drawViewportPanel() {
         }
     }
 
-    if (!cpuPreviewVisible && !pendingScreenshotPath_.empty()
+    const auto gpuScreenshotSamples=renderer_->gpuPathTracedSamples();
+    const bool gpuScreenshotReady=!previewSettings.vulkanPathTraced || (gpuScreenshotSamples
+        && *gpuScreenshotSamples>=(std::getenv("IRIS_GPU_PT_EXPORT")?static_cast<unsigned>(previewSettings.gpuPathTracingSpp):1U));
+    if (!cpuPreviewVisible && gpuScreenshotReady && !pendingScreenshotPath_.empty()
         && (!scene_.entities().empty() || rendererSettings_.water.enabled || loadedSceneDocument_)
         && !pendingModelImport_.has_value()
         && pendingScreenshotWarmupFrames_ > 0) {
         --pendingScreenshotWarmupFrames_;
-    } else if (!cpuPreviewVisible && !pendingScreenshotPath_.empty()
+    } else if (!cpuPreviewVisible && gpuScreenshotReady && !pendingScreenshotPath_.empty()
         && (!scene_.entities().empty() || rendererSettings_.water.enabled || loadedSceneDocument_)
         && !pendingModelImport_.has_value()) {
         std::string screenshotError;
@@ -3768,9 +4208,16 @@ void Application::drawViewportPanel() {
         const unsigned int viewportTexture = cpuPreviewVisible
             ? cpuPreviewTexture_
             : renderer_->colorTexture();
+        ImVec2 imageSize(static_cast<float>(width), static_cast<float>(height));
+        if (previewSettings.vulkanPathTraced) {
+            const float scale = std::min(std::max(available.x, 1.0f) / imageSize.x,
+                                         std::max(available.y, 1.0f) / imageSize.y);
+            imageSize.x *= scale;
+            imageSize.y *= scale;
+        }
         ImGui::Image(
             static_cast<ImTextureID>(static_cast<std::uintptr_t>(viewportTexture)),
-            ImVec2(static_cast<float>(width), static_cast<float>(height)),
+            imageSize,
             ImVec2(0.0f, 1.0f),
             ImVec2(1.0f, 0.0f)
         );
@@ -3836,7 +4283,16 @@ void Application::drawViewportPanel() {
     } else {
         const ImVec2 imageMin = ImGui::GetItemRectMin();
         char overlay[256]{};
-        if (!rendererSettings_.shaderSceneResource.empty()) {
+        if(previewSettings.vulkanPathTraced) {
+            const auto samples=renderer_->gpuPathTracedSamples();const auto& stats=renderer_->vulkanStatistics();
+            std::snprintf(overlay,sizeof(overlay),"GPU Path Traced | %dx%d | SPP %u/%d | Depth %d | Seed %d\nGPU/SPP %.2f ms | alloc %.1f MiB",renderer_->renderWidth(),renderer_->renderHeight(),samples.value_or(0),previewSettings.gpuPathTracingSpp,previewSettings.gpuPathTracingDepth,previewSettings.gpuPathTracingSeed,stats.gpuMilliseconds,static_cast<double>(stats.allocatedBytes)/(1024*1024));
+        } else if (previewSettings.vulkanRaster) {
+            const auto& stats=renderer_->vulkanStatistics();
+            std::snprintf(overlay,sizeof(overlay),
+                "Vulkan Raster | %dx%d | Frame %d @ %d FPS\nCPU %.2f ms | GPU %.2f ms | alloc %.1f MiB",
+                width,height,editorSession_.frame(),editorSession_.framesPerSecond(),
+                stats.cpuMilliseconds,stats.gpuMilliseconds,static_cast<double>(stats.allocatedBytes)/(1024*1024));
+        } else if (!rendererSettings_.shaderSceneResource.empty()) {
             std::snprintf(overlay, sizeof(overlay), "ShaderScene Image | %dx%d\nTime %.2f s", width, height, animationTimeSeconds_);
         } else if (rendererSettings_.enscapeCubeShaderEnabled) {
             std::snprintf(overlay, sizeof(overlay),
@@ -3878,13 +4334,23 @@ void Application::drawViewportPanel() {
             const glm::vec4 clip = viewProjection * glm::vec4(world, 1.0f);
             if (clip.w <= 0.001f || clip.z < -clip.w || clip.z > clip.w) return false;
             const auto ndc = glm::vec3(clip) / clip.w;
-            point = ImVec2(imageMin.x + (ndc.x * 0.5f + 0.5f) * width,
-                           imageMin.y + (0.5f - ndc.y * 0.5f) * height);
+            point = ImVec2(imageMin.x + (ndc.x * 0.5f + 0.5f) * (imageMax.x - imageMin.x),
+                           imageMin.y + (0.5f - ndc.y * 0.5f) * (imageMax.y - imageMin.y));
             return true;
         };
         auto segment = [&](glm::vec3 a, glm::vec3 b, ImU32 color) {
             ImVec2 p, q; if (project(a, p) && project(b, q)) draw->AddLine(p, q, color, 1.5f);
         };
+        if (showPhysicsColliders_) for (const auto& entity : viewportScene().entities()) if (entity.rigidBody) {
+            const auto color = entity.id == selectedSceneEntity_ ? IM_COL32(255, 225, 96, 255) : IM_COL32(90, 240, 190, 255);
+            for (const auto& line : rigidBodyDebugLines(entity)) segment(line.from, line.to, color);
+            ImVec2 labelPosition;
+            if (project(entity.transform.translation, labelPosition)) {
+                const char* shape = entity.rigidBody->shape == CollisionShape::Sphere ? "Sphere"
+                    : entity.rigidBody->shape == CollisionShape::Box ? "Box" : "Plane (infinite)";
+                draw->AddText(labelPosition, color, shape);
+            }
+        }
         float closest = 12.0f * 12.0f;
         for (const auto& entity : viewportScene().entities()) {
             if (!entity.light || !entity.enabledByPreset || (!entity.visible && entity.id != selectedSceneEntity_)) continue;
@@ -3939,8 +4405,11 @@ void Application::drawViewportPanel() {
     if (ImGui::IsItemHovered() && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
         const ImVec2 min = ImGui::GetItemRectMin();
         const ImVec2 mouse = ImGui::GetIO().MousePos;
+        const ImVec2 imageSize = ImGui::GetItemRectSize();
+        const float mouseX = previewSettings.vulkanPathTraced ? (mouse.x - min.x) * width / imageSize.x : mouse.x - min.x;
+        const float mouseY = previewSettings.vulkanPathTraced ? (mouse.y - min.y) * height / imageSize.y : mouse.y - min.y;
         selectEntity(pickedLight != invalidSceneEntityId ? pickedLight : pickEntity(renderItems, width, height,
-            static_cast<int>(mouse.x - min.x), height - 1 - static_cast<int>(mouse.y - min.y)));
+            static_cast<int>(mouseX), height - 1 - static_cast<int>(mouseY)));
         ImGui::SetWindowFocus();
     }
     if (ImGui::IsWindowFocused() && !ImGui::GetIO().WantTextInput
@@ -5153,6 +5622,10 @@ void Application::writePrismBenchmarkReport() {
     const std::size_t geometryMemoryBytes = loadedVertexCount_ * sizeof(Vertex)
         + loadedTriangleCount_ * 3U * sizeof(std::uint32_t);
     const double gpuFrameP50 = percentile(benchmarkGpuFrameTimes_, 0.50);
+    const bool gpuPt=editorSession_.backend()==EditorRenderBackend::GpuPathTraced;
+    const bool vulkan=gpuPt || editorSession_.backend()==EditorRenderBackend::VulkanRaster;
+    const auto orbit=camera_.orbitState();
+    double activeCpuTotal=0;for(const auto sample:benchmarkActiveCpuFrameTimes_)activeCpuTotal+=sample;
     const std::size_t opaqueTrafficBytes = renderer_->estimatedOpaqueTrafficBytesPerFrame();
     const double estimatedOpaqueTrafficGiBPerSecond = gpuFrameP50 > 0.0
         ? (static_cast<double>(opaqueTrafficBytes) / (1024.0 * 1024.0 * 1024.0))
@@ -5166,6 +5639,43 @@ void Application::writePrismBenchmarkReport() {
     report << std::fixed << std::setprecision(6)
            << "{\n"
            << "  \"schemaVersion\": 1,\n"
+           << "  \"benchmarkProtocolVersion\": 2,\n"
+           << "  \"buildId\": " << std::quoted(moduleBuildId()) << ",\n"
+           << "  \"scene\": " << std::quoted(currentScenePath_.generic_u8string()) << ",\n"
+           << "  \"backend\": " << std::quoted(gpuPt?"gpu-path-traced":vulkan?"vulkan-raster":"raster") << ",\n"
+           << "  \"vsync\": " << (vsync_?"true":"false") << ",\n"
+           << "  \"vulkanPresentMode\": " << std::quoted(vulkan?renderer_->vulkanStatistics().presentMode:"not-applicable") << ",\n"
+           << "  \"validationEnabled\": " << (vulkan && renderer_->vulkanStatistics().validationEnabled?"true":"false") << ",\n"
+           << "  \"synchronizationValidation\": " << (vulkan && renderer_->vulkanStatistics().synchronizationValidation?"true":"false") << ",\n"
+           << "  \"shadowsEnabled\": " << (rendererSettings_.shadowsEnabled?"true":"false") << ",\n"
+           << "  \"rayQueryShadows\": " << (vulkan && renderer_->vulkanStatistics().rayQueryShadows?"true":"false") << ",\n"
+           << "  \"warmupFrames\": " << benchmarkWarmupFrames_ << ",\n"
+           << "  \"measurementFrames\": " << benchmarkMeasurementFrames_ << ",\n"
+           << "  \"requestedWidth\": " << renderWidthOverride_ << ",\n"
+           << "  \"requestedHeight\": " << renderHeightOverride_ << ",\n"
+           << "  \"cameraOrbit\": {\"target\": [" << orbit.target.x << "," << orbit.target.y << "," << orbit.target.z
+           << "], \"yawDegrees\": " << orbit.yawDegrees << ", \"pitchDegrees\": " << orbit.pitchDegrees
+           << ", \"distance\": " << orbit.distance << ", \"fieldOfViewDegrees\": " << orbit.fieldOfViewDegrees << "},\n"
+           << "  \"runToFirstFrameMs\": " << benchmarkStartupMilliseconds_ << ",\n"
+           << "  \"firstFrameCpuMs\": " << benchmarkFirstFrameMilliseconds_ << ",\n"
+           << "  \"ptTargetSpp\": " << rendererSettings_.gpuPathTracingSpp << ",\n"
+           << "  \"ptDepth\": " << rendererSettings_.gpuPathTracingDepth << ",\n"
+           << "  \"ptSeed\": " << rendererSettings_.gpuPathTracingSeed << ",\n"
+           << "  \"ptCompletedSpp\": " << (renderer_->gpuPathTracedSamples().value_or(0)) << ",\n"
+           << "  \"ptPreviewDispatches\": " << renderer_->vulkanStatistics().previewDispatches << ",\n"
+           << "  \"ptRawReadbackBytes\": " << renderer_->vulkanStatistics().rawReadbackBytes << ",\n"
+           << "  \"ptDisplayUploadsFinal\": " << renderer_->vulkanStatistics().displayUploads << ",\n"
+           << "  \"ptAsynchronousPreview\": " << (std::getenv("IRIS_GPU_PT_ASYNC_TEST")?"true":"false") << ",\n"
+           << "  \"ptTargetReachedFromRunMs\": " << benchmarkPtTargetFromRunMilliseconds_ << ",\n"
+           << "  \"ptTargetReachedGenerationMs\": " << benchmarkPtTargetGenerationMilliseconds_ << ",\n"
+           << "  \"gpuTimingValid\": " << (!benchmarkGpuFrameTimes_.empty()?"true":"false") << ",\n"
+           << "  \"activeCpuFrameP50Ms\": " << percentile(benchmarkActiveCpuFrameTimes_,0.50) << ",\n"
+           << "  \"activeCpuFrameP95Ms\": " << percentile(benchmarkActiveCpuFrameTimes_,0.95) << ",\n"
+           << "  \"activeCpuFrameMeasurements\": " << benchmarkActiveCpuFrameTimes_.size() << ",\n"
+           << "  \"activeSppPerSecond\": " << (gpuPt && activeCpuTotal>0?1000*benchmarkGpuFrameTimes_.size()/activeCpuTotal:0) << ",\n"
+           << "  \"completedCpuFrameP50Ms\": " << percentile(benchmarkCompletedCpuFrameTimes_,0.50) << ",\n"
+           << "  \"completedCpuFrameP95Ms\": " << percentile(benchmarkCompletedCpuFrameTimes_,0.95) << ",\n"
+           << "  \"completedCpuFrameMeasurements\": " << benchmarkCompletedCpuFrameTimes_.size() << ",\n"
            << "  \"gpu\": " << std::quoted(gpuDescription_) << ",\n"
            << "  \"animationTimeSeconds\": " << animationTimeSeconds_ << ",\n"
            << "  \"animationTimeFixed\": " << (animationTimeFixed_ ? "true" : "false") << ",\n"
@@ -5235,6 +5745,7 @@ void Application::writePrismBenchmarkReport() {
            << rendererSettings_.localLights.size() - spotLightCount << ",\n"
            << "  \"spotLightCount\": " << spotLightCount << ",\n"
            << "  \"drawCalls\": " << renderer_->drawCallCount() << ",\n"
+           << "  \"rasterVisibility\": " << rasterVisibilityJson(*renderer_) << ",\n"
            << "  \"cpuOpticsP50Ms\": " << percentile(solveTimes, 0.50) << ",\n"
            << "  \"cpuOpticsP95Ms\": " << percentile(solveTimes, 0.95) << ",\n"
            << "  \"cpuFrameP50Ms\": " << percentile(benchmarkCpuFrameTimes_, 0.50) << ",\n"
@@ -5268,7 +5779,21 @@ void Application::writePrismBenchmarkReport() {
                << "\"measurements\": " << samples.size() << "}"
                << (++cpuPassIndex < benchmarkPassCpuTimes_.size() ? "," : "") << "\n";
     }
-    report << "  },\n"
+    report << "  },\n  \"firstFrameCpuPasses\": {\n";
+    for(std::size_t i=0;i<benchmarkFirstFrameCpuPasses_.size();++i) {
+        const auto& [name,milliseconds]=benchmarkFirstFrameCpuPasses_[i];
+        report << "    " << std::quoted(name) << ": " << milliseconds << (i+1<benchmarkFirstFrameCpuPasses_.size()?",":"") << "\n";
+    }
+    report << "  },\n  \"vulkanCounters\": {\n";
+    std::size_t counterIndex=0;
+    for(const auto& [name,samples]:benchmarkVulkanCounters_) {
+        report << "    " << std::quoted(name) << ": {\"p50\": " << percentile(samples,0.50)
+               << ", \"p95\": " << percentile(samples,0.95) << ", \"measurements\": " << samples.size() << "}"
+               << (++counterIndex<benchmarkVulkanCounters_.size()?",":"") << "\n";
+    }
+    report << "  },\n  \"frameTraceVersion\": 1,\n  \"frameTrace\": [\n";
+    for(std::size_t i=0;i<benchmarkFrameTrace_.size();++i)report<<benchmarkFrameTrace_[i]<<(i+1<benchmarkFrameTrace_.size()?",":"")<<"\n";
+    report << "  ],\n"
            << "  \"renderMemoryBytes\": " << renderer_->estimatedRenderMemoryBytes() << ",\n"
            << "  \"estimatedOpaqueTrafficBytesPerFrame\": " << opaqueTrafficBytes << ",\n"
            << "  \"estimatedOpaqueTrafficGiBPerSecondAtGpuP50\": "
@@ -5280,6 +5805,17 @@ void Application::writePrismBenchmarkReport() {
                 + loadedTextureMemoryBytes_ + geometryMemoryBytes << ",\n"
            << "  \"solveChecksum\": " << solveChecksum << "\n"
            << "}\n";
+    if(const char* destination=std::getenv("IRIS_BENCHMARK_PT_EXPORT")){
+        if(editorSession_.backend()!=EditorRenderBackend::GpuPathTraced)throw std::runtime_error("PT benchmark export requires GPU PT");
+        const auto write=[&](const pathtracer::RenderImage* image,const char* suffix){
+            pathtracer::writeRenderOutput(*image,pathtracer::RenderOutput::Beauty,std::filesystem::u8path(std::string(destination)+suffix),{pathtracer::RenderFileFormat::Png,pathtracer::RenderFileFormat::OpenExr});
+        };
+        // Explicit diagnostic export happens after measured wall-clock frames.
+        write(renderer_->gpuPathTracedImage(),"-raw");
+        if(rendererSettings_.gpuTemporalDenoise)write(renderer_->gpuAccumulatedImage(),"-accumulated");
+        if(rendererSettings_.gpuSpatialDenoise)write(renderer_->gpuSpatialImage(),"-denoised");
+        std::string error;if(!renderer_->saveScreenshot(std::filesystem::u8path(std::string(destination)+"-viewport.png"),error))throw std::runtime_error(error);
+    }
     std::cout << "Saved renderer benchmark: " << benchmarkOutputPath_ << '\n';
 }
 

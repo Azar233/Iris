@@ -54,6 +54,7 @@ std::uint64_t RuntimeScene::resetFrom(const Scene& editScene) {
         target->previousWorldTransform = source.worldTransform;
         target->tint = source.tint;
         target->light = source.light;
+        target->rigidBody = source.rigidBody;
         target->visible = source.visible;
         target->castsShadow = source.castsShadow;
         target->instanceCandidate = source.instanceCandidate;
@@ -101,6 +102,17 @@ std::uint64_t sceneContentHash(const Scene& scene) {
         hash = mixUint64(hash, entity->castsShadow ? 1U : 0U);
         hash = mixUint64(hash, entity->instanceCandidate ? 1U : 0U);
         // Preserve old hashes for scenes without this additive component.
+        if (entity->rigidBody) {
+            const auto& body = *entity->rigidBody;
+            hash = mixUint64(hash, 0x5249474944424F44ULL);
+            hash = mixUint64(hash, static_cast<std::uint64_t>(body.type));
+            hash = mixUint64(hash, static_cast<std::uint64_t>(body.shape));
+            hash = mixVector(hash, body.offset); hash = mixVector(hash, body.halfExtents);
+            hash = mixFloat(hash, body.radius); hash = mixFloat(hash, body.mass);
+            hash = mixFloat(hash, body.friction); hash = mixFloat(hash, body.restitution);
+            hash = mixFloat(hash, body.linearDamping); hash = mixFloat(hash, body.angularDamping);
+            hash = mixVector(hash, body.linearVelocity); hash = mixVector(hash, body.angularVelocity);
+        }
         if (entity->light) {
             const auto& light = *entity->light;
             hash = mixUint64(hash, 0x4C49474854ULL);

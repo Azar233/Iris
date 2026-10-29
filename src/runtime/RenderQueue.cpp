@@ -284,7 +284,7 @@ void RenderQueue::startNext() {
 
     Entry& entry = **found;
     entry.status = RenderQueueStatus::Running;
-    entry.message = entry.job.renderer == "raster" ? "Running in the Raster context process."
+    entry.message = entry.job.renderer != "cpu-path-traced" ? "Running in a backend context process."
         : "Running on the shared Batch Sequence Runtime.";
     entry.cancellation = std::make_shared<CancellationToken>();
     entry.progress = std::make_shared<QueueProgress>();
@@ -293,18 +293,18 @@ void RenderQueue::startNext() {
     const auto cancellation = entry.cancellation;
     const auto progress = entry.progress;
     const ModuleRegistry* modules = modules_;
-    const auto rasterRunner = rasterRunner_;
+    const auto rasterRunner = job.renderer == "gpu-path-traced" ? gpuRunner_ : rasterRunner_;
     entry.future = std::async(std::launch::async, [job, cancellation, progress, modules, rasterRunner] {
         const BatchSequenceProgressCallback callback = [progress](const BatchSequenceProgress& update) {
                 progress->frame.store(update.frame);
                 progress->completedFrames.store(update.completedFrames);
                 progress->frameStatus.store(update.frameStatus);
             };
-        if (job.renderer == "raster") {
+        if (job.renderer == "raster" || job.renderer == "gpu-path-traced") {
             if (rasterRunner) return rasterRunner(job, cancellation.get(), callback);
             BatchSequenceResult result;
             result.status = BatchFrameStatus::Failed;
-            result.error = "Raster executor unavailable; use Iris raster-sequence";
+            result.error = "Context process executor unavailable; use the backend CLI";
             return result;
         }
         return runRenderJobSequence(job, cancellation.get(), callback, modules);
@@ -538,7 +538,7 @@ bool RenderQueue::restore(std::string& error) {
                     entry->message = value.HasMember("message") && value["message"].IsString()
                         ? value["message"].GetString() : "Restored.";
                     if (isActive(persistedStatus)) {
-                        entry->status = entry->job.renderer == "raster" ? RenderQueueStatus::Cancelled : RenderQueueStatus::Pending;
+                        entry->status = entry->job.renderer != "cpu-path-traced" ? RenderQueueStatus::Cancelled : RenderQueueStatus::Pending;
                         const char* cause = candidate.previousSession
                                 == RenderQueuePreviousSession::Interrupted
                             ? "interrupted application session"
@@ -546,8 +546,8 @@ bool RenderQueue::restore(std::string& error) {
                                 ? "inconsistent clean-shutdown state" : "legacy queue state");
                         entry->message = std::string("Recovered ")
                             + renderQueueStatusName(persistedStatus) + " job after " + cause
-                            + (entry->job.renderer == "raster"
-                                ? "; Raster Resume unavailable; choose a fresh output path before retry."
+                            + (entry->job.renderer != "cpu-path-traced"
+                                ? "; Backend Resume unavailable; choose a fresh output path before retry."
                                 : "; completed frames will resume.");
                     }
                 }
@@ -644,7 +644,7 @@ void RenderQueue::shutdown() {
                     result.status = BatchFrameStatus::Failed; result.error = "Unknown executor failure at shutdown";
                 }
             }
-            if (entry->job.renderer == "raster") {
+            if (entry->job.renderer != "cpu-path-traced") {
                 entry->currentFrame = result.lastFrame;
                 entry->completedFrames = result.completedFrames;
                 entry->failedFrames = result.failedFrames;
@@ -653,7 +653,7 @@ void RenderQueue::shutdown() {
                     : result.status == BatchFrameStatus::Failed ? RenderQueueStatus::Failed : RenderQueueStatus::Cancelled;
                 entry->message = result.status == BatchFrameStatus::Complete ? "Complete."
                     : result.status == BatchFrameStatus::Failed ? result.error
-                    : "Raster stopped at shutdown; Resume unavailable; use a fresh output path before retry.";
+                    : "Context process stopped at shutdown; Resume unavailable; use a fresh output path before retry.";
             } else {
                 entry->status = RenderQueueStatus::Pending;
                 entry->message = "Recovered after application shutdown; completed frames will resume.";

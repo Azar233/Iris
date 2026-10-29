@@ -1,3 +1,8 @@
+#include "asset/RuntimePaths.h"
+#include "asset/InputManifest.h"
+#ifdef IRIS_HAS_VULKAN
+#include "vulkan/VulkanPathTracer.h"
+#endif
 #include "runtime/BatchRuntime.h"
 
 #include <algorithm>
@@ -17,10 +22,13 @@
 #include "pathtracer/SceneSnapshotCapture.h"
 #include "render/Camera.h"
 #include "scene/SceneDocument.h"
+#include "runtime/ModuleRunReportJson.h"
 
 #define RAPIDJSON_NAMESPACE myrenderer_batch_runtime_json
 #include <rapidjson/document.h>
 #include <rapidjson/error/en.h>
+#include <rapidjson/stringbuffer.h>
+#include <rapidjson/prettywriter.h>
 #undef RAPIDJSON_NAMESPACE
 #undef RAPIDJSON_NAMESPACE_BEGIN
 #undef RAPIDJSON_NAMESPACE_END
@@ -52,7 +60,15 @@ std::shared_ptr<const ModelData> loadModelData(const std::string& resource,
     return std::make_shared<const ModelData>(std::move(imported.model));
 }
 
-pathtracer::SceneSnapshot loadSnapshot(const RenderJob& job, const SceneDocument& document) {
+using SnapshotModels=std::unordered_map<std::string,std::shared_ptr<const ModelData>>;
+struct GpuTemporalSession {
+    SnapshotModels models;
+    std::vector<capture::InputFile> inputs;
+#ifdef IRIS_HAS_VULKAN
+    std::unique_ptr<iris::vulkan::VulkanPathTracer> backend;
+#endif
+};
+pathtracer::SceneSnapshot loadSnapshot(const RenderJob& job, const SceneDocument& document,SnapshotModels* retainedModels=nullptr) {
     for(const auto& entity:document.entities)if(!entity.shaderMaterial.resource.empty())
         throw std::runtime_error("CPU path tracing does not support ShaderMaterial GLSL");
     if (!document.renderer.shaderSceneResource.empty())
@@ -94,7 +110,8 @@ pathtracer::SceneSnapshot loadSnapshot(const RenderJob& job, const SceneDocument
         return world[index];
     };
 
-    std::unordered_map<std::string, std::shared_ptr<const ModelData>> models;
+    SnapshotModels localModels;
+    auto& models=retainedModels?*retainedModels:localModels;
     for (std::size_t index = 0U; index < document.entities.size(); ++index) {
         const SceneDocumentEntity& entity = document.entities[index];
         const glm::mat4 entityWorld = resolveWorld(resolveWorld, index);
@@ -116,10 +133,12 @@ struct ModuleApplication {
 
 // Builds the module-side view of a scene document. Entities carry their resource path but no
 // GPU model, which keeps the module framework independent of the render backend.
-Scene sceneForModule(const SceneDocument& document) {
+Scene sceneForModule(const SceneDocument& document, const std::filesystem::path& scenePath) {
     Scene scene;
     for (const SceneDocumentEntity& entity : document.entities) {
-        scene.createEntityWithId(entity.id, entity.name, nullptr, entity.modelResource);
+        const std::string resource = entity.modelResource.empty() || entity.modelResource.rfind("builtin:", 0) == 0
+            ? entity.modelResource : resolveSceneResource(entity.modelResource, scenePath).generic_u8string();
+        scene.createEntityWithId(entity.id, entity.name, nullptr, resource);
     }
     for (const SceneDocumentEntity& entity : document.entities) {
         SceneEntity* target = scene.find(entity.id);
@@ -127,6 +146,7 @@ Scene sceneForModule(const SceneDocument& document) {
         target->parent = entity.parent;
         target->transform = entity.transform;
         target->light = entity.light;
+        target->rigidBody = entity.rigidBody;
         target->tint = entity.tint;
         target->visible = entity.visible;
         target->castsShadow = entity.castsShadow;
@@ -187,7 +207,7 @@ bool applyJobModule(
     if (!runtime.configure(job.module.id, job.module.parameters, job.module.seed, error)) {
         return false;
     }
-    const Scene scene = sceneForModule(document);
+    const Scene scene = sceneForModule(document, job.scenePath);
 
     // The cache key needs the authored scene hash, which a faithful runtime copy
     // reproduces exactly, so it is available before any module work happens. The key is
@@ -251,7 +271,8 @@ bool bakeJobSimulation(
     const RenderJob& job,
     const ModuleRegistry* modules,
     SimulationCache& cache,
-    std::string& error
+    std::string& error,
+    const CancellationToken* cancellation
 ) {
     if (job.module.id.empty()) {
         error = "This Render Job does not drive a module; nothing to bake";
@@ -268,10 +289,17 @@ bool bakeJobSimulation(
     if (!runtime.configure(job.module.id, job.module.parameters, job.module.seed, error)) {
         return false;
     }
-    const Scene scene = sceneForModule(document);
-    return runtime.bakeSimulation(
-        scene, job.startFrame, job.endFrame, job.framesPerSecond, cache, error
+    const Scene scene = sceneForModule(document, job.scenePath);
+    if (cancellation) runtime.setCancellationCheck([cancellation] { return cancellation->isCancellationRequested(); });
+    SimulationCache prepared;
+    const bool completed = runtime.bakeSimulation(
+        scene, job.startFrame, job.endFrame, job.framesPerSecond, prepared, error
     );
+    if (completed && cancellation && cancellation->isCancellationRequested()) {
+        error = "Module bake cancelled"; return false;
+    }
+    if (completed) cache = std::move(prepared);
+    return completed;
 }
 
 std::filesystem::path outputStemFor(const std::filesystem::path& base,
@@ -280,7 +308,7 @@ std::filesystem::path outputStemFor(const std::filesystem::path& base,
     return std::filesystem::path(base.string() + "-" + renderOutputName(output));
 }
 
-constexpr std::array<pathtracer::RenderOutput, 8> allRenderOutputs{
+constexpr std::array<pathtracer::RenderOutput, 10> allRenderOutputs{
     pathtracer::RenderOutput::Beauty,
     pathtracer::RenderOutput::Albedo,
     pathtracer::RenderOutput::Normal,
@@ -288,7 +316,9 @@ constexpr std::array<pathtracer::RenderOutput, 8> allRenderOutputs{
     pathtracer::RenderOutput::Direct,
     pathtracer::RenderOutput::Indirect,
     pathtracer::RenderOutput::SampleCount,
-    pathtracer::RenderOutput::Variance
+    pathtracer::RenderOutput::Variance,
+    pathtracer::RenderOutput::DenoisedBeauty,
+    pathtracer::RenderOutput::AccumulatedBeauty
 };
 
 constexpr std::array<pathtracer::RenderFileFormat, 3> allRenderFileFormats{
@@ -633,6 +663,9 @@ void atomicWriteReport(const RenderJob& job, const BatchFrameResult& result,
         if (index != 0U) output << ", ";
         output << "\"" << renderOutputName(job.outputs[index]) << "\"";
     }
+    batch_json::StringBuffer moduleBuffer;
+    batch_json::PrettyWriter<batch_json::StringBuffer> moduleWriter(moduleBuffer);
+    writeModuleRunReportJson(moduleWriter, result.module);
     output << "],\n"
            << "  \"formats\": [";
     for (std::size_t index = 0U; index < job.outputFormats.size(); ++index) {
@@ -640,17 +673,10 @@ void atomicWriteReport(const RenderJob& job, const BatchFrameResult& result,
         output << "\"" << renderFileFormatName(job.outputFormats[index]) << "\"";
     }
     output << "],\n"
+           << (result.gpuBackendReport.empty()?std::string{}:std::string("  \"gpuBackend\": ")+result.gpuBackendReport+",\n")
            << "  \"colorSpace\": \"PNG: reinhard-sRGB; HDR: linear-RGBE; EXR: linear-RGB-float32\",\n"
            << "  \"renderMilliseconds\": " << result.statistics.renderMilliseconds << ",\n"
-           << "  \"module\": {"
-           << "\"id\": \"" << result.module.moduleId << "\", "
-           << "\"apiVersion\": " << result.module.apiVersion << ", "
-           << "\"buildId\": \"" << result.module.buildId << "\", "
-           << "\"seed\": " << result.module.seed << ", "
-           << "\"lastFrame\": " << result.module.lastFrame << ", "
-           << "\"inputHash\": " << result.module.inputContentHash << ", "
-           << "\"contentHash\": " << result.module.contentHash << ", "
-           << "\"state\": \"" << result.module.moduleState << "\"},\n"
+           << "  \"module\": " << moduleBuffer.GetString() << ",\n"
            << "  \"simulationCache\": {\"status\": \""
            << simulationCacheStatusName(result.cacheStatus) << "\", "
            << "\"message\": \"" << result.cacheMessage << "\"},\n"
@@ -702,16 +728,15 @@ bool validateRenderJobAssets(const RenderJob& job, std::string& error,
                     + "' but no module registry is available"
                 );
             }
-            const ModuleManifest* manifest = modules->find(job.module.id);
-            if (manifest == nullptr) {
-                throw std::runtime_error("Unknown Render Job module id: " + job.module.id);
-            }
             // Parameter ids, kinds and ranges are only knowable once the module has
             // declared them, so validation configures a throwaway instance.
             ModuleRuntime runtime(*modules);
             if (!runtime.configure(job.module.id, job.module.parameters, job.module.seed, error)) {
                 return false;
             }
+            if (job.module.id == rigidBodyModuleId
+                && !runtime.reset(sceneForModule(document, job.scenePath), job.startFrame, job.endFrame, job.framesPerSecond, error))
+                return false;
         }
         error.clear();
         return true;
@@ -721,12 +746,12 @@ bool validateRenderJobAssets(const RenderJob& job, std::string& error,
     }
 }
 
-bool runRenderJobFrame(const RenderJob& job, int frame, BatchFrameResult& result,
+static bool runRenderJobFrameImpl(const RenderJob& job, int frame, BatchFrameResult& result,
                        std::string& error, const CancellationToken* cancellation,
-                       const ModuleRegistry* modules) {
+                       const ModuleRegistry* modules,GpuTemporalSession* session) {
     result = BatchFrameResult{};
     result.frame = frame;
-    if (job.renderer != "cpu-path-traced") {
+    if (job.renderer != "cpu-path-traced" && job.renderer != "gpu-path-traced") {
         error = "Raster Render Jobs run with Iris raster-sequence <job.renderjob>";
         result.status = BatchFrameStatus::Failed;
         return false;
@@ -739,6 +764,19 @@ bool runRenderJobFrame(const RenderJob& job, int frame, BatchFrameResult& result
     try {
         if (frame < job.startFrame || frame > job.endFrame) {
             throw std::runtime_error("Requested frame is outside the Render Job frame range");
+        }
+        std::unique_ptr<capture::InputManifest> gpuInputs;
+        if(job.renderer=="gpu-path-traced") {
+            gpuInputs=std::make_unique<capture::InputManifest>();
+            if(session){
+                bool changed=false;
+                for(const auto& input:session->inputs){capture::recordInput(input.path);changed|=!capture::same(input,capture::snapshot(input.path));}
+                if(changed)*session=GpuTemporalSession{};
+            }
+            capture::recordInput(job.sourcePath);
+            capture::recordInput(job.scenePath);
+            if(!job.loadedSourceFingerprint.empty() && gpuInputs->files.at(std::filesystem::absolute(job.sourcePath).lexically_normal().generic_string()).fingerprint!=job.loadedSourceFingerprint)
+                throw std::runtime_error("GPU Render Job changed since parsing");
         }
         const std::filesystem::path base = renderJobFrameStem(job, frame);
         OutputSetInspection inspection = inspectOutputSet(job, frame, base);
@@ -777,18 +815,112 @@ bool runRenderJobFrame(const RenderJob& job, int frame, BatchFrameResult& result
         result.module = moduleApplication.report;
         result.cacheStatus = moduleApplication.cacheStatus;
         result.cacheMessage = moduleApplication.cacheMessage;
-        pathtracer::ProgressiveRenderer renderer(loadSnapshot(job, document), job.renderSettings);
-        while (renderer.renderPass(cancellation == nullptr ? nullptr : cancellation->nativeFlag())) {}
+        std::unique_ptr<pathtracer::ProgressiveRenderer> cpu;
+        const pathtracer::RenderImage* rendered = nullptr;
+        const pathtracer::RenderImage* spatialImage = nullptr;
+        const pathtracer::RenderImage* accumulatedImage = nullptr;
+#ifdef IRIS_HAS_VULKAN
+        std::unique_ptr<iris::vulkan::VulkanPathTracer> localGpu;
+        auto& gpu=session?session->backend:localGpu;
+#endif
+        if(job.renderer=="gpu-path-traced") {
+#ifdef IRIS_HAS_VULKAN
+            const auto& presentation=document.renderer;
+            if(!presentation.shaderSceneResource.empty() || presentation.enscapeCubeShaderEnabled || presentation.water.enabled || presentation.atmosphere.enabled)
+                throw std::runtime_error("GPU PT requires a mesh Scene without ShaderScene, Enscape, water or atmosphere");
+            const auto shaders=iris::findRuntimeRoot()/"shaders/vulkan";
+            const auto snapshot=loadSnapshot(job,document,session?&session->models:nullptr);
+            if(!gpu || !gpu->restart(snapshot,job.renderSettings)){
+                // Batch owns GLFW through this backend; release the old owner
+                // before constructing its replacement (GLFW init is not refcounted).
+                gpu.reset();
+                gpu=std::make_unique<iris::vulkan::VulkanPathTracer>(shaders,snapshot,job.renderSettings,std::getenv("IRIS_VULKAN_REQUIRE_VALIDATION")!=nullptr,true);
+            }
+            gpu->setTemporalFrame(frame,job.framesPerSecond);
+            gpu->setTemporalDenoise(job.gpuTemporalDenoise);
+            gpu->setSpatialDenoise(false);
+            while(gpu->renderPass(cancellation?cancellation->nativeFlag():nullptr,false)){}
+            rendered=&gpu->image();
+            const bool spatial=std::find(job.outputs.begin(),job.outputs.end(),pathtracer::RenderOutput::DenoisedBeauty)!=job.outputs.end();
+            // Resolve the final mode before retaining image references: another
+            // resolve replaces the temporal export cache.
+            gpu->setSpatialDenoise(spatial);
+            if(job.gpuTemporalDenoise && !(cancellation && cancellation->isCancellationRequested()))accumulatedImage=&gpu->accumulatedImage();
+            if(spatial && !(cancellation && cancellation->isCancellationRequested())){
+                spatialImage=&gpu->spatialImage();
+            }
+            const iris::vulkan::TemporalGuideFrame* guides=nullptr;
+            if(std::getenv("IRIS_GPU_PT_GUIDES") && !(cancellation && cancellation->isCancellationRequested()))guides=&gpu->temporalGuides();
+            const auto& stats=gpu->statistics();
+            batch_json::StringBuffer buffer;batch_json::PrettyWriter<batch_json::StringBuffer> writer(buffer);
+            writer.StartObject();writer.Key("pipeline");writer.String("VK_KHR_ray_tracing_pipeline");writer.Key("device");writer.String(stats.device.c_str());
+            writer.Key("buildId");writer.String(MYRENDERER_BUILD_ID);writer.Key("gpuPassMilliseconds");writer.Double(stats.gpuMilliseconds);
+            writer.Key("allocatedBytes");writer.Uint64(stats.allocatedBytes);writer.Key("validation");writer.Bool(stats.validationEnabled);
+            writer.Key("synchronizationValidation");writer.Bool(stats.synchronizationValidation);writer.Key("validationWarnings");writer.Uint(stats.validationWarnings);writer.Key("validationErrors");writer.Uint(stats.validationErrors);
+            writer.Key("fullAovReadbackBytes");writer.Uint64(stats.rawReadbackBytes);writer.Key("previewReadbackBytes");writer.Uint64(stats.previewReadbackBytes);
+            writer.Key("committedSamples");writer.Uint(rendered->completedSamples);
+            writer.Key("pathRays");writer.Uint64(rendered->statistics.pathRays);writer.Key("shadowRays");writer.Uint64(rendered->statistics.shadowRays);
+            if(accumulatedImage){
+                writer.Key("temporalDenoise");writer.StartObject();writer.Key("algorithm");writer.String("reprojection-moments-clamp-v1");
+                writer.Key("cpuMilliseconds");writer.Double(stats.temporalCpuMilliseconds);writer.Key("gpuMilliseconds");writer.Double(stats.temporalGpuMilliseconds);
+                writer.Key("allocatedBytes");writer.Uint64(stats.temporalAllocatedBytes);writer.Key("readbackBytes");writer.Uint64(stats.temporalReadbackBytes);
+                writer.Key("acceptedPixels");writer.Uint(stats.temporalAccepted);writer.Key("rejectedPixels");writer.Uint(stats.temporalRejected);writer.Key("clampedPixels");writer.Uint(stats.temporalClamped);writer.Key("repeatedRawPixels");writer.Uint(stats.temporalRepeated);
+                writer.Key("historyWeightLimit");writer.Uint(32);writer.Key("transmission");writer.String("raw-preserved");writer.EndObject();
+            }
+            if(spatialImage){
+                writer.Key("spatialDenoise");writer.StartObject();writer.Key("algorithm");writer.String("atrous-beauty-2pass-v1");
+                writer.Key("transmission");writer.String("raw-preserved");writer.Key("guideReadbackForFilterBytes");writer.Uint64(0);
+                writer.Key("cpuMilliseconds");writer.Double(stats.spatialCpuMilliseconds);writer.Key("gpuMilliseconds");writer.Double(stats.spatialGpuMilliseconds);
+                writer.Key("guideGpuMilliseconds");writer.Double(stats.guideGpuMilliseconds);writer.Key("guideCpuMilliseconds");writer.Double(stats.guideCpuMilliseconds);writer.Key("allocatedBytes");writer.Uint64(stats.spatialAllocatedBytes);
+                writer.Key("linearReadbackBytes");writer.Uint64(stats.spatialReadbackBytes);writer.EndObject();
+            }
+            if(guides){
+                writer.Key("temporalGuides");writer.StartObject();writer.Key("contract");writer.String("primary-surface-pixel-center-v1");
+                writer.Key("historyValid");writer.Bool(guides->historyValid);writer.Key("frame");writer.Int(guides->frame);writer.Key("previousFrame");writer.Int(guides->previousFrame);writer.Key("fps");writer.Int(guides->framesPerSecond);
+                writer.Key("width");writer.Uint(guides->width);writer.Key("height");writer.Uint(guides->height);writer.Key("jitterPixels");writer.StartArray();writer.Int(0);writer.Int(0);writer.EndArray();
+                writer.Key("cpuMilliseconds");writer.Double(guides->cpuMilliseconds);writer.Key("gpuMilliseconds");writer.Double(guides->gpuMilliseconds);writer.Key("allocatedBytes");writer.Uint64(guides->allocatedBytes);
+                std::uint64_t hits=0,motions=0;for(const auto& p:guides->pixels){const auto flags=static_cast<unsigned>(p.normal.w);hits+=(flags&1U)!=0;motions+=(flags&2U)!=0;}
+                writer.Key("hitPixels");writer.Uint64(hits);writer.Key("reprojectionPixels");writer.Uint64(motions);
+                writer.Key("fingerprint");writer.String(capture::fingerprintBytes(std::string(reinterpret_cast<const char*>(guides->pixels.data()),guides->pixels.size()*sizeof(iris::vulkan::TemporalGuidePixel))).c_str());writer.EndObject();
+            }
+            writer.Key("programs");writer.StartObject();
+            for(const auto file:{gpu->raygenShaderName(),"pt.rmiss.spv","pt.rchit.spv"}) {
+                capture::recordInput(shaders/file);
+                const auto key=std::filesystem::absolute(shaders/file).lexically_normal().generic_string();
+                writer.Key(file);writer.String(gpuInputs->files.at(key).fingerprint.c_str());
+            }
+            if(guides){const auto file=std::string(gpu->raygenShaderName())=="pt.indexed.rgen.spv"?"pt-guides.indexed.comp.spv":"pt-guides.comp.spv";capture::recordInput(shaders/file);writer.Key(file);writer.String(capture::snapshot(shaders/file).fingerprint.c_str());}
+            if(accumulatedImage){capture::recordInput(shaders/"pt-temporal.comp.spv");writer.Key("pt-temporal.comp.spv");writer.String(capture::snapshot(shaders/"pt-temporal.comp.spv").fingerprint.c_str());}
+            if(spatialImage || accumulatedImage){for(const auto file:{spatialImage?(job.gpuTemporalDenoise?"pt-spatial.temporal.comp.spv":"pt-spatial.comp.spv"):"pt-temporal.comp.spv",std::string(gpu->raygenShaderName())=="pt.indexed.rgen.spv"?"pt-guides.indexed.comp.spv":"pt-guides.comp.spv"}){if((guides && std::string(file).find("pt-guides")==0) || (accumulatedImage && std::string(file)=="pt-temporal.comp.spv"))continue;capture::recordInput(shaders/file);writer.Key(file);writer.String(capture::snapshot(shaders/file).fingerprint.c_str());}}
+            writer.EndObject();writer.Key("inputs");writer.StartArray();
+            for(const auto& input:gpuInputs->files) {
+                writer.StartObject();writer.Key("path");writer.String(input.first.c_str());
+                writer.Key("exists");writer.Bool(input.second.exists);
+                writer.Key("bytes");writer.Uint64(input.second.bytes);writer.Key("fingerprint");writer.String(input.second.fingerprint.c_str());writer.EndObject();
+            }
+            writer.EndArray();writer.EndObject();result.gpuBackendReport=buffer.GetString();
+#else
+            throw std::runtime_error("GPU PT unavailable; configure IRIS_ENABLE_VULKAN=ON or select CPU Path Traced");
+#endif
+        } else {
+            cpu=std::make_unique<pathtracer::ProgressiveRenderer>(loadSnapshot(job,document),job.renderSettings);
+            while(cpu->renderPass(cancellation?cancellation->nativeFlag():nullptr)){}
+            rendered=&cpu->image();
+        }
+        result.statistics=rendered->statistics;
         if (cancellation != nullptr && cancellation->isCancellationRequested()) {
             result.status = BatchFrameStatus::Cancelled;
             error = "Render Job cancelled";
             return false;
         }
-        const pathtracer::RenderImage& image = renderer.image();
+        const pathtracer::RenderImage& image = *rendered;
         result.statistics = image.statistics;
+        if(gpuInputs){gpuInputs->validate();if(session){session->inputs.clear();for(const auto& input:gpuInputs->files)session->inputs.push_back(input.second);}}
         for (pathtracer::RenderOutput output : job.outputs) {
             const std::filesystem::path stem = outputStemFor(base, output);
-            atomicWriteOutput(image, output, stem, job.outputFormats);
+            if(output==pathtracer::RenderOutput::DenoisedBeauty){if(!spatialImage)throw std::runtime_error("GPU spatial image unavailable");atomicWriteOutput(*spatialImage,pathtracer::RenderOutput::Beauty,stem,job.outputFormats);}
+            else if(output==pathtracer::RenderOutput::AccumulatedBeauty){if(!accumulatedImage)throw std::runtime_error("GPU accumulated image unavailable");atomicWriteOutput(*accumulatedImage,pathtracer::RenderOutput::Beauty,stem,job.outputFormats);}
+            else atomicWriteOutput(image, output, stem, job.outputFormats);
             for (pathtracer::RenderFileFormat format : job.outputFormats) {
                 result.outputs.push_back(stem.string() + renderFileFormatExtension(format));
             }
@@ -799,10 +931,16 @@ bool runRenderJobFrame(const RenderJob& job, int frame, BatchFrameResult& result
         error.clear();
         return true;
     } catch (const std::exception& exception) {
+        if(session)*session=GpuTemporalSession{};
         result.status = BatchFrameStatus::Failed;
         error = exception.what();
         return false;
     }
+}
+
+bool runRenderJobFrame(const RenderJob& job,int frame,BatchFrameResult& result,std::string& error,
+    const CancellationToken* cancellation,const ModuleRegistry* modules){
+    return runRenderJobFrameImpl(job,frame,result,error,cancellation,modules,nullptr);
 }
 
 BatchSequenceResult runRenderJobSequence(
@@ -812,6 +950,7 @@ BatchSequenceResult runRenderJobSequence(
     const ModuleRegistry* modules
 ) {
     BatchSequenceResult sequence;
+    GpuTemporalSession temporalSession;
     sequence.lastFrame = job.startFrame;
     sequence.totalFrames = job.endFrame - job.startFrame + 1;
     const auto publish = [&](int frame, BatchFrameStatus status, const std::string& message = {}) {
@@ -838,7 +977,8 @@ BatchSequenceResult runRenderJobSequence(
         publish(frame, BatchFrameStatus::Running);
         BatchFrameResult frameResult;
         std::string frameError;
-        if (!runRenderJobFrame(job, frame, frameResult, frameError, cancellation, modules)) {
+        if (!runRenderJobFrameImpl(job, frame, frameResult, frameError, cancellation, modules,
+                job.renderer=="gpu-path-traced" && (job.gpuTemporalDenoise || std::getenv("IRIS_GPU_PT_GUIDES"))?&temporalSession:nullptr)) {
             if (!frameResult.outputDiagnostics.empty()) {
                 sequence.outputDiagnostics.insert(sequence.outputDiagnostics.end(),
                                                   frameResult.outputDiagnostics.begin(),

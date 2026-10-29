@@ -4,6 +4,7 @@
 #include <string>
 #include <optional>
 #include "scene/Light.h"
+#include "scene/RigidBody.h"
 #include <vector>
 
 #include <glm/mat4x4.hpp>
@@ -36,6 +37,7 @@ struct SceneEntity {
     glm::mat4 previousWorldTransform{1.0f};
     glm::vec3 tint{1.0f};
     std::optional<SceneLightComponent> light;
+    std::optional<RigidBodyComponent> rigidBody;
     bool visible{true};
     bool enabledByPreset{true};
     bool castsShadow{true};

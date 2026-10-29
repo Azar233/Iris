@@ -9,11 +9,14 @@
 #include "runtime/Timeline.h"
 #include "plugin/ShaderSceneHistory.h"
 #include "plugin/ShaderMaterial.h"
+#include "scene/RigidBody.h"
+#include <optional>
 
 enum class EditorRenderBackend {
     Raster = 0,
     CpuPathTraced,
-    GpuPathTraced
+    GpuPathTraced,
+    VulkanRaster
 };
 
 enum class EditorActivity {
@@ -87,7 +90,8 @@ enum class EditorCommandType {
     DuplicateEntity,
     DeleteEntity,
     SetEntityVisibility,
-    SetEntityParent
+    SetEntityParent,
+    SetEntityRigidBody
 };
 
 enum class EditorCameraFrameTarget {
@@ -411,6 +415,7 @@ struct EditorCommand {
     EditorModuleParameterPayload moduleParameter;
     iris::ShaderSceneHistoryPolicy shaderSceneHistory;
     iris::ShaderMaterialBinding shaderMaterial;
+    std::optional<RigidBodyComponent> rigidBody;
 };
 
 class EditorSession {

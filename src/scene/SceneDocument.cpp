@@ -141,6 +141,10 @@ void writeRendererSettings(Writer& writer, const RendererSettings& settings,
     WRITE_FLOAT(stylizedColorGradingStrength);
     writer.Key("stylizedDebugView"); writer.Int(static_cast<int>(settings.stylizedDebugView));
     WRITE_BOOL(shadowsEnabled); WRITE_BOOL(coloredTransmissionShadowsEnabled);
+    WRITE_BOOL(vulkanRayQueryShadows); WRITE_BOOL(vulkanShadowDebug);
+    WRITE_INT(gpuPathTracingSpp); WRITE_INT(gpuPathTracingDepth); WRITE_INT(gpuPathTracingSeed);
+    WRITE_BOOL(gpuSpatialDenoise);
+    WRITE_BOOL(gpuTemporalDenoise);
     // Cascaded shadows. Defaults match `RendererSettings`, so a scene written before these fields
     // existed keeps the cascade count and split blend it was rendered with.
     writer.Key("shadowCascadeCount"); writer.Int(std::clamp(settings.shadowCascadeCount, 1, 4));
@@ -427,6 +431,13 @@ void readRendererSettings(const scene_json::Value& value, RendererSettings& sett
         value, "stylizedDebugView", static_cast<int>(settings.stylizedDebugView)
     ));
     READ_BOOL(shadowsEnabled); READ_BOOL(coloredTransmissionShadowsEnabled);
+    READ_BOOL(vulkanRayQueryShadows); READ_BOOL(vulkanShadowDebug);
+    READ_INT(gpuPathTracingSpp); READ_INT(gpuPathTracingDepth); READ_INT(gpuPathTracingSeed);
+    READ_BOOL(gpuSpatialDenoise);
+    READ_BOOL(gpuTemporalDenoise);
+    settings.gpuPathTracingSpp=std::clamp(settings.gpuPathTracingSpp,1,65536);
+    settings.gpuPathTracingDepth=std::clamp(settings.gpuPathTracingDepth,1,16);
+    settings.gpuPathTracingSeed=std::max(settings.gpuPathTracingSeed,0);
     settings.shadowCascadeCount = std::clamp(
         readInt(value, "shadowCascadeCount", settings.shadowCascadeCount), 1, 4
     );
@@ -639,6 +650,17 @@ void validateDocument(const SceneDocument& document, const iris::RenderPluginPar
         }
     }
     std::size_t lightCount = 0;
+    std::size_t bodyCount = 0, dynamicCount = 0;
+    for (const auto& entity : document.entities) if (entity.rigidBody) {
+        validateRigidBody(*entity.rigidBody, entity.transform.translation, entity.transform.rotationDegrees,
+            entity.transform.scale, entity.parent != invalidSceneEntityId, entity.light.has_value());
+        if (document.moduleId != rigidBodyModuleId)
+            throw std::runtime_error("Rigid body components require module iris.physics.rigid-body");
+        ++bodyCount;
+        if (entity.rigidBody->type == RigidBodyType::Dynamic) ++dynamicCount;
+    }
+    if (bodyCount > 128U || dynamicCount > 16U)
+        throw std::runtime_error("Physics slice supports at most 128 bodies and 16 dynamic bodies");
     for (const auto& entity : document.entities) if (entity.light) {
         if (!validSceneLight(*entity.light)) throw std::runtime_error("Invalid entity light parameters");
         ++lightCount;
@@ -760,6 +782,24 @@ bool saveSceneDocument(
                 writer.Key("intensity"); writer.Double(light.intensity);
                 writer.Key("range"); writer.Double(light.range);
                 writer.Key("outerAngleDegrees"); writer.Double(light.outerAngleDegrees);
+                writer.EndObject();
+            }
+            if (entity.rigidBody) {
+                const auto& body = *entity.rigidBody;
+                writer.Key("rigidBody"); writer.StartObject();
+                writer.Key("version"); writer.Int(1);
+                writer.Key("type"); writer.Int(static_cast<int>(body.type));
+                writer.Key("shape"); writer.Int(static_cast<int>(body.shape));
+                writer.Key("offset"); writeVec3(writer, body.offset);
+                writer.Key("halfExtents"); writeVec3(writer, body.halfExtents);
+                writer.Key("radius"); writer.Double(body.radius);
+                writer.Key("mass"); writer.Double(body.mass);
+                writer.Key("friction"); writer.Double(body.friction);
+                writer.Key("restitution"); writer.Double(body.restitution);
+                writer.Key("linearDamping"); writer.Double(body.linearDamping);
+                writer.Key("angularDamping"); writer.Double(body.angularDamping);
+                writer.Key("linearVelocity"); writeVec3(writer, body.linearVelocity);
+                writer.Key("angularVelocity"); writeVec3(writer, body.angularVelocity);
                 writer.EndObject();
             }
             writer.Key("transform"); writer.StartObject();
@@ -1069,6 +1109,32 @@ bool loadSceneDocument(
                 entity.transform.assetTransform = readMatrix(*transform, "assetMatrix", entity.transform.assetTransform);
             }
             entity.visible = readBool(item, "visible", entity.visible);
+            if (const auto* value = optionalMember(item, "rigidBody")) {
+                if (!value->IsObject() || readInt(*value, "version", 0) != 1)
+                    throw std::runtime_error("Invalid rigidBody version/object");
+                std::unordered_set<std::string> fields;
+                const std::unordered_set<std::string> allowed{"version", "type", "shape", "offset", "halfExtents",
+                    "radius", "mass", "friction", "restitution", "linearDamping", "angularDamping", "linearVelocity", "angularVelocity"};
+                for (auto it = value->MemberBegin(); it != value->MemberEnd(); ++it) {
+                    const std::string key(it->name.GetString(), it->name.GetStringLength());
+                    if (!allowed.count(key) || !fields.insert(key).second)
+                        throw std::runtime_error("Unknown or duplicate rigidBody field: " + key);
+                }
+                RigidBodyComponent body;
+                body.type = static_cast<RigidBodyType>(readInt(*value, "type", static_cast<int>(body.type)));
+                body.shape = static_cast<CollisionShape>(readInt(*value, "shape", static_cast<int>(body.shape)));
+                body.offset = readVec3(*value, "offset", body.offset);
+                body.halfExtents = readVec3(*value, "halfExtents", body.halfExtents);
+                body.radius = readFloat(*value, "radius", body.radius);
+                body.mass = readFloat(*value, "mass", body.mass);
+                body.friction = readFloat(*value, "friction", body.friction);
+                body.restitution = readFloat(*value, "restitution", body.restitution);
+                body.linearDamping = readFloat(*value, "linearDamping", body.linearDamping);
+                body.angularDamping = readFloat(*value, "angularDamping", body.angularDamping);
+                body.linearVelocity = readVec3(*value, "linearVelocity", body.linearVelocity);
+                body.angularVelocity = readVec3(*value, "angularVelocity", body.angularVelocity);
+                entity.rigidBody = body;
+            }
             entity.tint = readVec3(item, "tint", entity.tint);
             if(const auto* material=optionalMember(item,"shaderMaterial")) {
                 if(!material->IsObject() || material->MemberCount()!=3 || !material->HasMember("version")

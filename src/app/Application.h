@@ -91,6 +91,13 @@ private:
     SceneEntityId pickEntity(const std::vector<RenderItem>& items, int width, int height, int x, int y);
     void materializeStressEntities(std::vector<RenderItem>& items);
     bool editorInteractionRegression();
+    void runPhysicsWorkbenchAcceptance();
+    int physicsUiPhase_{0};
+    bool physicsUiChanged_{false};
+    void interactPhysicsControl(bool valueChanged);
+    int physicsTemporalFrame_{0};
+    void advancePhysicsTemporalAcceptance();
+    void capturePhysicsTemporalAcceptance();
     bool pluginActivationRegression();
     bool pluginParameterRegression();
     bool waterPluginRegression();
@@ -118,6 +125,7 @@ private:
     void runEnscapeShaderSceneAcceptance(const std::filesystem::path& directory);
     void updateViewportCameraNavigation();
     void drawModulePanel();
+    void drawRigidBodyInspector(const SceneEntity& entity);
     // Aggregates the structured diagnostics the application already owns: import
     // diagnostics, render task history, frame/pass profile and the module log. It never
     // invents a state that no subsystem reported.
@@ -218,6 +226,7 @@ private:
     std::uint64_t moduleBuiltSceneGeneration_{0U};
     std::size_t moduleBuiltEntityCount_{0U};
     std::string moduleMessage_{"No module is active."};
+    bool showPhysicsColliders_{false};
     std::unique_ptr<RenderQueue> renderQueue_;
     std::array<char, 1024> renderJobPathBuffer_{};
     std::string renderQueueMessage_{"No Render Job submitted."};
@@ -369,6 +378,12 @@ private:
     double lastLoadTotalMilliseconds_{0.0};
     std::vector<double> benchmarkCpuFrameTimes_;
     std::vector<double> benchmarkGpuFrameTimes_;
+    std::vector<double> benchmarkActiveCpuFrameTimes_, benchmarkCompletedCpuFrameTimes_;
+    std::map<std::string, std::vector<double>> benchmarkVulkanCounters_;
+    std::vector<std::pair<std::string,double>> benchmarkFirstFrameCpuPasses_;
+    double benchmarkStartupMilliseconds_{0}, benchmarkFirstFrameMilliseconds_{0};
+    std::vector<std::string> benchmarkFrameTrace_;
+    double benchmarkPtTargetFromRunMilliseconds_{0}, benchmarkPtTargetGenerationMilliseconds_{0};
     std::vector<double> benchmarkBeamGpuTimes_;
     std::vector<double> benchmarkCausticsGpuTimes_;
     std::map<std::string, std::vector<double>> benchmarkPassGpuTimes_;

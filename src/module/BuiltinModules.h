@@ -15,3 +15,6 @@ inline constexpr const char* coastalSequenceId = "myrenderer.core.coastal-sequen
 } // namespace BuiltinModules
 
 std::unique_ptr<ISceneModule> makeCoastalSequenceModule();
+#if IRIS_ENABLE_PHYSX
+std::unique_ptr<ISceneModule> makeRigidBodyModule();
+#endif

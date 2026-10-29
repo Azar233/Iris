@@ -5,6 +5,9 @@ project(Iris VERSION 0.1.0 LANGUAGES C CXX)
 include(CTest)
 include(cmake/IrisCTest.cmake)
 
+option(IRIS_ENABLE_PHYSX "Build the optional CPU PhysX SDK slice (Windows/MSVC x64)" OFF)
+option(IRIS_ENABLE_VULKAN "Build the optional Vulkan 1.3 bootstrap slice" OFF)
+
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
@@ -95,6 +98,57 @@ FetchContent_Declare(
 FetchContent_MakeAvailable(glfw glm glad tinyobjloader tinyexr imgui assimp)
 FetchContent_GetProperties(glad SOURCE_DIR MYRENDERER_GLAD_FETCH_SOURCE_DIR)
 
+if(IRIS_ENABLE_VULKAN)
+    if(POLICY CMP0135)
+        cmake_policy(SET CMP0135 NEW)
+    endif()
+    # Only C API headers are used; do not build the optional C++20 module.
+    set(VULKAN_HEADERS_ENABLE_MODULE OFF CACHE BOOL "Vulkan C++ module is outside the bootstrap slice" FORCE)
+    set(VULKAN_HEADERS_ENABLE_TESTS OFF CACHE BOOL "Do not build dependency tests" FORCE)
+    set(VULKAN_HEADERS_ENABLE_INSTALL OFF CACHE BOOL "Install only the required license notices" FORCE)
+    FetchContent_Declare(iris_vulkan_headers
+        URL https://codeload.github.com/KhronosGroup/Vulkan-Headers/zip/refs/tags/v1.3.290
+        URL_HASH SHA256=918a8bb31b8312fd649fd1d1826443da870f33f3187c16c4528aa94927409bab)
+    FetchContent_MakeAvailable(iris_vulkan_headers)
+    add_library(IrisVulkanBootstrap STATIC src/vulkan/VulkanBootstrap.cpp)
+    target_include_directories(IrisVulkanBootstrap PUBLIC src)
+    target_compile_definitions(IrisVulkanBootstrap PRIVATE VK_NO_PROTOTYPES GLFW_INCLUDE_NONE)
+    target_link_libraries(IrisVulkanBootstrap PRIVATE Vulkan::Headers glfw)
+    add_executable(IrisVulkanSmoke tools/VulkanSmoke.cpp)
+    target_include_directories(IrisVulkanSmoke SYSTEM PRIVATE ${glfw_SOURCE_DIR}/deps)
+    target_link_libraries(IrisVulkanSmoke PRIVATE IrisVulkanBootstrap)
+    foreach(iris_vk_target IrisVulkanBootstrap IrisVulkanSmoke)
+        if(MSVC)
+            target_compile_options(${iris_vk_target} PRIVATE /W4 /permissive- /utf-8)
+        else()
+            target_compile_options(${iris_vk_target} PRIVATE -Wall -Wextra -Wpedantic)
+        endif()
+    endforeach()
+    add_custom_target(vulkan-smoke
+        COMMAND $<TARGET_FILE:IrisVulkanSmoke> --output ${CMAKE_CURRENT_BINARY_DIR}/vulkan-smoke
+        DEPENDS IrisVulkanSmoke WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
+    # Real GPU checks are explicit, never silently added to CPU-only CTest.
+    install(FILES ${iris_vulkan_headers_SOURCE_DIR}/LICENSE.md DESTINATION licenses RENAME Vulkan-Headers-LICENSE.md COMPONENT Runtime)
+    install(DIRECTORY ${iris_vulkan_headers_SOURCE_DIR}/LICENSES/ DESTINATION licenses/Vulkan-Headers COMPONENT Runtime)
+endif()
+
+if(IRIS_ENABLE_PHYSX)
+    if(NOT WIN32 OR NOT MSVC OR NOT CMAKE_SIZEOF_VOID_P EQUAL 8)
+        message(FATAL_ERROR "IRIS_ENABLE_PHYSX currently requires Windows/MSVC x64. MinGW is not supported by the SDK Windows build; configure with -DIRIS_ENABLE_PHYSX=OFF to use Iris without physics.")
+    endif()
+    # PhysX uses its own configuration names. Restore the host cache afterwards.
+    set(iris_host_configurations "${CMAKE_CONFIGURATION_TYPES}")
+    add_subdirectory(cmake/physx)
+    set(CMAKE_CONFIGURATION_TYPES "${iris_host_configurations}" CACHE STRING "Host configurations" FORCE)
+    add_executable(IrisPhysicsSmoke tools/PhysicsSmoke.cpp)
+    target_link_libraries(IrisPhysicsSmoke PRIVATE IrisPhysicsSdk)
+    target_compile_options(IrisPhysicsSmoke PRIVATE /W4 /permissive- /utf-8)
+    if(BUILD_TESTING)
+        iris_add_test(NAME physics-sdk-smoke COMMAND IrisPhysicsSmoke)
+        set_tests_properties(physics-sdk-smoke PROPERTIES LABELS "physics" TIMEOUT 30)
+    endif()
+endif()
+
 add_subdirectory(${glad_SOURCE_DIR}/cmake ${glad_BINARY_DIR}/cmake)
 glad_add_library(glad_gl_core_33 REPRODUCIBLE API gl:core=3.3)
 
@@ -156,6 +210,9 @@ target_compile_definitions(MyRendererPathTracing PRIVATE
 )
 find_package(Threads REQUIRED)
 target_link_libraries(MyRendererPathTracing PUBLIC glm::glm Threads::Threads MyRendererCloudNoise PRIVATE tinyexr zlibstatic)
+if(IRIS_ENABLE_VULKAN)
+    target_link_libraries(IrisVulkanBootstrap PUBLIC MyRendererPathTracing)
+endif()
 target_include_directories(MyRendererPathTracing PRIVATE
     ${assimp_SOURCE_DIR}/contrib/stb
     ${assimp_SOURCE_DIR}/contrib/zlib
@@ -243,6 +300,11 @@ target_compile_definitions(MyRendererModules PRIVATE
     MYRENDERER_BUILD_ID="${MYRENDERER_BUILD_ID}"
 )
 target_link_libraries(MyRendererModules PUBLIC glm::glm IrisParameters PRIVATE glad_gl_core_33)
+target_compile_definitions(MyRendererModules PRIVATE IRIS_ENABLE_PHYSX=$<BOOL:${IRIS_ENABLE_PHYSX}>)
+if(IRIS_ENABLE_PHYSX)
+    target_sources(MyRendererModules PRIVATE src/module/RigidBodyModule.cpp)
+    target_link_libraries(MyRendererModules PRIVATE IrisPhysicsSdk)
+endif()
 if(MSVC)
     target_compile_options(MyRendererModules PRIVATE /W4 /permissive- /utf-8)
 else()
@@ -330,6 +392,7 @@ add_executable(MyRenderer
     src/app/AssetThumbnail.cpp
     src/app/Application.cpp
     src/app/ApplicationScene.cpp
+    src/app/ApplicationPhysics.cpp
     src/app/ApplicationShaderSequenceAcceptance.cpp
     src/app/ApplicationShaderMaterialAcceptance.cpp
     src/app/ApplicationWaterAcceptance.cpp
@@ -416,6 +479,21 @@ target_link_libraries(MyRenderer PRIVATE
     MyRendererModules
     IrisRenderPluginHost
 )
+
+if(IRIS_ENABLE_VULKAN)
+    target_link_libraries(MyRenderer PRIVATE IrisVulkanBootstrap)
+    target_compile_definitions(MyRenderer PRIVATE IRIS_HAS_VULKAN=1)
+    add_executable(IrisVulkanRasterAcceptance tools/VulkanRasterAcceptance.cpp)
+    target_include_directories(IrisVulkanRasterAcceptance SYSTEM PRIVATE ${glfw_SOURCE_DIR}/deps)
+    target_link_libraries(IrisVulkanRasterAcceptance PRIVATE IrisVulkanBootstrap MyRendererBatchRuntime glfw)
+    add_executable(IrisVulkanRayQueryAcceptance tools/VulkanRayQueryAcceptance.cpp)
+    target_include_directories(IrisVulkanRayQueryAcceptance SYSTEM PRIVATE ${glfw_SOURCE_DIR}/deps)
+    target_link_libraries(IrisVulkanRayQueryAcceptance PRIVATE IrisVulkanBootstrap MyRendererBatchRuntime glfw)
+    add_executable(IrisVulkanPathTracingAcceptance tools/VulkanPathTracingAcceptance.cpp)
+    target_link_libraries(IrisVulkanPathTracingAcceptance PRIVATE IrisVulkanBootstrap MyRendererBatchRuntime MyRendererModules glfw glad_gl_core_33)
+    target_link_libraries(MyRendererBatchRuntime PRIVATE IrisVulkanBootstrap glfw)
+    target_compile_definitions(MyRendererBatchRuntime PRIVATE IRIS_HAS_VULKAN=1)
+endif()
 
 if(BUILD_TESTING)
     add_executable(IrisStatePathsTests tests/StatePathsTests.cpp)
@@ -704,6 +782,28 @@ if(BUILD_TESTING)
         target_compile_options(MyRendererTimelineTests PRIVATE -Wall -Wextra -Wpedantic)
     endif()
     iris_add_test(NAME runtime-timeline COMMAND MyRendererTimelineTests)
+
+    add_executable(IrisPhysicsModuleTests tests/PhysicsModuleTests.cpp)
+    target_compile_definitions(IrisPhysicsModuleTests PRIVATE MYRENDERER_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
+    target_link_libraries(IrisPhysicsModuleTests PRIVATE MyRendererBatchRuntime MyRendererModules glad_gl_core_33)
+    if(MSVC)
+        target_compile_options(IrisPhysicsModuleTests PRIVATE /W4 /permissive- /utf-8)
+    else()
+        target_compile_options(IrisPhysicsModuleTests PRIVATE -Wall -Wextra -Wpedantic)
+    endif()
+    iris_add_test(NAME physics-module COMMAND IrisPhysicsModuleTests)
+    if(IRIS_ENABLE_PHYSX)
+        add_executable(IrisPhysicsAcceptance tools/PhysicsAcceptance.cpp)
+        target_compile_definitions(IrisPhysicsAcceptance PRIVATE MYRENDERER_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
+        target_link_libraries(IrisPhysicsAcceptance PRIVATE MyRendererBatchRuntime MyRendererModules glad_gl_core_33)
+        iris_add_test(NAME physics-trajectory COMMAND IrisPhysicsAcceptance ${CMAKE_CURRENT_BINARY_DIR}/physics-acceptance)
+        add_custom_target(physics-acceptance
+            COMMAND $<TARGET_FILE:IrisPhysicsModuleTests>
+            COMMAND $<TARGET_FILE:IrisPhysicsAcceptance> ${CMAKE_CURRENT_BINARY_DIR}/physics-acceptance
+            DEPENDS IrisPhysicsModuleTests IrisPhysicsAcceptance
+            WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
+    endif()
+    set_tests_properties(physics-module PROPERTIES TIMEOUT 60)
 
     add_executable(MyRendererModuleTests
         tests/ModuleRuntimeTests.cpp
@@ -1819,6 +1919,9 @@ install(
     DIRECTORY assets/
     DESTINATION assets
     COMPONENT Runtime
+    # Local evaluation asset: preserve the upstream CRYENGINE terms; do not
+    # automatically redistribute it with Iris runtime packages.
+    PATTERN "benchmarks/khronos-sponza" EXCLUDE
     PATTERN "models/bunny*" EXCLUDE
     PATTERN "models/cow.dae" EXCLUDE
     PATTERN "models/dragon2.dae" EXCLUDE

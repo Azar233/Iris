@@ -1,0 +1,9 @@
+{
+  "format": "MyRendererRenderJob", "schemaVersion": 4,
+  "scene": "../scenes/fixtures/37_vulkan_baseline.myscene", "renderer": "raster", "camera": "scene",
+  "resolution": [640, 360], "frames": {"start": 0, "end": 0, "fps": 30},
+  "sampling": {"spp": 1, "maxDepth": 1, "seed": 20261026}, "aovs": ["beauty"],
+  "raster": {"backend": "vulkan", "determinism": true, "temporalAccumulation": false, "warmupFrames": 0},
+  "output": {"path": "../../.local/vulkan/baseline/frame_{frame:04}", "formats": ["png"], "resume": false},
+  "failurePolicy": "stop"
+}

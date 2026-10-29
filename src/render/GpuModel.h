@@ -9,6 +9,7 @@
 #include <glm/mat4x4.hpp>
 
 #include "asset/ModelData.h"
+#include "render/SceneDrawList.h"
 
 class Mesh;
 class Shader;
@@ -32,7 +33,8 @@ public:
     GpuModel(const GpuModel&) = delete;
     GpuModel& operator=(const GpuModel&) = delete;
 
-    void drawOpaque(const Shader& shader, const glm::vec3& tint, bool cullBackFaces) const;
+    std::size_t drawOpaque(const Shader& shader, const glm::vec3& tint, bool cullBackFaces,
+        const glm::mat4* modelToClip = nullptr, RasterVisibilityStatistics* statistics = nullptr) const;
     void drawOpaqueInstanced(
         const Shader& shader,
         const glm::vec3& tint,
@@ -46,7 +48,8 @@ public:
         std::size_t transparentSubmeshIndex,
         bool cullBackFaces
     ) const;
-    void drawDepth(const Shader& shader) const;
+    std::size_t drawDepth(const Shader& shader, const glm::mat4* modelToClip = nullptr,
+        RasterVisibilityStatistics* statistics = nullptr) const;
     void drawTransmissiveDepth(const Shader& shader) const;
     void drawTransmissive(const Shader& shader, const glm::vec3& tint) const;
     const glm::vec3& transparentSubmeshCenter(std::size_t transparentSubmeshIndex) const;
@@ -108,6 +111,7 @@ private:
         glm::mat4 nodeTransform{1.0f};
     };
 
+    bool commandVisible(const DrawCommand&, const glm::mat4*, RasterVisibilityStatistics*) const;
     const GpuMaterial* bindMaterial(
         const Shader& shader,
         const glm::vec3& linearTint,

@@ -3,6 +3,15 @@
 #include "runtime/RenderJob.h"
 
 #include <csignal>
+#include <thread>
+#include <chrono>
+#include <atomic>
+#ifdef _WIN32
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#endif
 #include <filesystem>
 #include <iostream>
 #include <optional>
@@ -12,6 +21,22 @@
 namespace {
 
 CancellationToken cancellationToken;
+// Queue cancellation is cooperative, just like SIGINT. The render thread owns
+// GLFW/Vulkan; this watcher only sets the existing atomic cancellation flag.
+struct QueueCancellation {
+#ifdef _WIN32
+    HANDLE event{nullptr};std::atomic<bool> stopped{false};std::thread watcher;
+    void open(const std::string& name){
+        event=OpenEventW(SYNCHRONIZE,FALSE,std::filesystem::u8path(name).c_str());
+        if(!event)throw std::runtime_error("Cannot open Queue cancellation event");
+        try{watcher=std::thread([this]{while(!stopped.load()){const auto status=WaitForSingleObject(event,25);if(status==WAIT_OBJECT_0 || status==WAIT_FAILED){cancellationToken.requestCancellation();break;}}});}
+        catch(...){CloseHandle(event);event=nullptr;throw;}
+    }
+    ~QueueCancellation(){stopped=true;if(watcher.joinable())watcher.join();if(event)CloseHandle(event);}
+#else
+    void open(const std::string&){throw std::runtime_error("Queue cancellation event requires Windows");}
+#endif
+};
 
 void handleInterrupt(int) {
     cancellationToken.requestCancellation();
@@ -49,6 +74,7 @@ int main(int argc, char** argv) {
         const std::string command = argv[1];
         std::optional<int> requestedFrame;
         std::filesystem::path outputOverride;
+        std::string cancelEvent,jobFingerprint;
         for (int index = 3; index < argc; ++index) {
             const std::string argument = argv[index];
             if (argument == "--output") {
@@ -57,6 +83,10 @@ int main(int argc, char** argv) {
                 }
                 outputOverride = std::filesystem::absolute(
                     std::filesystem::u8path(argv[++index])).lexically_normal();
+            } else if(argument=="--cancel-event" || argument=="--job-fingerprint") {
+                auto& value=argument=="--cancel-event"?cancelEvent:jobFingerprint;
+                if(!value.empty() || index+1>=argc || command!="render-sequence")throw std::invalid_argument("Invalid Queue option");
+                value=argv[++index];
             } else if (command == "render-frame" && !requestedFrame.has_value()) {
                 requestedFrame = parseFrame(argv[index]);
             } else {
@@ -69,6 +99,8 @@ int main(int argc, char** argv) {
             std::cerr << "Render Job invalid: " << error << '\n';
             return 65;
         }
+        if(!jobFingerprint.empty() && job.loadedSourceFingerprint!=jobFingerprint){std::cerr<<"Queued Render Job changed since parsing\n";return 65;}
+        QueueCancellation queueCancellation;if(!cancelEvent.empty())queueCancellation.open(cancelEvent);
         if (!outputOverride.empty()) {
             if (command != "render-frame" && command != "render-sequence") {
                 throw std::invalid_argument("--output is only valid for render-frame/render-sequence");
@@ -102,6 +134,7 @@ int main(int argc, char** argv) {
             return 0;
         }
         if (command == "simulate" || command == "bake") {
+            std::signal(SIGINT, handleInterrupt);
             if (requestedFrame.has_value()) {
                 throw std::invalid_argument(command + " does not accept a frame argument");
             }
@@ -118,9 +151,9 @@ int main(int argc, char** argv) {
                 return 66;
             }
             SimulationCache cache;
-            if (!bakeJobSimulation(job, &moduleRegistry, cache, error)) {
+            if (!bakeJobSimulation(job, &moduleRegistry, cache, error, &cancellationToken)) {
                 std::cerr << command << " failed: " << error << '\n';
-                return 70;
+                return cancellationToken.isCancellationRequested() ? 130 : 70;
             }
             std::cout << "Module: " << cache.key.moduleId
                       << " | API " << cache.key.moduleApiVersion
@@ -136,6 +169,9 @@ int main(int argc, char** argv) {
                 std::cout << "simulate ran the module and wrote no output; "
                              "use bake to store the cache.\n";
                 return 0;
+            }
+            if (cancellationToken.isCancellationRequested()) {
+                std::cerr << "bake cancelled before publishing cache\n"; return 130;
             }
             if (!saveSimulationCache(job.simulationCache, cache, error)) {
                 std::cerr << "Cannot write the simulation cache: " << error << '\n';

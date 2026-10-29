@@ -24,6 +24,7 @@ class CpuTexture {
     bool valid() const { return width_ > 0U && height_ > 0U && !texels_.empty(); }
     std::uint32_t width() const { return width_; }
     std::uint32_t height() const { return height_; }
+    const std::vector<glm::vec4>& texels() const { return texels_; }
     glm::vec4 sampleRepeatBilinear(glm::vec2 texCoord) const;
 
   private:

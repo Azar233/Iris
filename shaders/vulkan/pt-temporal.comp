@@ -1,0 +1,69 @@
+#version 460
+layout(local_size_x=8,local_size_y=8) in;
+struct Pixel {vec4 sum,albedo,normal,depth,direct,indirect,moments;uvec4 count;};
+struct Guide {vec4 motionDepth,normal,previousNormal;uvec4 identity;};
+struct History {vec4 colorCount,momentsDepth,normalInstance;uvec4 identity;};
+layout(binding=0,std430) readonly buffer Raw {Pixel raw[];};
+layout(binding=1,std430) readonly buffer Guides {Guide guides[];};
+layout(binding=2,std430) readonly buffer Previous {History previous[];};
+layout(binding=3,std430) writeonly buffer Current {History current[];};
+layout(binding=4,std430) writeonly buffer Accumulated {vec4 accumulated[];};
+layout(binding=5,std430) buffer Status {uint status[];};
+layout(binding=6,std430) buffer Preview {uint preview[];};
+layout(push_constant) uniform Pass {uint width,height,valid,repeat;float exposure;uint tone,spp,reserved;} pass;
+float luminance(vec3 c){return dot(c,vec3(.2126,.7152,.0722));}
+bool finite3(vec3 c){return !any(isnan(c)) && !any(isinf(c));}
+vec3 rawAt(uint i){return raw[i].sum.rgb/float(max(raw[i].count.x,1));}
+bool eligible(uint i){uint f=uint(guides[i].normal.w);return (f&1u)!=0 && (f&4u)==0 && raw[i].count.x>0 && raw[i].count.y==raw[i].count.x;}
+bool sameSurface(Guide g,History h){
+    return h.momentsDepth.w>0 && all(equal(g.identity,h.identity)) && g.previousNormal.w==h.normalInstance.w
+        && dot(g.previousNormal.xyz,h.normalInstance.xyz)>=.9
+        && abs(g.motionDepth.w-h.momentsDepth.z)<=max(.0001,.03*g.motionDepth.w);
+}
+void main(){
+    uvec2 xy=gl_GlobalInvocationID.xy;if(xy.x>=pass.width || xy.y>=pass.height)return;
+    uint i=xy.y*pass.width+xy.x;Guide g=guides[i];float n=float(max(raw[i].count.x,1));
+    vec3 value=rawAt(i);vec2 moments=raw[i].moments.xy/n;float count=min(n,32);bool use=eligible(i);
+    bool accepted=false;float weights=0,oldCount=0;vec3 oldColor=vec3(0);vec2 oldMoments=vec2(0);
+    if(use && pass.valid!=0 && (uint(g.normal.w)&2u)!=0){
+        vec2 position=vec2(xy)+(pass.repeat!=0?vec2(0):g.motionDepth.xy);ivec2 base=ivec2(floor(position));vec2 f=fract(position);
+        for(int y=0;y<2;++y)for(int x=0;x<2;++x){
+            ivec2 q=base+ivec2(x,y);if(any(lessThan(q,ivec2(0))) || q.x>=int(pass.width) || q.y>=int(pass.height))continue;
+            History h=previous[uint(q.y)*pass.width+uint(q.x)];
+            if(!sameSurface(g,h))continue;
+            float w=(x==0?1-f.x:f.x)*(y==0?1-f.y:f.y);
+            weights+=w;oldColor+=h.colorCount.rgb*w;oldCount+=h.colorCount.w*w;oldMoments+=h.momentsDepth.xy*w;
+        }
+        accepted=weights>=.5;
+    }
+    if(accepted){
+        oldColor/=weights;oldCount/=weights;oldMoments/=weights;
+        if(pass.repeat!=0){
+            // Identical cumulative Raw is correlated with itself. Never invent samples.
+            value=oldColor;moments=oldMoments;count=oldCount;atomicAdd(status[4],1u);
+        }else{
+            vec3 lo=value,hi=value,mean=vec3(0),second=vec3(0);float total=0;
+            for(int y=-1;y<=1;++y)for(int x=-1;x<=1;++x){
+                ivec2 q=ivec2(xy)+ivec2(x,y);if(any(lessThan(q,ivec2(0))) || q.x>=int(pass.width) || q.y>=int(pass.height))continue;
+                uint j=uint(q.y)*pass.width+uint(q.x);
+                if(!eligible(j) || any(notEqual(g.identity,guides[j].identity)) || g.previousNormal.w!=guides[j].previousNormal.w)continue;
+                vec3 c=rawAt(j);lo=min(lo,c);hi=max(hi,c);mean+=c;second+=c*c;++total;
+            }
+            mean/=total;vec3 sigma=sqrt(max(second/total-mean*mean,vec3(0)));
+            vec3 clamped=clamp(oldColor,max(lo,mean-1.5*sigma),min(hi,mean+1.5*sigma));
+            if(any(greaterThan(abs(clamped-oldColor),vec3(.000001))))atomicAdd(status[3],1u);
+            float oldVariance=max(oldMoments.y-oldMoments.x*oldMoments.x,0),l=luminance(clamped);
+            oldMoments=vec2(l,l*l+oldVariance);
+            float alpha=min(.9,oldCount/(oldCount+n));value=mix(value,clamped,alpha);moments=mix(moments,oldMoments,alpha);count=min(oldCount+n,32);
+        }
+        atomicAdd(status[1],1u);
+    }else if(use)atomicAdd(status[2],1u);
+    if(!finite3(value) || any(lessThan(value,vec3(0))) || any(isnan(moments)) || any(isinf(moments))){atomicOr(status[0],1u);value=vec3(0);moments=vec2(0);}
+    History h;h.colorCount=vec4(value,count);h.momentsDepth=vec4(moments,g.motionDepth.z,use?1:0);h.normalInstance=vec4(g.normal.xyz,g.previousNormal.w);h.identity=g.identity;current[i]=h;
+    accumulated[i]=vec4(value,max(moments.y-moments.x*moments.x,0)/max(count,1));
+    vec3 c=value*pass.exposure;if(pass.tone!=0)c=c/(1+c);
+    if(!finite3(c)){atomicOr(status[0],2u);c=vec3(0);}
+    c=clamp(c,0,1);c=mix(12.92*c,1.055*pow(c,vec3(1/2.4))-.055,greaterThan(c,vec3(.0031308)));
+    uvec3 bytes=uvec3(round(c*255));uint flipped=(pass.height-1-xy.y)*pass.width+xy.x;
+    preview[flipped]=bytes.r|(bytes.g<<8)|(bytes.b<<16)|0xff000000u;
+}

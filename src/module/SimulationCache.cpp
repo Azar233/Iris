@@ -1,7 +1,11 @@
 ﻿#include "module/SimulationCache.h"
 
 #include <algorithm>
+#include "runtime/Timeline.h"
 #include <fstream>
+#include <cmath>
+#include <limits>
+#include <unordered_set>
 #include <stdexcept>
 
 #define RAPIDJSON_NAMESPACE myrenderer_simulation_cache_json
@@ -24,11 +28,16 @@ void writeVector(cache_json::PrettyWriter<cache_json::StringBuffer>& writer, con
     writer.EndArray();
 }
 
+bool readFiniteFloat(const cache_json::Value& value, float& out) {
+    if (!value.IsNumber() || !std::isfinite(value.GetDouble())
+        || std::abs(value.GetDouble()) > std::numeric_limits<float>::max()) return false;
+    out = static_cast<float>(value.GetDouble());
+    return true;
+}
+
 bool readVector(const cache_json::Value& value, glm::vec3& out) {
     if (!value.IsArray() || value.Size() != 3U) return false;
-    if (!value[0].IsNumber() || !value[1].IsNumber() || !value[2].IsNumber()) return false;
-    out = glm::vec3(value[0].GetFloat(), value[1].GetFloat(), value[2].GetFloat());
-    return true;
+    return readFiniteFloat(value[0], out.x) && readFiniteFloat(value[1], out.y) && readFiniteFloat(value[2], out.z);
 }
 
 std::string describe(const SimulationCacheKey& key) {
@@ -41,6 +50,50 @@ std::string describe(const SimulationCacheKey& key) {
         + ", frames=" + std::to_string(key.startFrame) + ".." + std::to_string(key.endFrame);
 }
 
+} // namespace
+
+bool validateSimulationCacheFrame(const SimulationCacheFrame& frame, std::string& error) {
+    std::unordered_set<SceneEntityId> ids;
+    const auto finite = [](const glm::vec3& value) {
+        return std::isfinite(value.x) && std::isfinite(value.y) && std::isfinite(value.z);
+    };
+    if (frame.frame < 0) { error = "Cached frame index must be non-negative"; return false; }
+    for (const auto& entity : frame.entities) {
+        if (entity.id == invalidSceneEntityId || !ids.insert(entity.id).second) {
+            error = "Cached entity IDs must be unique and non-zero"; return false;
+        }
+        if (!finite(entity.transform.translation) || !finite(entity.transform.rotationDegrees)
+            || !finite(entity.transform.scale) || !finite(entity.tint)) {
+            error = "Cached entity has non-finite pose/tint"; return false;
+        }
+        for (int column = 0; column < 4; ++column) for (int row = 0; row < 4; ++row)
+            if (!std::isfinite(entity.transform.assetTransform[column][row])) {
+                error = "Cached entity has a non-finite asset transform"; return false;
+            }
+        if (entity.light && !validSceneLight(*entity.light)) {
+            error = "Cached entity has invalid light values"; return false;
+        }
+    }
+    error.clear(); return true;
+}
+
+namespace {
+bool validateCache(const SimulationCache& cache, std::string& error) {
+    if (cache.schemaVersion != SimulationCache::currentSchemaVersion || cache.key.moduleId.empty()
+        || cache.key.buildId.empty() || cache.key.moduleApiVersion <= 0 || cache.key.startFrame < 0
+        || cache.key.endFrame < cache.key.startFrame || cache.key.framesPerSecond < Timeline::minimumFramesPerSecond
+        || cache.key.framesPerSecond > Timeline::maximumFramesPerSecond) {
+        error = "Invalid simulation cache schema/key/range/FPS"; return false;
+    }
+    std::unordered_set<int> frames;
+    for (const auto& frame : cache.frames) {
+        if (frame.frame < cache.key.startFrame || frame.frame > cache.key.endFrame || !frames.insert(frame.frame).second) {
+            error = "Cached frame indices must be unique and inside the key range"; return false;
+        }
+        if (!validateSimulationCacheFrame(frame, error)) return false;
+    }
+    error.clear(); return true;
+}
 } // namespace
 
 const char* simulationCacheStatusName(SimulationCacheStatus status) {
@@ -120,7 +173,9 @@ SimulationCacheStatus classifySimulationCache(
     std::string& message
 ) {
     if (cache.key == requested) {
-        if (!cache.covers(requested.startFrame) || !cache.covers(requested.endFrame)) {
+        if (!validateCache(cache, message)) return SimulationCacheStatus::Stale;
+        const auto expected = static_cast<std::uint64_t>(requested.endFrame) - requested.startFrame + 1;
+        if (cache.frames.size() != expected) {
             message = "Simulation cache key matches but the frame range is incomplete";
             return SimulationCacheStatus::Stale;
         }
@@ -139,6 +194,7 @@ bool saveSimulationCache(
     const SimulationCache& cache,
     std::string& error
 ) {
+    if (!validateCache(cache, error)) return false;
     try {
         if (path.empty()) throw std::runtime_error("Simulation cache path must not be empty");
         const std::filesystem::path temporary(path.string() + ".partial");
@@ -282,6 +338,15 @@ bool loadSimulationCache(
             throw std::runtime_error("Simulation cache has no key");
         }
         const auto& key = root["key"];
+        if (!key.HasMember("moduleId") || !key["moduleId"].IsString()
+            || !key.HasMember("moduleApiVersion") || !key["moduleApiVersion"].IsInt()
+            || !key.HasMember("buildId") || !key["buildId"].IsString()
+            || !key.HasMember("seed") || !key["seed"].IsUint()
+            || !key.HasMember("framesPerSecond") || !key["framesPerSecond"].IsInt()
+            || !key.HasMember("startFrame") || !key["startFrame"].IsInt()
+            || !key.HasMember("endFrame") || !key["endFrame"].IsInt()
+            || (key.HasMember("parameterHash") && !key["parameterHash"].IsUint64()))
+            throw std::runtime_error("Simulation cache key has invalid or missing fields");
         if (!key.HasMember("sceneContentHash") || !key["sceneContentHash"].IsUint64()) {
             throw std::runtime_error("Simulation cache key has no scene content hash");
         }
@@ -305,10 +370,16 @@ bool loadSimulationCache(
         loaded.key.endFrame = key.HasMember("endFrame") && key["endFrame"].IsInt()
             ? key["endFrame"].GetInt() : 0;
 
+        if (!root.HasMember("frames")) throw std::runtime_error("Simulation cache has no frames array");
         if (root.HasMember("frames")) {
             if (!root["frames"].IsArray()) throw std::runtime_error("Simulation cache frames must be an array");
             for (const auto& frameValue : root["frames"].GetArray()) {
                 if (!frameValue.IsObject()) throw std::runtime_error("Simulation cache frame must be an object");
+                if (!frameValue.HasMember("frame") || !frameValue["frame"].IsInt()
+                    || !frameValue.HasMember("contentHash") || !frameValue["contentHash"].IsUint64()
+                    || !frameValue.HasMember("entities") || !frameValue["entities"].IsArray()
+                    || (frameValue.HasMember("moduleState") && !frameValue["moduleState"].IsString()))
+                    throw std::runtime_error("Simulation cache frame has invalid or missing fields");
                 SimulationCacheFrame frame;
                 frame.frame = frameValue.HasMember("frame") && frameValue["frame"].IsInt()
                     ? frameValue["frame"].GetInt() : 0;
@@ -338,13 +409,17 @@ bool loadSimulationCache(
                                     throw std::runtime_error("Invalid cached light fields");
                                 SceneLightComponent light; light.type = static_cast<LocalLightType>(value["type"].GetInt());
                                 if (!readVector(value["color"], light.color)) throw std::runtime_error("Invalid cached light color");
-                                light.intensity = value["intensity"].GetFloat(); light.range = value["range"].GetFloat();
-                                light.outerAngleDegrees = value["outerAngleDegrees"].GetFloat();
+                                if (!readFiniteFloat(value["intensity"], light.intensity)
+                                    || !readFiniteFloat(value["range"], light.range)
+                                    || !readFiniteFloat(value["outerAngleDegrees"], light.outerAngleDegrees))
+                                    throw std::runtime_error("Invalid cached light numbers");
                                 if (!validSceneLight(light)) throw std::runtime_error("Invalid cached light values");
                                 entity.light = light;
                             }
                         }
-                        if (!readVector(entityValue["translation"], entity.transform.translation)
+                        if (!entityValue.HasMember("translation") || !entityValue.HasMember("rotationDegrees")
+                            || !entityValue.HasMember("scale") || !entityValue.HasMember("tint")
+                            || !readVector(entityValue["translation"], entity.transform.translation)
                             || !readVector(entityValue["rotationDegrees"], entity.transform.rotationDegrees)
                             || !readVector(entityValue["scale"], entity.transform.scale)
                             || !readVector(entityValue["tint"], entity.tint)) {
@@ -358,10 +433,9 @@ bool loadSimulationCache(
                         for (int column = 0; column < 4; ++column) {
                             for (int row = 0; row < 4; ++row) {
                                 const auto& value = entityValue["assetTransform"][column * 4 + row];
-                                if (!value.IsNumber()) {
+                                if (!readFiniteFloat(value, entity.transform.assetTransform[column][row])) {
                                     throw std::runtime_error("Simulation cache asset transform is invalid");
                                 }
-                                entity.transform.assetTransform[column][row] = value.GetFloat();
                             }
                         }
                         frame.entities.push_back(std::move(entity));
@@ -374,6 +448,7 @@ bool loadSimulationCache(
                   [](const SimulationCacheFrame& left, const SimulationCacheFrame& right) {
                       return left.frame < right.frame;
                   });
+        if (!validateCache(loaded, error)) return false;
         cache = std::move(loaded);
         error.clear();
         return true;
