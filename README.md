@@ -4,6 +4,8 @@
 
 <h1 align="center">Iris</h1>
 
+2026-10-29 P5性能收尾版：RQ加速结构复用一块满足最大容量/对齐的scratch，PT只读输入优先使用可映射、一致的设备本地内存，保留不支持/容量不足时的原主机内存回退，输出/读回不变。原P0/P3/P4预算按同协议两轮重新核对，性能和严格GPU/图像、独立包证据分开报告。默认Depth8、Shader、Seed与Raw/AOV语义不变；30FPS及降噪细节/透射限制仍保留，完整经典场景的Alpha Mask光追仍是独立缺口。基准资源使用Git LFS（获取源码后执行`git lfs pull`），CI显式拉取大资源。D4检查点93d6b12已推送且CI成功；P5最终提交与支持范围见本地 [P5收尾](docs/m3p5-performance-close.md)。
+
 2026-10-29 D4本地交付版：GPU PT支持原生1280×720、可选时间重投影和空间降噪，工作台对照Raw/Accumulated/Denoised。连续移动相机保留最近完成预览并隔离新相机SPP；存在一个完成样本的显示延迟。新增Job25～27为三场景720p/4SPP/Depth4/两帧的显式三种Beauty输出，包内可直接运行。Depth3～4是质量取舍，默认Depth8不变；46组两轮测量中时间＋空间降噪的移动整帧P50约0.33秒（Stanford）/0.84秒（Sponza），未达30FPS。透射保留Raw、低Depth光路截断和纹理软化限制仍在，P5两项原性能门后续统一优化。独立M3D4 ZIP与严格GPU、实际UI/Queue、保存重开、缺SPV恢复证据单列；未提交/推送。详见本地 [D4](docs/m3d4-interactive-delivery.md) 和 [资产许可](ASSET_LICENSES.md)。
 
 2026-10-27：M3-C GPU Path Tracer 已接通共享 PBR 纹理、显式灯光/HDRI、NEE/MIS、Transmission 和单一吸收介质，以及工作台后台 Render Queue。使用 Sponza Atrium 和 Stanford Bunny/Dragon 玻璃及不透明对照；Job 22～24 为固定预算数字检查，人工画质检查使用铺满 Viewport 的 1920×1080 工作台，该阶段内部最长边上限为1024（当前开发版见上方D0）。支持八类 AOV、固定 Seed/SPP、变化重启、取消和 PNG/HDR/EXR；GPU Resume、Alpha Mask/Blend、嵌套介质与降噪仍不支持。脚本入口为 `tools/VulkanPathTracingVisualAcceptance.ps1`、`tools/GpuPathTracingReferenceReport.py` 和 `tools/VulkanPathTracingPackageAcceptance.ps1`。详细支持范围、验收结果与数值限制见本地 [M3-C](docs/m3c-gpu-path-tracer.md)；资产来源和使用限制见 [资产许可](ASSET_LICENSES.md)。

@@ -174,11 +174,11 @@ struct VulkanPathTracer::Impl {
         for(unsigned i=0;i<3;++i)std::memcpy(static_cast<unsigned char*>(mapped)+(baseAddress-sbtAddress)+stride*i,handles.data()+properties.shaderGroupHandleSize*i,properties.shaderGroupHandleSize);
         b.f.vkUnmapMemory(b.device,sbt.memory);raygen={baseAddress,stride,stride};miss={baseAddress+stride,stride,stride};hit={baseAddress+2*stride,stride,stride};
         if(indexedGeometry){
-            geometryBuffer=r.buffer(triangles.size()*sizeof(glm::uvec4),VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,triangles.data());
-            vertexBuffer=r.buffer(geometry.vertices.size()*sizeof(PtVertex),VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,geometry.vertices.data());
-            materialBuffer=r.buffer(geometry.materials.size()*sizeof(PtMaterial),VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,geometry.materials.data());
-        }else geometryBuffer=r.buffer(expanded.size()*sizeof(PtTriangle),VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,expanded.data());
-        instanceBuffer=r.buffer(instances.size()*sizeof(glm::uvec4),VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,instances.data());
+            geometryBuffer=r.buffer(triangles.size()*sizeof(glm::uvec4),VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,triangles.data(),VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT|VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,true);
+            vertexBuffer=r.buffer(geometry.vertices.size()*sizeof(PtVertex),VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,geometry.vertices.data(),VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT|VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,true);
+            materialBuffer=r.buffer(geometry.materials.size()*sizeof(PtMaterial),VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,geometry.materials.data(),VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT|VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,true);
+        }else geometryBuffer=r.buffer(expanded.size()*sizeof(PtTriangle),VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,expanded.data(),VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT|VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,true);
+        instanceBuffer=r.buffer(instances.size()*sizeof(glm::uvec4),VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,instances.data(),VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT|VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,true);
         imageResources=std::make_unique<RasterResources>(b);
         readbackPixels.resize(pixelCount);output=imageResources->buffer(pixelCount*sizeof(PtPixel),VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,readbackPixels.data());
         std::vector<std::uint32_t> previewZeros(std::max<std::size_t>(pixelCount+1,4));
@@ -205,7 +205,7 @@ struct VulkanPathTracer::Impl {
         uniform.counts.z=environment.importanceSampled()?1:0;
         if(environmentDistribution.empty())environmentDistribution.emplace_back(1,1);
         if(environmentDistribution.size()>maxStorage/sizeof(glm::vec2))throw std::runtime_error("GPU PT HDRI distribution exceeds storage range");
-        const auto environmentBuffer=r.buffer(environmentDistribution.size()*sizeof(glm::vec2),VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,environmentDistribution.data());
+        const auto environmentBuffer=r.buffer(environmentDistribution.size()*sizeof(glm::vec2),VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,environmentDistribution.data(),VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT|VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,true);
         frameBuffer=r.buffer(sizeof(uniform),VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,&uniform);
         auto command=b.frames[0].command;check(b.f.vkResetCommandBuffer(command,0),"Reset PT upload");auto begin=info<VkCommandBufferBeginInfo>(VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO);check(b.f.vkBeginCommandBuffer(command,&begin),"Begin PT upload");
         const auto env=r.texture(command,envWidth,envHeight,panorama,VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR);check(b.f.vkEndCommandBuffer(command),"End PT upload");
@@ -214,9 +214,9 @@ struct VulkanPathTracer::Impl {
         if (texels.empty()) texels.emplace_back(0, 0);
         if (textureInfo.empty()) textureInfo.emplace_back(0);
         if (emitters.empty()) emitters.emplace_back(0);
-        const auto texelBuffer=r.buffer(texels.size()*sizeof(glm::uvec2),VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,texels.data());
-        const auto textureBuffer=r.buffer(textureInfo.size()*sizeof(glm::uvec4),VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,textureInfo.data());
-        const auto emitterBuffer=r.buffer(emitters.size()*sizeof(glm::uvec4),VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,emitters.data());
+        const auto texelBuffer=r.buffer(texels.size()*sizeof(glm::uvec2),VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,texels.data(),VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT|VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,true);
+        const auto textureBuffer=r.buffer(textureInfo.size()*sizeof(glm::uvec4),VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,textureInfo.data(),VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT|VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,true);
+        const auto emitterBuffer=r.buffer(emitters.size()*sizeof(glm::uvec4),VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,emitters.data(),VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT|VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,true);
         const VkDescriptorPoolSize poolSizes[]{{VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR,1},{VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,storageDescriptors},{VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,1},{VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,1}};
         auto pool=info<VkDescriptorPoolCreateInfo>(VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO);pool.maxSets=1;pool.poolSizeCount=4;pool.pPoolSizes=poolSizes;check(b.f.vkCreateDescriptorPool(b.device,&pool,nullptr,&r.descriptors),"Create PT descriptor pool");
         auto allocate=info<VkDescriptorSetAllocateInfo>(VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO);allocate.descriptorPool=r.descriptors;allocate.descriptorSetCount=1;allocate.pSetLayouts=&r.setLayout;check(b.f.vkAllocateDescriptorSets(b.device,&allocate,&descriptors),"Allocate PT set");

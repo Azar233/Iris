@@ -59,6 +59,26 @@ struct RayQueryScene {
         b.f.vkCmdPipelineBarrier(command,stages,dst,0,1,&memory,0,nullptr,0,nullptr);
     }
     void buildBlas(VkCommandBuffer command) {
+        // RQ builds are ordered by barrier() below, so their scratch can be reused.
+        // Retain PT's allocation order: sharing regressed the small-scene trace
+        // benchmark despite identical images. RQ also reuses this for TLAS updates.
+        VkDeviceSize scratchBytes=0;
+        if(!pathTracing)for(const auto& mesh:geometry) {
+            if(mesh.size()>UINT32_MAX || mesh.size()/3>maxPrimitives)throw std::runtime_error("Ray Query mesh exceeds device geometry limits");
+            auto shape=info<VkAccelerationStructureGeometryKHR>(VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_KHR);
+            shape.geometryType=VK_GEOMETRY_TYPE_TRIANGLES_KHR;shape.flags=VK_GEOMETRY_OPAQUE_BIT_KHR;
+            auto& triangles=shape.geometry.triangles;triangles.sType=VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_TRIANGLES_DATA_KHR;
+            triangles.vertexFormat=VK_FORMAT_R32G32B32_SFLOAT;triangles.vertexStride=sizeof(glm::vec3);
+            triangles.maxVertex=static_cast<std::uint32_t>(mesh.size()-1);triangles.indexType=VK_INDEX_TYPE_NONE_KHR;
+            auto build=info<VkAccelerationStructureBuildGeometryInfoKHR>(VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_GEOMETRY_INFO_KHR);
+            build.type=VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_KHR;build.flags=VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT_KHR;
+            build.mode=VK_BUILD_ACCELERATION_STRUCTURE_MODE_BUILD_KHR;build.geometryCount=1;build.pGeometries=&shape;
+            const auto count=static_cast<std::uint32_t>(mesh.size()/3);
+            auto sizes=info<VkAccelerationStructureBuildSizesInfoKHR>(VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_SIZES_INFO_KHR);
+            b.f.vkGetAccelerationStructureBuildSizesKHR(b.device,VK_ACCELERATION_STRUCTURE_BUILD_TYPE_DEVICE_KHR,&build,&count,&sizes);
+            scratchBytes=std::max(scratchBytes,sizes.buildScratchSize+scratchAlignment);
+        }
+        if(scratchBytes)scratch=storage.buffer(scratchBytes,VK_BUFFER_USAGE_STORAGE_BUFFER_BIT|VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,nullptr,VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
         for(const auto& mesh:geometry) {
             if(mesh.size()>UINT32_MAX || mesh.size()/3>maxPrimitives)throw std::runtime_error("Ray Query mesh exceeds device geometry limits");
             const auto vertices=storage.buffer(mesh.size()*sizeof(glm::vec3),VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR|VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,mesh.data());
@@ -74,7 +94,7 @@ struct RayQueryScene {
             auto sizes=info<VkAccelerationStructureBuildSizesInfoKHR>(VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_SIZES_INFO_KHR);
             b.f.vkGetAccelerationStructureBuildSizesKHR(b.device,VK_ACCELERATION_STRUCTURE_BUILD_TYPE_DEVICE_KHR,&build,&count,&sizes);
             build.dstAccelerationStructure=create(build.type,sizes.accelerationStructureSize,"Iris.RayQuery.BLAS");
-            const auto temp=storage.buffer(sizes.buildScratchSize+scratchAlignment,VK_BUFFER_USAGE_STORAGE_BUFFER_BIT|VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,nullptr,VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+            const auto temp=pathTracing?storage.buffer(sizes.buildScratchSize+scratchAlignment,VK_BUFFER_USAGE_STORAGE_BUFFER_BIT|VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,nullptr,VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT):scratch;
             build.scratchData.deviceAddress=alignedScratch(temp);
             const VkAccelerationStructureBuildRangeInfoKHR range{count,0,0,0};const auto* ranges=&range;
             b.f.vkCmdBuildAccelerationStructuresKHR(command,1,&build,&ranges);barrier(command);
@@ -98,7 +118,8 @@ struct RayQueryScene {
         b.f.vkGetAccelerationStructureBuildSizesKHR(b.device,VK_ACCELERATION_STRUCTURE_BUILD_TYPE_DEVICE_KHR,&build,&count,&sizes);
         if(!update) {
             create(build.type,sizes.accelerationStructureSize,"Iris.RayQuery.TLAS");
-            scratch=storage.buffer(std::max(sizes.buildScratchSize,sizes.updateScratchSize)+scratchAlignment,VK_BUFFER_USAGE_STORAGE_BUFFER_BIT|VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,nullptr,VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+            const auto bytes=std::max(sizes.buildScratchSize,sizes.updateScratchSize)+scratchAlignment;
+            if(pathTracing || scratch.size<bytes)scratch=storage.buffer(bytes,VK_BUFFER_USAGE_STORAGE_BUFFER_BIT|VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,nullptr,VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
         }
         build.dstAccelerationStructure=tlas;build.srcAccelerationStructure=update?tlas:VK_NULL_HANDLE;build.scratchData.deviceAddress=alignedScratch(scratch);
         const VkAccelerationStructureBuildRangeInfoKHR range{count,0,0,0};const auto* ranges=&range;

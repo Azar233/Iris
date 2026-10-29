@@ -1,5 +1,7 @@
 # Iris 项目目录与验证入口
 
+> **P5性能收尾（2026-10-29）**：原协议预算已通过；RQ scratch复用、PT输入优先设备本地可映射一致内存与原回退。两编译器Focused/Strict/两布局生命周期/原生图像与D4同图、Capture及新独立M3P5-close ZIP交付，详细原始结果和失败候选见 [P5收尾](docs/m3p5-performance-close.md)。原D4检查点93d6b12已提交推送且CI成功；30FPS、D2/D3质量和独立Alpha Mask缺口保留，不宣称整个M3支持完整经典场景。
+
 > **M3-D4 交互与交付（2026-10-29）**：移动重启排空已提交样本、保留有效预览，完成数与新相机SPP隔离，Frame/取消历史合同保持。两编译器Integration40/38、严格Temporal/Spatial/Guides和gpu-smoke通过；46组720p两轮整帧/显存、八组同终点质量、实际UI/Queue、带降噪Capture和独立M3D4 ZIP交付。时间＋空间移动整帧约0.33～0.84秒P50，未达30FPS；Depth3/4截断、透射Raw和纹理软化保留。下一唯一入口P5统一优化，P5/M3-P/M3仍未完成；未提交推送。见 [D4](docs/m3d4-interactive-delivery.md)。
 
 > **M3-D3 本地收口（2026-10-29）**：可选GPU时间重投影、双线性逐点身份/深度/法线拒绝、矩与邻域历史约束接通；同一Raw不重复计数，Scene/Viewport/Job/Queue可对照Raw/Accumulated/Denoised。共享CPU MSVC40项覆盖/GCC38、最终Focused各9、双编译器严格GPU/78对运动EXR/192原AOV、三场景720p/实际平移与开关/Frame跳切/Queue14文件通过。时间累积RMSE下降约34%/27%/57%；Sponza叠加空间反而变差，透射Raw与约66ms时间pass成本明确保留。当前唯一入口D4交互与交付，P5后续统一优化；未打包/提交/推送。见 [D3](docs/m3d3-temporal-denoise.md)。

@@ -1,5 +1,7 @@
 # Iris 插件架构验证路线
 
+> **M3-P5性能收尾与D4交付（2026-10-29）**：D0～D4已本地交付，检查点93d6b12已推送且CI成功。P5原冻结预算复核通过，保留RQ scratch复用及PT输入设备本地优先/主机回退，双编译器与独立包证据见 [P5收尾](docs/m3p5-performance-close.md)。30FPS仍未达到，Alpha Mask光追与降噪细节/透射仍是明确边界；下方各阶段文字保留历史，不作为当前待执行队列。
+
 > **M3-C 本地收口完成（2026-10-27，新场景范围）**：GPU PT 已接通 PBR 纹理、显式灯/HDRI、发光面 NEE/MIS、Transmission 与单活动吸收介质、后台 Queue。Sponza / Stanford Glass / Opaque 的固定协议收敛及 Strict Core/Sync 通过；MSVC/GCC CPU 40/40、38/38，最终 GCC 八类 PNG 与 MSVC 一致，OFF 返回 70 无输出。三场景已按用户要求用铺满 Viewport 的 1920×1080 工作台、内部 1024×578、64 SPP 检查；Queue 实际按钮与 1440/1100 两尺寸通过。最终带 BLAS/TLAS Build 与 TraceRays 的 Capture、独立 ZIP 包内输入/48 AOV/大画幅保存重开同 PNG/缺失 SPV 拒绝均通过。旧 cube 一次 1.43×10⁻⁶ 的照明微差保留诊断及原断言，不改阈值或旧基线，不再追加旧 fixtures 图像套件。M3-C 四项完成，M3/M3-D 保持未完成；旧 ZIP 保留，未提交/推送。见 [M3-C](docs/m3c-gpu-path-tracer.md)。
 
 > **M3-C1 基础 GPU PT（2026-10-26）**：真实 Ray Tracing Pipeline 已接入不透明无纹理共享网格、Workspace 与 GPU Job 21。固定 Seed 渐进采样、Raw Beauty/八类 AOV、变化重启、取消及 PNG/HDR/EXR 导出通过。MSVC/GCC 全量 CPU 40/38、双生命周期 Core/Sync 零告警、双尺寸实际控件、GUI/Job 与独立 Runtime 保存重开同图通过；1/8/64 SPP 线性 RMSE 为 0.0568/0.0431/0.0172。OFF 明确拒绝 GPU 输出。M3-C 的三 Reference 场景、纹理/Transmission/介质、Queue 和阶段 Capture/发布仍未完成，M3-D 未开始。旧 ZIP 哈希保持不变；本轮未生成新 ZIP、提交或推送。见 [M3-C1](docs/m3c1-gpu-path-tracer.md)。

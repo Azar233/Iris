@@ -47,16 +47,19 @@ struct RasterResources {
         }
     }
     VkDeviceMemory allocate(const VkMemoryRequirements& requirements,VkMemoryPropertyFlags flags,bool address=false,
-                            std::uint32_t* selectedType=nullptr,std::uint32_t* selectedFlags=nullptr) {
+                            std::uint32_t* selectedType=nullptr,std::uint32_t* selectedFlags=nullptr,bool preferDeviceLocal=false) {
         VkPhysicalDeviceMemoryProperties properties{};b.f.vkGetPhysicalDeviceMemoryProperties(b.physical,&properties);
-        for(std::uint32_t i=0;i<properties.memoryTypeCount;++i) {
+        for(int pass=0;pass<(preferDeviceLocal?2:1);++pass)for(std::uint32_t i=0;i<properties.memoryTypeCount;++i) {
             if(!(requirements.memoryTypeBits&(1U<<i)) || (properties.memoryTypes[i].propertyFlags&flags)!=flags)continue;
+            if(preferDeviceLocal && pass==0 && !(properties.memoryTypes[i].propertyFlags&VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT))continue;
             auto allocation=info<VkMemoryAllocateInfo>(VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO);
             auto allocationFlags=info<VkMemoryAllocateFlagsInfo>(VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_FLAGS_INFO);
             allocationFlags.flags=VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT;
             if(address)allocation.pNext=&allocationFlags;
             allocation.allocationSize=requirements.size;allocation.memoryTypeIndex=i;
-            VkDeviceMemory memory{};check(b.f.vkAllocateMemory(b.device,&allocation,nullptr,&memory),"Allocate raster memory");
+            VkDeviceMemory memory{};const auto status=b.f.vkAllocateMemory(b.device,&allocation,nullptr,&memory);
+            if(preferDeviceLocal && pass==0 && status==VK_ERROR_OUT_OF_DEVICE_MEMORY)continue;
+            check(status,"Allocate raster memory");
             if(selectedType)*selectedType=i;
             if(selectedFlags)*selectedFlags=properties.memoryTypes[i].propertyFlags;
             allocatedBytes+=requirements.size;
@@ -66,13 +69,13 @@ struct RasterResources {
         throw std::runtime_error("Vulkan raster memory type unavailable");
     }
     Buffer buffer(VkDeviceSize size,VkBufferUsageFlags usage,const void* data=nullptr,
-                  VkMemoryPropertyFlags flags=VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT|VK_MEMORY_PROPERTY_HOST_COHERENT_BIT) {
+                  VkMemoryPropertyFlags flags=VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT|VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,bool preferDeviceLocal=false) {
         buffers.push_back({});auto& result=buffers.back();result.size=std::max<VkDeviceSize>(size,16);
         auto create=info<VkBufferCreateInfo>(VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO);
         create.size=result.size;create.usage=usage;create.sharingMode=VK_SHARING_MODE_EXCLUSIVE;
         check(b.f.vkCreateBuffer(b.device,&create,nullptr,&result.handle),"Create raster buffer");
         VkMemoryRequirements requirements{};b.f.vkGetBufferMemoryRequirements(b.device,result.handle,&requirements);
-        result.memory=allocate(requirements,flags,(usage&VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT)!=0,&result.memoryType,&result.memoryFlags);
+        result.memory=allocate(requirements,flags,(usage&VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT)!=0,&result.memoryType,&result.memoryFlags,preferDeviceLocal);
         check(b.f.vkBindBufferMemory(b.device,result.handle,result.memory,0),"Bind raster buffer");
         if(data && size) {void* mapped{};check(b.f.vkMapMemory(b.device,result.memory,0,size,0,&mapped),"Map raster buffer");
             std::memcpy(mapped,data,static_cast<std::size_t>(size));b.f.vkUnmapMemory(b.device,result.memory);hostUploadBytes+=size;}
